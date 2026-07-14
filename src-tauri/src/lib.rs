@@ -124,6 +124,7 @@ pub fn run() {
             commands::translate,
             commands::translate_with_direction,
             commands::translate_stream,
+            commands::translate_batch,
             commands::cleanup_clipboard_text,
             commands::get_screenshot_data_uri,
             commands::clear_screenshot_buffer,

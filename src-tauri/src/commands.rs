@@ -216,6 +216,46 @@ pub async fn translate_stream(
     Ok(result)
 }
 
+/// Batch translate multiple text segments in a single API call.
+/// Used for file translation (.srt subtitles, .json values).
+/// Each segment is separated by a unique marker so they can be split back.
+#[tauri::command]
+pub async fn translate_batch(
+    state: tauri::State<'_, ApiConfig>,
+    segments: Vec<String>,
+    direction: String,
+) -> Result<Vec<String>, String> {
+    if segments.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let seq = state.next_request_seq();
+
+    // Join segments with a unique marker
+    const MARKER: &str = "\n\n===SEGMENT_BREAK===\n\n";
+    let combined = segments.join(MARKER);
+    let target = crate::translate::resolve_target_lang(&combined, &direction);
+    let result = crate::translate::do_translate_async(&state, &combined, "auto", target).await?;
+
+    if !state.is_current_request(seq) {
+        return Err("CANCELLED".into());
+    }
+
+    // Split result back into segments
+    let translated: Vec<String> = result
+        .split("===SEGMENT_BREAK===")
+        .map(|s| s.trim().to_string())
+        .collect();
+
+    // If split count doesn't match (model may have merged/split segments),
+    // fall back: return the full result as the only segment
+    if translated.len() != segments.len() {
+        return Ok(vec![result]);
+    }
+
+    Ok(translated)
+}
+
 // -----------------------------------------------------------
 // Text cleanup command
 // -----------------------------------------------------------

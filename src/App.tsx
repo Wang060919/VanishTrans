@@ -93,6 +93,8 @@ export default function App() {
       hotkeyLabels={config.hotkeyLabels}
       onHotkeysChange={config.saveHotkeys}
       streaming={translation.streaming}
+      fileStatus={translation.fileStatus}
+      onTranslateFile={translation.doTranslateFile}
     />
   );
 }

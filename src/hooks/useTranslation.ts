@@ -1,5 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useRef, useState } from "react";
+import {
+  detectFileType,
+  parseSrt,
+  rebuildSrt,
+  parseJson,
+  rebuildJson,
+  type FileType,
+} from "../lib/fileParser";
 
 export interface TranslateState {
   inputText: string;
@@ -18,6 +26,7 @@ export function useTranslation() {
   const [glowActive, setGlowActive] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [direction, setDirection] = useState<LangDirection>("auto2zh");
+  const [fileStatus, setFileStatus] = useState<string | null>(null);
 
   const directionRef = useRef(direction);
   const requestIdRef = useRef(0);
@@ -106,6 +115,99 @@ export function useTranslation() {
 
   const clearGlow = useCallback(() => setGlowActive(false), []);
 
+  /// Handle file drag-and-drop: parse structured files, translate, reassemble.
+  const doTranslateFile = useCallback(async (filename: string, content: string) => {
+    const fileType = detectFileType(filename);
+    const reqId = ++requestIdRef.current;
+
+    if (fileType === "txt") {
+      // Plain text — just load into input
+      setInputText(content);
+      setFileStatus(null);
+      return;
+    }
+
+    // Structured file (.srt / .json): parse → extract → batch translate → reassemble
+    setFileStatus(`正在解析 ${filename}...`);
+    setLoading(true);
+    setOutputText("");
+
+    try {
+      let segments: string[];
+      let reassemble: (translated: string[]) => string;
+
+      if (fileType === "srt") {
+        const blocks = parseSrt(content);
+        if (blocks.length === 0) {
+          setOutputText("❌ 未找到有效的字幕块");
+          setLoading(false);
+          setFileStatus(null);
+          return;
+        }
+        segments = blocks.map((b) => b.text);
+        reassemble = (translated) => {
+          const newBlocks = blocks.map((b, i) => ({
+            ...b,
+            text: translated[i] ?? b.text,
+          }));
+          return rebuildSrt(newBlocks);
+        };
+        setFileStatus(`解析到 ${segments.length} 条字幕，翻译中...`);
+      } else if (fileType === "json") {
+        const jsonSegments = parseJson(content);
+        if (jsonSegments.length === 0) {
+          setOutputText("❌ JSON 中没有可翻译的文本");
+          setLoading(false);
+          setFileStatus(null);
+          return;
+        }
+        segments = jsonSegments.map((s) => s.text);
+        reassemble = (translated) => {
+          const map = new Map<string, string>();
+          jsonSegments.forEach((s, i) => {
+            if (translated[i]) map.set(s.path, translated[i]);
+          });
+          return rebuildJson(content, map);
+        };
+        setFileStatus(`解析到 ${segments.length} 段文本，翻译中...`);
+      } else {
+        setOutputText(`❌ 不支持的文件类型: ${filename}`);
+        setLoading(false);
+        setFileStatus(null);
+        return;
+      }
+
+      // Batch translate all segments at once
+      const translated = await invoke<string[]>("translate_batch", {
+        segments,
+        direction: directionRef.current,
+      });
+
+      if (reqId !== requestIdRef.current) return;
+
+      if (translated.length === 1 && translated[0].includes("\n")) {
+        // Fallback: model didn't split properly, show raw result
+        setOutputText(translated[0]);
+      } else {
+        const result = reassemble(translated);
+        setInputText(content);
+        setOutputText(result);
+      }
+
+      setGlowActive(true);
+      setFileStatus(`✅ ${filename} 翻译完成`);
+      setTimeout(() => {
+        if (reqId === requestIdRef.current) setFileStatus(null);
+      }, 3000);
+    } catch (e: any) {
+      if (reqId === requestIdRef.current) {
+        setOutputText(`❌ 文件翻译失败: ${e}`);
+        setFileStatus(null);
+      }
+    }
+    if (reqId === requestIdRef.current) setLoading(false);
+  }, []);
+
   return {
     inputText, setInputText,
     outputText, setOutputText,
@@ -113,8 +215,10 @@ export function useTranslation() {
     glowActive, clearGlow,
     streaming,
     direction, updateDirection,
+    fileStatus,
     doTranslate,
     doTranslateStream,
+    doTranslateFile,
     handleStreamChunk,
     handleStreamDone,
   };
