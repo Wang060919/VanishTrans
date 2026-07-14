@@ -103,7 +103,7 @@ pub fn run() {
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(150));
                         // Only hide if the window is still unfocused
-                        if wh.is_focused().unwrap_or(false) {
+                        if wh.is_focused().unwrap_or(true) {
                             return;
                         }
                         let _ = wh.hide();

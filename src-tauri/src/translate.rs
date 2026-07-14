@@ -601,6 +601,26 @@ pub async fn do_translate_stream_async(
         }
     }
 
+    // Process any remaining buffer (stream ended without [DONE] or trailing newline)
+    if !buffer.trim().is_empty() {
+        let line = buffer.trim().to_string();
+        if let Some(data) = line.strip_prefix("data: ") {
+            let data = data.trim();
+            if data != "[DONE]" {
+                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+                    if let Some(choice) = chunk.choices.first() {
+                        if let Some(content) = &choice.delta.content {
+                            if !content.is_empty() {
+                                full_text.push_str(content);
+                                on_chunk(content.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(full_text)
 }
 

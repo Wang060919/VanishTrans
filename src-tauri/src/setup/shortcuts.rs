@@ -121,15 +121,8 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize shortcuts from config
-    sync_shortcuts(app.handle())?;
-
-    // Also register Alt+Escape for screenshot dismiss (always present)
-    let esc = Shortcut::new(Some(Modifiers::ALT), Code::Escape);
-    if let Err(e) = app.global_shortcut().register(esc) {
-        log::warn!("[shortcut] Failed to register Alt+Escape: {}", e);
-    }
-
+    // Register the global shortcut plugin FIRST — sync_shortcuts and
+    // Alt+Escape registration both need the plugin to exist.
     let ah = app.handle().clone();
     ah.plugin(
         tauri_plugin_global_shortcut::Builder::new()
@@ -175,6 +168,15 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
             })
             .build(),
     )?;
+
+    // NOW the plugin exists — register shortcuts from config
+    sync_shortcuts(app.handle())?;
+
+    // Register Alt+Escape for screenshot dismiss (always present)
+    let esc = Shortcut::new(Some(Modifiers::ALT), Code::Escape);
+    if let Err(e) = app.global_shortcut().register(esc) {
+        log::warn!("[shortcut] Failed to register Alt+Escape: {}", e);
+    }
 
     Ok(())
 }
