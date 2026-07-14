@@ -14,26 +14,16 @@
       {
         "label": "main",
         "title": "",
-
-
         "width": 420,
         "height": 520,
         "minWidth": 320,
         "minHeight": 360,
         "resizable": true,
-        "decorations": true,
+        "decorations": false,
         "center": true,
-
-
         "visible": false,
-
-
         "skipTaskbar": true,
-
-
         "alwaysOnTop": false,
-
-
         "focus": false
       }
     ],
