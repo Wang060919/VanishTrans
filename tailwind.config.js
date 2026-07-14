@@ -1,52 +1,49 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ["selector", '[data-theme="dark"]'],
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
       colors: {
         primary: {
-          DEFAULT: "var(--color-primary)",
-          hover: "var(--color-primary-hover)",
-          soft: "var(--color-primary-soft)",
-          border: "var(--color-primary-border)",
+          DEFAULT: "var(--color-signal)",
+          hover: "var(--color-signal-hover)",
+          soft: "var(--color-signal-soft)",
+          border: "var(--color-signal-line)",
         },
         surface: {
           DEFAULT: "var(--color-surface)",
           raised: "var(--color-surface-raised)",
-          sunken: "var(--color-surface-sunken)",
+          sunken: "var(--color-surface-subtle)",
           overlay: "var(--color-surface-overlay)",
         },
         border: {
-          DEFAULT: "var(--color-border)",
-          subtle: "var(--color-border-subtle)",
-          strong: "var(--color-border-strong)",
+          DEFAULT: "var(--color-line)",
+          subtle: "var(--color-line)",
+          strong: "var(--color-line-strong)",
         },
         text: {
-          DEFAULT: "var(--color-text)",
-          secondary: "var(--color-text-secondary)",
-          muted: "var(--color-text-muted)",
-          ghost: "var(--color-text-ghost)",
-          disabled: "var(--color-text-disabled)",
+          DEFAULT: "var(--color-ink)",
+          secondary: "var(--color-ink-secondary)",
+          muted: "var(--color-ink-muted)",
+          ghost: "var(--color-ink-faint)",
+          disabled: "var(--color-ink-faint)",
         },
         danger: {
           DEFAULT: "var(--color-danger)",
           soft: "var(--color-danger-soft)",
         },
+        success: "var(--color-success)",
+        warning: "var(--color-warning)",
       },
       boxShadow: {
-        card: "var(--shadow-card)",
-        float: "var(--shadow-float)",
+        card: "none",
+        float: "var(--shadow-popover)",
+        window: "var(--shadow-window)",
       },
       animation: {
-        "fade-in": "fadeIn 0.2s ease-out",
-        "fade-slide-up": "fadeSlideUp 0.25s ease-out",
-        "breathe": "breathe 3s ease-in-out infinite",
-      },
-      keyframes: {
-        fadeIn: {
-          "0%": { opacity: "0", maxHeight: "0" },
-          "100%": { opacity: "1", maxHeight: "200px" },
-        },
+        "fade-in": "fadeIn var(--duration-fast) var(--ease-standard)",
+        "fade-slide-up": "fadeSlideUp var(--duration-normal) var(--ease-standard)",
       },
     },
   },

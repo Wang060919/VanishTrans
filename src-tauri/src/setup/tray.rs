@@ -1,4 +1,4 @@
-use tauri::{
+﻿use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
@@ -9,24 +9,35 @@ use crate::{ShortcutsMenuItem, WatchMenuItem};
 
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let si = MenuItem::with_id(app, "show", "显示 / 隐藏", true, None::<&str>)?;
-    let pi = MenuItem::with_id(app, "pin", "📌 固定置顶", true, None::<&str>)?;
+    let pi = MenuItem::with_id(app, "pin", "固定置顶", true, None::<&str>)?;
     let ti = MenuItem::with_id(
         app,
         "toggle_shortcuts",
-        "⏸ 暂停热键监听",
+        "暂停热键监听",
         true,
         None::<&str>,
     )?;
-    let wi =
-        MenuItem::with_id(app, "toggle_watch", "📋 开启剪贴板监听", true, None::<&str>)?;
+    let wi = MenuItem::with_id(
+        app,
+        "toggle_watch",
+        "开启剪贴板监听",
+        true,
+        None::<&str>,
+    )?;
     let qi = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     app.manage(ShortcutsMenuItem(ti.clone()));
     app.manage(WatchMenuItem(wi.clone()));
 
-    let mut tray_builder = TrayIconBuilder::with_id("main-tray")
+    let tray_rgba = ::image::load_from_memory(include_bytes!("../../icons/tray-icon.png"))?
+        .to_rgba8();
+    let (tray_width, tray_height) = tray_rgba.dimensions();
+    let tray_icon = tauri::image::Image::new_owned(tray_rgba.into_raw(), tray_width, tray_height);
+
+    TrayIconBuilder::with_id("main-tray")
+        .icon(tray_icon)
         .menu(&Menu::with_items(app, &[&si, &pi, &ti, &wi, &qi])?)
-        .tooltip("VanishTrans - AI 翻译")
-        .on_menu_event(|app, e| match e.id().as_ref() {
+        .tooltip("VanishTrans · 快捷翻译")
+        .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => toggle_main(app),
             "pin" => toggle_top(app),
             "toggle_shortcuts" => toggle_shortcuts(app),
@@ -34,20 +45,17 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "quit" => app.exit(0),
             _ => {}
         })
-        .on_tray_icon_event(|tray, e| {
+        .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
-            } = e
+            } = event
             {
                 toggle_main(tray.app_handle());
             }
-        });
-    if let Some(icon) = app.default_window_icon() {
-        tray_builder = tray_builder.icon(icon.clone());
-    }
-    let _ = tray_builder.build(app)?;
+        })
+        .build(app)?;
 
     Ok(())
 }

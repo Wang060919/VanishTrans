@@ -73,7 +73,7 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
 
-    await user.click(screen.getByTitle("API 设置"));
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
     const modelInput = screen.getByDisplayValue("gpt-4o-mini");
     await user.clear(modelInput);
     await user.type(modelInput, "gpt-4.1-mini");
@@ -165,10 +165,10 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
 
-    const select = screen.getByRole("combobox");
-    await user.selectOptions(select, "zh2en");
+    const sourceLanguage = screen.getByRole("combobox", { name: "源语言" });
+    await user.selectOptions(sourceLanguage, "zh");
 
-    const textarea = screen.getByPlaceholderText(/Alt\+Q/);
+    const textarea = screen.getByPlaceholderText("输入、粘贴或拖入文件");
     await user.type(textarea, "some text{enter}");
 
     await waitFor(() => {
@@ -193,11 +193,44 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
 
-    const textarea = screen.getByPlaceholderText(/Alt\+Q/);
+    const textarea = screen.getByPlaceholderText("输入、粘贴或拖入文件");
     await user.type(textarea, "hello{enter}");
 
     await waitFor(() => {
       expect(screen.getByText(/请先在设置中配置 API Key/)).toBeInTheDocument();
     });
+  });
+  it("exposes the branded compact workspace through accessible controls", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
+
+    expect(screen.getByLabelText("VanishTrans")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "翻译文本" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开历史记录" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开设置" })).toBeInTheDocument();
+    expect(screen.queryByText("⚙")).not.toBeInTheDocument();
+    expect(screen.queryByText("📋")).not.toBeInTheDocument();
+    expect(screen.queryByText("📌")).not.toBeInTheDocument();
+  });
+
+  it("keeps settings and history in mutually exclusive overlay drawers", async () => {
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_api_config") {
+        return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
+      }
+      if (cmd === "get_history") return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
+
+    await user.click(screen.getByRole("button", { name: "打开设置" }));
+    expect(screen.getByRole("dialog", { name: "设置" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "打开历史记录" }));
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "翻译历史" })).toBeInTheDocument());
+    expect(screen.queryByRole("dialog", { name: "设置" })).not.toBeInTheDocument();
   });
 });
