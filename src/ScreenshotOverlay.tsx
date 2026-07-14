@@ -99,7 +99,7 @@ export default function ScreenshotOverlay() {
     const rh = Math.abs(sel.curY - sel.startY);
     if (rw < 2 || rh < 2) return;
     ctx.clearRect(x, y, rw, rh);
-    ctx.strokeStyle = getComputedStyle(canvas).getPropertyValue("--color-primary").trim() || "#0078d4";
+    ctx.strokeStyle = getComputedStyle(canvas).getPropertyValue("--color-signal").trim() || "#0078d4";
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, rw, rh);
     const label = `${Math.round(rw)} × ${Math.round(rh)}`;

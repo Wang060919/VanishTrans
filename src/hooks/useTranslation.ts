@@ -196,7 +196,7 @@ export function useTranslation() {
         setOutputText(result);
         setTranslationKey(++translationIdCounter);
         setGlowActive(true);
-        setFileStatus(`✅ ${filename} 翻译完成`);
+        setFileStatus(`${filename} 翻译完成`);
         setTimeout(() => {
           if (reqId === requestIdRef.current) setFileStatus(null);
         }, 3000);
@@ -211,7 +211,7 @@ export function useTranslation() {
           if (reqId === requestIdRef.current) {
             setOutputText(rawResult);
             setTranslationKey(++translationIdCounter);
-            setFileStatus(`⚠️ ${filename} 结构丢失，显示纯文本结果`);
+            setFileStatus(`${filename} 结构丢失，已显示纯文本结果`);
             setTimeout(() => {
               if (reqId === requestIdRef.current) setFileStatus(null);
             }, 3000);
