@@ -562,6 +562,28 @@ pub async fn do_translate_stream_async(
             if let Some(data) = line.strip_prefix("data: ") {
                 let data = data.trim();
                 if data == "[DONE]" {
+                    // Process any remaining buffer lines before returning
+                    while let Some(line_end) = buffer.find('\n') {
+                        let remaining = buffer[..line_end].trim().to_string();
+                        buffer = buffer[line_end + 1..].to_string();
+                        if remaining.is_empty() || remaining.starts_with(':') {
+                            continue;
+                        }
+                        if let Some(d) = remaining.strip_prefix("data: ") {
+                            let d = d.trim();
+                            if d == "[DONE]" { break; }
+                            if let Ok(c) = serde_json::from_str::<StreamChunk>(d) {
+                                if let Some(choice) = c.choices.first() {
+                                    if let Some(content) = &choice.delta.content {
+                                        if !content.is_empty() {
+                                            full_text.push_str(content);
+                                            on_chunk(content.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     return Ok(full_text);
                 }
 

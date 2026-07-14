@@ -37,6 +37,7 @@ interface MainLayoutProps {
   streaming: boolean;
   fileStatus: string | null;
   onTranslateFile: (filename: string, content: string) => void;
+  translationKey: number;
 }
 
 export default function MainLayout({
@@ -53,6 +54,7 @@ export default function MainLayout({
   hotkeys, hotkeyLabels, onHotkeysChange,
   streaming,
   fileStatus, onTranslateFile,
+  translationKey,
 }: MainLayoutProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -170,6 +172,7 @@ export default function MainLayout({
         streaming={streaming}
         fileStatus={fileStatus}
         onTranslateFile={onTranslateFile}
+        translationKey={translationKey}
       />
 
       {/* Footer */}

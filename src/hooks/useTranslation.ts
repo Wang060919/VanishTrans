@@ -6,7 +6,6 @@ import {
   rebuildSrt,
   parseJson,
   rebuildJson,
-  type FileType,
 } from "../lib/fileParser";
 
 export interface TranslateState {
@@ -19,6 +18,9 @@ export interface TranslateState {
 
 export type LangDirection = "auto" | "auto2zh" | "auto2en" | "zh2en" | "en2zh";
 
+/** Monotonically increasing id so Typewriter re-mounts on new translations. */
+let translationIdCounter = 0;
+
 export function useTranslation() {
   const [inputText, setInputText] = useState("");
   const [outputText, setOutputText] = useState("");
@@ -27,6 +29,7 @@ export function useTranslation() {
   const [streaming, setStreaming] = useState(false);
   const [direction, setDirection] = useState<LangDirection>("auto2zh");
   const [fileStatus, setFileStatus] = useState<string | null>(null);
+  const [translationKey, setTranslationKey] = useState(0);
 
   const directionRef = useRef(direction);
   const requestIdRef = useRef(0);
@@ -52,6 +55,7 @@ export function useTranslation() {
       });
       if (reqId === requestIdRef.current) {
         setOutputText(result);
+        setTranslationKey(++translationIdCounter);
         if (!result.startsWith("❌")) {
           setGlowActive(true);
         }
@@ -83,6 +87,7 @@ export function useTranslation() {
       // Stream done — finalize
       if (reqId === requestIdRef.current) {
         setStreaming(false);
+        setTranslationKey(++translationIdCounter);
         setGlowActive(true);
       }
     } catch (e: any) {
@@ -178,27 +183,43 @@ export function useTranslation() {
       }
 
       // Batch translate all segments at once
-      const translated = await invoke<string[]>("translate_batch", {
-        segments,
-        direction: directionRef.current,
-      });
+      try {
+        const translated = await invoke<string[]>("translate_batch", {
+          segments,
+          direction: directionRef.current,
+        });
 
-      if (reqId !== requestIdRef.current) return;
+        if (reqId !== requestIdRef.current) return;
 
-      if (translated.length === 1 && translated[0].includes("\n")) {
-        // Fallback: model didn't split properly, show raw result
-        setOutputText(translated[0]);
-      } else {
         const result = reassemble(translated);
         setInputText(content);
         setOutputText(result);
+        setTranslationKey(++translationIdCounter);
+        setGlowActive(true);
+        setFileStatus(`✅ ${filename} 翻译完成`);
+        setTimeout(() => {
+          if (reqId === requestIdRef.current) setFileStatus(null);
+        }, 3000);
+      } catch (batchErr: any) {
+        if (reqId !== requestIdRef.current) return;
+        if (batchErr === "SEGMENT_COUNT_MISMATCH") {
+          // Model didn't split correctly — show raw result as plain text
+          const rawResult = await invoke<string>("translate_with_direction", {
+            text: segments.join("\n\n"),
+            direction: directionRef.current,
+          });
+          if (reqId === requestIdRef.current) {
+            setOutputText(rawResult);
+            setTranslationKey(++translationIdCounter);
+            setFileStatus(`⚠️ ${filename} 结构丢失，显示纯文本结果`);
+            setTimeout(() => {
+              if (reqId === requestIdRef.current) setFileStatus(null);
+            }, 3000);
+          }
+        } else {
+          throw batchErr; // Re-throw for outer catch
+        }
       }
-
-      setGlowActive(true);
-      setFileStatus(`✅ ${filename} 翻译完成`);
-      setTimeout(() => {
-        if (reqId === requestIdRef.current) setFileStatus(null);
-      }, 3000);
     } catch (e: any) {
       if (reqId === requestIdRef.current) {
         setOutputText(`❌ 文件翻译失败: ${e}`);
@@ -216,6 +237,7 @@ export function useTranslation() {
     streaming,
     direction, updateDirection,
     fileStatus,
+    translationKey,
     doTranslate,
     doTranslateStream,
     doTranslateFile,

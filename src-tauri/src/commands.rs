@@ -248,9 +248,9 @@ pub async fn translate_batch(
         .collect();
 
     // If split count doesn't match (model may have merged/split segments),
-    // fall back: return the full result as the only segment
+    // return an error so the frontend shows raw text instead of broken reassembly
     if translated.len() != segments.len() {
-        return Ok(vec![result]);
+        return Err("SEGMENT_COUNT_MISMATCH".into());
     }
 
     Ok(translated)

@@ -20,6 +20,7 @@ interface TranslatePanelProps {
   streaming?: boolean;
   fileStatus: string | null;
   onTranslateFile: (filename: string, content: string) => void;
+  translationKey: number;
 }
 
 export default function TranslatePanel({
@@ -28,9 +29,10 @@ export default function TranslatePanel({
   onTranslate, inputRef,
   streaming = false,
   fileStatus, onTranslateFile,
+  translationKey,
 }: TranslatePanelProps) {
   const [dragging, setDragging] = useState(false);
-  const dragCounter = useRef(0);
+  const dragOverCounter = useRef(0);
 
   const handleCopyOutput = useCallback(async () => {
     if (!outputText || outputText.startsWith("❌")) return;
@@ -42,7 +44,7 @@ export default function TranslatePanel({
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounter.current++;
+    dragOverCounter.current++;
     if (e.dataTransfer.types.includes("Files")) {
       setDragging(true);
     }
@@ -51,8 +53,9 @@ export default function TranslatePanel({
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounter.current--;
-    if (dragCounter.current === 0) {
+    dragOverCounter.current--;
+    if (dragOverCounter.current <= 0) {
+      dragOverCounter.current = 0;
       setDragging(false);
     }
   }, []);
@@ -65,7 +68,7 @@ export default function TranslatePanel({
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    dragCounter.current = 0;
+    dragOverCounter.current = 0;
     setDragging(false);
 
     const file = e.dataTransfer.files[0];
@@ -91,7 +94,6 @@ export default function TranslatePanel({
 
   const isError = outputText.startsWith("❌");
   const isStreamingActive = loading && streaming;
-  const isComplete = !loading && !isError && outputText.length > 0;
 
   return (
     <div
@@ -162,7 +164,7 @@ export default function TranslatePanel({
             <>
               <p className="whitespace-pre-wrap text-text">
                 {isError ? outputText : (
-                  <Typewriter key={`done-${outputText.length}`} text={outputText} speed={20} />
+                  <Typewriter key={translationKey} text={outputText} speed={20} />
                 )}
               </p>
               {!isError ? (

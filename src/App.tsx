@@ -95,6 +95,7 @@ export default function App() {
       streaming={translation.streaming}
       fileStatus={translation.fileStatus}
       onTranslateFile={translation.doTranslateFile}
+      translationKey={translation.translationKey}
     />
   );
 }

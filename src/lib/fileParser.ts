@@ -15,19 +15,22 @@ export interface SrtBlock {
 export function parseSrt(content: string): SrtBlock[] {
   const blocks: SrtBlock[] = [];
   const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // Split on blank lines — each section is one subtitle block
   const sections = normalized.split(/\n\n+/).filter((s) => s.trim());
 
   for (const section of sections) {
     const lines = section.split("\n");
-    if (lines.length < 3) continue;
+    if (lines.length < 2) continue;
 
     const index = parseInt(lines[0].trim(), 10);
     if (isNaN(index)) continue;
 
     const timecode = lines[1].trim();
-    const text = lines.slice(2).join("\n").trim();
+    if (!timecode.includes("-->")) continue;
 
-    if (timecode.includes("-->") && text) {
+    // Text is everything after the timecode line (supports multi-line subtitles)
+    const text = lines.slice(2).join("\n").trim();
+    if (text) {
       blocks.push({ index, timecode, text });
     }
   }
@@ -81,17 +84,41 @@ export function rebuildJson(original: string, translations: Map<string, string>)
   return JSON.stringify(obj, null, 2);
 }
 
-function applyTranslations(value: unknown, path: string, translations: Map<string, string>): void {
-  if (typeof value === "string") {
-    const translated = translations.get(path);
-    if (translated !== undefined) {
-      (value as any) = translated; // JSON parse returns mutable objects
-    }
-  } else if (Array.isArray(value)) {
-    value.forEach((item, i) => applyTranslations(item, `${path}[${i}]`, translations));
+/**
+ * Recursively walk the object tree and replace string values
+ * whose path exists in the translations map.
+ *
+ * Bug fix: must mutate `parent[key]` / `parent[index]`, not reassign
+ * the local parameter — primitives are passed by value in JS.
+ */
+function applyTranslations(
+  value: unknown,
+  path: string,
+  translations: Map<string, string>,
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, i) => {
+      if (typeof item === "string") {
+        const key = `${path}[${i}]`;
+        const translated = translations.get(key);
+        if (translated !== undefined) {
+          value[i] = translated;
+        }
+      } else if (item && typeof item === "object") {
+        applyTranslations(item, `${path}[${i}]`, translations);
+      }
+    });
   } else if (value && typeof value === "object") {
     for (const [key, val] of Object.entries(value)) {
-      applyTranslations(val, path ? `${path}.${key}` : key, translations);
+      const fullPath = path ? `${path}.${key}` : key;
+      if (typeof val === "string") {
+        const translated = translations.get(fullPath);
+        if (translated !== undefined) {
+          (value as Record<string, unknown>)[key] = translated;
+        }
+      } else if (val && typeof val === "object") {
+        applyTranslations(val, fullPath, translations);
+      }
     }
   }
 }
