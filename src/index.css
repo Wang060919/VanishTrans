@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design Tokens ────────────────────────────────────── */
+:root {
+  /* Brand */
+  --color-primary: #0078d4;
+  --color-primary-hover: #106ebe;
+  --color-primary-soft: rgba(0, 120, 212, 0.15);
+  --color-primary-border: rgba(0, 120, 212, 0.3);
+
+  /* Surface */
+  --color-surface: #faf9f8;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #f0f4ff;
+  --color-surface-overlay: #2a2a2a;
+
+  /* Border */
+  --color-border: #e8e8e8;
+  --color-border-subtle: #e0e0e0;
+  --color-border-strong: #d5d5d5;
+
+  /* Text */
+  --color-text: #1b1b1b;
+  --color-text-secondary: #444444;
+  --color-text-muted: #888888;
+  --color-text-ghost: #bbbbbb;
+  --color-text-disabled: #cccccc;
+
+  /* Feedback */
+  --color-danger: #ef4444;
+  --color-danger-soft: rgba(239, 68, 68, 0.1);
+
+  /* Shadows */
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  /* Typography */
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #4da3e8;
+    --color-primary-hover: #5daef0;
+    --color-primary-soft: rgba(77, 163, 232, 0.15);
+    --color-primary-border: rgba(77, 163, 232, 0.3);
+
+    --color-surface: #1e1e1e;
+    --color-surface-raised: #2a2a2a;
+    --color-surface-sunken: #242a35;
+    --color-surface-overlay: #333333;
+
+    --color-border: #333333;
+    --color-border-subtle: #383838;
+    --color-border-strong: #444444;
+
+    --color-text: #e8e6e3;
+    --color-text-secondary: #cccccc;
+    --color-text-muted: #999999;
+    --color-text-ghost: #555555;
+    --color-text-disabled: #444444;
+
+    --color-danger-soft: rgba(239, 68, 68, 0.15);
+
+    --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.2);
+    --shadow-float: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+    color-scheme: dark;
+  }
+}
+
+/* ── Base ──────────────────────────────────────────────── */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+textarea, input, .selectable {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ── Focus visible (keyboard-only focus ring) ──────────── */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb {
+    background: #444;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+}
+
+/* ── Keyframes ─────────────────────────────────────────── */
+@keyframes pulseDot {
+  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shiny {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.25; transform: scale(1.05); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--glow-color), 0 0 12px 2px var(--glow-alpha); }
+  50% { box-shadow: 0 0 0 3px var(--glow-color), 0 0 20px 4px var(--glow-alpha); }
+}
+
+@keyframes fadeSlideUp {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
