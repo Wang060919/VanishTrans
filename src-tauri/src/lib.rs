@@ -84,6 +84,24 @@ pub fn run() {
             setup::setup_shortcuts(app)?;
             setup::setup_clipboard_watch(app);
 
+            // Restore ball window position from config
+            if let Some(ball_w) = app.get_webview_window("ball") {
+                let config_dir = app
+                    .path()
+                    .app_data_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."));
+                let config_path = config_dir.join("config.json");
+                if let Ok(cfg_str) = std::fs::read_to_string(&config_path) {
+                    if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&cfg_str) {
+                        let x = cfg["ball_x"].as_i64().unwrap_or(100) as i32;
+                        let y = cfg["ball_y"].as_i64().unwrap_or(100) as i32;
+                        let _ = ball_w.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition { x, y },
+                        ));
+                    }
+                }
+            }
+
             // Pre-warm HTTP connection pool for faster first translation
             let warm_handle = app.handle().clone();
             app.state::<AppState>().runtime.spawn(async move {
@@ -139,6 +157,10 @@ pub fn run() {
             commands::tm_stats,
             commands::tm_export,
             commands::tm_import,
+            commands::toggle_ball_show_main,
+            commands::toggle_ball,
+            commands::save_ball_position,
+            commands::get_ball_position,
         ])
         .run(tauri::generate_context!())
         .expect("启动 VanishTrans 失败");
@@ -164,6 +186,16 @@ fn toggle_top(app: &tauri::AppHandle) {
         let t = w.is_always_on_top().unwrap_or(false);
         let _ = w.set_always_on_top(!t);
         app.state::<AppState>().pinned.store(!t, Ordering::SeqCst);
+    }
+}
+
+fn toggle_ball(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("ball") {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
+        } else {
+            let _ = w.show();
+        }
     }
 }
 
