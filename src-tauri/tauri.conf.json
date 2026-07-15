@@ -20,6 +20,8 @@
         "minHeight": 360,
         "resizable": true,
         "decorations": true,
+        "titleBarStyle": "overlay",
+        "hiddenTitle": true,
         "center": true,
         "visible": false,
         "skipTaskbar": true,
