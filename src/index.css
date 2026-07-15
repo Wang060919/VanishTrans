@@ -274,8 +274,6 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
   overflow: hidden;
   background: var(--color-surface);
   color: var(--color-ink);
-  border: 1px solid var(--color-line);
-  box-shadow: var(--shadow-window);
   animation: appEnter var(--duration-normal) var(--ease-standard) both;
 }
 
@@ -286,8 +284,13 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
   justify-content: space-between;
   flex: none;
   padding: 0 7px 0 13px;
+  padding-right: 145px; /* space for native min/max/close controls */
   border-bottom: 1px solid var(--color-line);
   background: var(--color-surface-raised);
+  -webkit-app-region: drag;
+}
+.app-header-actions, .app-header-actions button {
+  -webkit-app-region: no-drag;
 }
 .app-brand { min-width: 0; display: flex; align-items: center; height: 100%; }
 .app-header-actions { display: flex; align-items: center; gap: 1px; }

@@ -95,8 +95,8 @@ export default function MainLayout({
 
   return (
     <div className="app-shell">
-      <header className="app-header" data-tauri-drag-region>
-        <div className="app-brand" data-tauri-drag-region><VanishMark /></div>
+      <header className="app-header">
+        <div className="app-brand"><VanishMark /></div>
         <div className="app-header-actions">
           <IconButton icon={<Pin size={15} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />
           <IconButton icon={<History size={15} />} label="打开历史记录" active={activePanel === "history"} onClick={openHistory} />
