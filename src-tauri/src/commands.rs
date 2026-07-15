@@ -479,6 +479,79 @@ pub fn tm_import(
     tm.import_csv(std::path::Path::new(&path))
 }
 
+// -----------------------------------------------------------
+// Ball window commands
+// -----------------------------------------------------------
+
+#[tauri::command]
+pub fn toggle_ball_show_main(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("main") {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
+        } else {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn toggle_ball(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("ball") {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
+        } else {
+            let _ = w.show();
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_ball_position(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("ball") {
+        let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+    }
+    // Persist to config
+    let config_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let config_path = config_dir.join("config.json");
+    let mut cfg: serde_json::Value = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|d| serde_json::from_str(&d).ok())
+        .unwrap_or(serde_json::json!({}));
+    cfg["ball_x"] = serde_json::json!(x);
+    cfg["ball_y"] = serde_json::json!(y);
+    if let Some(p) = config_path.parent() {
+        let _ = std::fs::create_dir_all(p);
+    }
+    let _ = std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap_or_default());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_ball_position(app: tauri::AppHandle) -> Result<(i32, i32), String> {
+    let config_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let config_path = config_dir.join("config.json");
+    let cfg: serde_json::Value = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|d| serde_json::from_str(&d).ok())
+        .unwrap_or(serde_json::json!({}));
+    let x = cfg["ball_x"].as_i64().unwrap_or(100) as i32;
+    let y = cfg["ball_y"].as_i64().unwrap_or(100) as i32;
+    Ok((x, y))
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -2,7 +2,7 @@
   "$schema": "./gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default permissions for the application",
-  "windows": ["main", "screenshot"],
+  "windows": ["main", "screenshot", "ball"],
   "permissions": [
     "core:default",
     "core:window:default",
