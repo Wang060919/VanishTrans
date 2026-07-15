@@ -1,5 +1,6 @@
 ﻿import { invoke } from "@tauri-apps/api/core";
-import { History, Pin, Settings } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { History, Maximize2, Minus, Pin, Settings, Square, X } from "lucide-react";
 import React, { useCallback, useRef, useState } from "react";
 import IconButton from "../components/IconButton";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -93,14 +94,24 @@ export default function MainLayout({
     debounceRef.current = setTimeout(() => loadHistory(query || undefined), 200);
   }, [loadHistory]);
 
+  const win = getCurrentWindow();
+  const handleMinimize = useCallback(() => { win.minimize(); }, [win]);
+  const handleMaximize = useCallback(() => { win.toggleMaximize(); }, [win]);
+  const handleClose = useCallback(() => { win.close(); }, [win]);
+
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="app-brand"><VanishMark /></div>
+      <header className="app-header" data-tauri-drag-region>
+        <div className="app-brand" data-tauri-drag-region><VanishMark /></div>
         <div className="app-header-actions">
           <IconButton icon={<Pin size={15} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />
           <IconButton icon={<History size={15} />} label="打开历史记录" active={activePanel === "history"} onClick={openHistory} />
           <IconButton icon={<Settings size={15} />} label="打开设置" active={activePanel === "settings"} onClick={openSettings} title="API 设置" />
+          <div className="window-controls">
+            <button className="window-controls__btn" onClick={handleMinimize} title="最小化"><Minus size={14} /></button>
+            <button className="window-controls__btn" onClick={handleMaximize} title="最大化"><Square size={11} /></button>
+            <button className="window-controls__btn window-controls__btn--close" onClick={handleClose} title="关闭"><X size={14} /></button>
+          </div>
         </div>
       </header>
 
