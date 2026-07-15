@@ -1,6 +1,5 @@
 ﻿import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { History, Pin, Settings, X } from "lucide-react";
+import { History, Pin, Settings } from "lucide-react";
 import React, { useCallback, useRef, useState } from "react";
 import IconButton from "../components/IconButton";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -94,10 +93,6 @@ export default function MainLayout({
     debounceRef.current = setTimeout(() => loadHistory(query || undefined), 200);
   }, [loadHistory]);
 
-  const closeWindow = useCallback(async () => {
-    await getCurrentWindow().close();
-  }, []);
-
   return (
     <div className="app-shell">
       <header className="app-header" data-tauri-drag-region>
@@ -106,7 +101,6 @@ export default function MainLayout({
           <IconButton icon={<Pin size={15} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />
           <IconButton icon={<History size={15} />} label="打开历史记录" active={activePanel === "history"} onClick={openHistory} />
           <IconButton icon={<Settings size={15} />} label="打开设置" active={activePanel === "settings"} onClick={openSettings} title="API 设置" />
-          <IconButton icon={<X size={16} />} label="关闭窗口" onClick={closeWindow} className="window-close" />
         </div>
       </header>
 
