@@ -50,10 +50,9 @@ impl HistoryStore {
     pub fn set_max_records(&self, max: usize) {
         self.max_records.store(max, Ordering::Relaxed);
         // Trim existing records if new limit is lower
-        let mut records = self.records.lock().unwrap();
-        let limit = self.max_records.load(Ordering::Relaxed);
-        if records.len() > limit {
-            let drain_count = records.len() - limit;
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        if records.len() > max {
+            let drain_count = records.len() - max;
             records.drain(..drain_count);
             self.dirty.store(true, Ordering::Relaxed);
         }
@@ -72,12 +71,12 @@ impl HistoryStore {
             direction: direction.to_string(),
             timestamp,
         };
-        let mut records = self.records.lock().unwrap();
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.push(record);
         // Keep only the latest max_records
         let limit = self.max_records.load(Ordering::Relaxed);
         if records.len() > limit {
-            let drain_count = records.len() - MAX_RECORDS;
+            let drain_count = records.len() - limit;
             records.drain(..drain_count);
         }
         // Mark dirty — actual disk write deferred to periodic flush
@@ -87,20 +86,20 @@ impl HistoryStore {
     /// Flush pending changes to disk. Called periodically and on app shutdown.
     pub fn flush(&self) {
         if !self.dirty.swap(false, Ordering::Relaxed) {
-            return; // Nothing to flush
+            return;
         }
-        let records = self.records.lock().unwrap();
+        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         self.save_locked(&records);
     }
 
     pub fn get_all(&self) -> Vec<TranslationRecord> {
-        let records = self.records.lock().unwrap();
+        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.iter().rev().cloned().collect()
     }
 
     pub fn search(&self, query: &str) -> Vec<TranslationRecord> {
         let query_lower = query.to_lowercase();
-        let records = self.records.lock().unwrap();
+        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records
             .iter()
             .rev()
@@ -113,13 +112,13 @@ impl HistoryStore {
     }
 
     pub fn delete(&self, id: u64) {
-        let mut records = self.records.lock().unwrap();
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.retain(|r| r.id != id);
         self.save_locked(&records);
     }
 
     pub fn clear(&self) {
-        let mut records = self.records.lock().unwrap();
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.clear();
         self.save_locked(&records);
     }

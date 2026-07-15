@@ -25,6 +25,11 @@ pub struct TranslationMemory {
     conn: Mutex<Connection>,
 }
 
+/// Recover from a poisoned mutex by consuming the poison and returning the inner value.
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
+}
+
 impl TranslationMemory {
     /// Open or create the TM database in the given config directory.
     pub fn open(config_dir: &Path) -> Result<Self, String> {
@@ -54,9 +59,20 @@ impl TranslationMemory {
         })
     }
 
+    /// Internal store method — caller must already hold the lock.
+    fn store_inner(conn: &Connection, source: &str, target: &str, source_lang: &str, target_lang: &str) {
+        let _ = conn.execute(
+            "INSERT INTO translation_memory (source, target, source_lang, target_lang)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(source, source_lang, target_lang)
+             DO UPDATE SET target = excluded.target",
+            params![source, target, source_lang, target_lang],
+        );
+    }
+
     /// Look up an exact match in the TM. Returns the translation if found.
     pub fn lookup(&self, source: &str, source_lang: &str, target_lang: &str) -> Option<String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = lock_or_recover(&self.conn);
         let mut stmt = conn
             .prepare(
                 "SELECT id, target FROM translation_memory
@@ -69,7 +85,6 @@ impl TranslationMemory {
         if let Some(row) = rows.next().ok()? {
             let id: i64 = row.get(0).ok()?;
             let target: String = row.get(1).ok()?;
-            // Increment hit count
             let _ = conn.execute(
                 "UPDATE translation_memory SET hit_count = hit_count + 1 WHERE id = ?1",
                 params![id],
@@ -81,26 +96,14 @@ impl TranslationMemory {
     }
 
     /// Store a translation in the TM (UPSERT).
-    pub fn store(
-        &self,
-        source: &str,
-        target: &str,
-        source_lang: &str,
-        target_lang: &str,
-    ) {
-        let conn = self.conn.lock().unwrap();
-        let _ = conn.execute(
-            "INSERT INTO translation_memory (source, target, source_lang, target_lang)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(source, source_lang, target_lang)
-             DO UPDATE SET target = excluded.target",
-            params![source, target, source_lang, target_lang],
-        );
+    pub fn store(&self, source: &str, target: &str, source_lang: &str, target_lang: &str) {
+        let conn = lock_or_recover(&self.conn);
+        Self::store_inner(&conn, source, target, source_lang, target_lang);
     }
 
     /// Search TM entries by source or target text.
     pub fn search(&self, query: &str) -> Vec<TmEntry> {
-        let conn = self.conn.lock().unwrap();
+        let conn = lock_or_recover(&self.conn);
         let sql = if query.is_empty() {
             "SELECT id, source, target, source_lang, target_lang, created_at, hit_count
              FROM translation_memory ORDER BY created_at DESC LIMIT 200"
@@ -147,19 +150,19 @@ impl TranslationMemory {
 
     /// Delete a single TM entry by ID.
     pub fn delete(&self, id: i64) {
-        let conn = self.conn.lock().unwrap();
+        let conn = lock_or_recover(&self.conn);
         let _ = conn.execute("DELETE FROM translation_memory WHERE id = ?1", params![id]);
     }
 
     /// Clear all TM entries.
     pub fn clear(&self) {
-        let conn = self.conn.lock().unwrap();
+        let conn = lock_or_recover(&self.conn);
         let _ = conn.execute("DELETE FROM translation_memory", []);
     }
 
     /// Get TM statistics.
     pub fn stats(&self) -> TmStats {
-        let conn = self.conn.lock().unwrap();
+        let conn = lock_or_recover(&self.conn);
         let total_entries: usize = conn
             .query_row("SELECT COUNT(*) FROM translation_memory", [], |r| r.get(0))
             .unwrap_or(0);
@@ -178,8 +181,6 @@ impl TranslationMemory {
     pub fn export_csv(&self, path: &Path) -> Result<usize, String> {
         let entries = self.search("");
         let count = entries.len();
-
-        // Write UTF-8 BOM first, then CSV data
         let mut content = String::from("\u{FEFF}");
         let mut wtr = csv::Writer::from_writer(Vec::new());
         for entry in &entries {
@@ -195,10 +196,12 @@ impl TranslationMemory {
     }
 
     /// Import TM from CSV (source, target, source_lang, target_lang).
+    /// Acquires lock once and inserts directly — avoids R1 deadlock.
     pub fn import_csv(&self, path: &Path) -> Result<usize, String> {
         let mut rdr = csv::Reader::from_path(path)
             .map_err(|e| format!("读取 CSV 文件失败: {}", e))?;
 
+        let conn = lock_or_recover(&self.conn);
         let mut count = 0;
         for result in rdr.records() {
             let record = result.map_err(|e| format!("解析 CSV 行失败: {}", e))?;
@@ -207,7 +210,7 @@ impl TranslationMemory {
                 let target = record[1].to_string();
                 let source_lang = record.get(2).unwrap_or("").to_string();
                 let target_lang = record.get(3).unwrap_or("").to_string();
-                self.store(&source, &target, &source_lang, &target_lang);
+                Self::store_inner(&conn, &source, &target, &source_lang, &target_lang);
                 count += 1;
             }
         }

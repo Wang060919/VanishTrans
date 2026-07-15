@@ -123,10 +123,18 @@ export default function SettingsPanel({
             {draftGlossary.length === 0 ? <div className="settings-empty">还没有术语。添加后会在翻译提示中自动应用。</div> : (
               <div className="glossary-list">
                 {draftGlossary.map((entry, index) => (
-                  <div className="glossary-row" key={index}>
-                    <input aria-label={`术语原文 ${index + 1}`} value={entry.source} onChange={(event) => updateTerm(index, "source", event.target.value)} onBlur={() => onGlossaryChange(draftGlossary)} placeholder="原文" />
+                  <div className="glossary-row" key={`${entry.source}-${entry.target}-${index}`}>
+                    <input aria-label={`术语原文 ${index + 1}`} value={entry.source} onChange={(event) => {
+                      const next = draftGlossary.map((e, i) => i === index ? { ...e, source: event.target.value } : e);
+                      setDraftGlossary(next);
+                      onGlossaryChange(next);
+                    }} placeholder="原文" />
                     <span>→</span>
-                    <input aria-label={`术语译文 ${index + 1}`} value={entry.target} onChange={(event) => updateTerm(index, "target", event.target.value)} onBlur={() => onGlossaryChange(draftGlossary)} placeholder="译文" />
+                    <input aria-label={`术语译文 ${index + 1}`} value={entry.target} onChange={(event) => {
+                      const next = draftGlossary.map((e, i) => i === index ? { ...e, target: event.target.value } : e);
+                      setDraftGlossary(next);
+                      onGlossaryChange(next);
+                    }} placeholder="译文" />
                     <button type="button" aria-label={`删除术语 ${index + 1}`} onClick={() => deleteTerm(index)}><Trash2 size={14} /></button>
                   </div>
                 ))}

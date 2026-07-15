@@ -53,7 +53,7 @@ export default function App() {
   // Signal Rust that frontend listeners are mounted
   useEffect(() => {
     if (windowType === "main") {
-      invoke("frontend_ready");
+      invoke("frontend_ready").catch((e) => console.error("[app] frontend_ready failed:", e));
     }
   }, [windowType]);
 
