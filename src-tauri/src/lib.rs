@@ -4,6 +4,7 @@ mod history;
 mod keyboard;
 mod ocr;
 mod setup;
+mod tm;
 mod translate;
 
 use std::path::PathBuf;
@@ -62,7 +63,13 @@ pub fn run() {
                 .unwrap_or_else(|_| PathBuf::from("."));
             let api_config = ApiConfig::load_or_default(config_dir.clone());
             app.manage(api_config);
-            app.manage(HistoryStore::load_or_default(config_dir));
+            app.manage(HistoryStore::load_or_default(config_dir.clone()));
+
+            // Initialize Translation Memory (SQLite)
+            match tm::TranslationMemory::open(&config_dir) {
+                Ok(tmem) => { app.manage(tmem); }
+                Err(e) => { log::error!("[tm] Failed to init: {}", e); }
+            }
 
             // Periodic history flush — every 5 seconds, write dirty records to disk
             let flush_handle = app.handle().clone();
@@ -76,6 +83,24 @@ pub fn run() {
             setup::setup_tray(app)?;
             setup::setup_shortcuts(app)?;
             setup::setup_clipboard_watch(app);
+
+            // Restore ball window position from config
+            if let Some(ball_w) = app.get_webview_window("ball") {
+                let config_dir = app
+                    .path()
+                    .app_data_dir()
+                    .unwrap_or_else(|_| PathBuf::from("."));
+                let config_path = config_dir.join("config.json");
+                if let Ok(cfg_str) = std::fs::read_to_string(&config_path) {
+                    if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&cfg_str) {
+                        let x = cfg["ball_x"].as_i64().unwrap_or(100) as i32;
+                        let y = cfg["ball_y"].as_i64().unwrap_or(100) as i32;
+                        let _ = ball_w.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition { x, y },
+                        ));
+                    }
+                }
+            }
 
             // Pre-warm HTTP connection pool for faster first translation
             let warm_handle = app.handle().clone();
@@ -97,17 +122,9 @@ pub fn run() {
             if let tauri::WindowEvent::Focused(false) = e {
                 let label = w.label();
                 if label == "main" && !w.state::<AppState>().pinned.load(Ordering::SeqCst) {
-                    // Delay auto-hide by 150ms so the user can click elsewhere
-                    // to select text without the window disappearing instantly.
-                    let wh = w.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(150));
-                        // Only hide if the window is still unfocused
-                        if wh.is_focused().unwrap_or(true) {
-                            return;
-                        }
-                        let _ = wh.hide();
-                    });
+                    // Delegate auto-hide to frontend via JS setTimeout —
+                    // avoids spawning a Rust thread for a simple delay.
+                    let _ = w.emit("schedule-auto-hide", ());
                 }
             }
         })
@@ -121,6 +138,7 @@ pub fn run() {
             commands::set_api_config,
             commands::set_hotkeys,
             commands::set_glossary,
+            commands::set_max_records,
             commands::translate,
             commands::translate_with_direction,
             commands::translate_stream,
@@ -133,6 +151,16 @@ pub fn run() {
             commands::get_history,
             commands::delete_history_record,
             commands::clear_history,
+            commands::tm_search,
+            commands::tm_delete,
+            commands::tm_clear,
+            commands::tm_stats,
+            commands::tm_export,
+            commands::tm_import,
+            commands::toggle_ball_show_main,
+            commands::toggle_ball,
+            commands::save_ball_position,
+            commands::get_ball_position,
         ])
         .run(tauri::generate_context!())
         .expect("启动 VanishTrans 失败");
@@ -158,6 +186,16 @@ fn toggle_top(app: &tauri::AppHandle) {
         let t = w.is_always_on_top().unwrap_or(false);
         let _ = w.set_always_on_top(!t);
         app.state::<AppState>().pinned.store(!t, Ordering::SeqCst);
+    }
+}
+
+fn toggle_ball(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("ball") {
+        if w.is_visible().unwrap_or(false) {
+            let _ = w.hide();
+        } else {
+            let _ = w.show();
+        }
     }
 }
 

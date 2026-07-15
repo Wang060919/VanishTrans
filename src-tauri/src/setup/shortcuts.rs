@@ -281,6 +281,9 @@ fn handle_alt_w(app: tauri::AppHandle) {
                 Some(d) => d,
                 None => {
                     log::error!("[screenshot] Capture failed");
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.emit("screenshot-error", "截图失败，请检查屏幕录制权限");
+                    }
                     return;
                 }
             };

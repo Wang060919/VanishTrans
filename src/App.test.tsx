@@ -82,7 +82,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith("set_api_config", {
         baseUrl: "https://api.openai.com",
-        apiKey: null,
+        apiKey: undefined,
         model: "gpt-4.1-mini",
       });
     });

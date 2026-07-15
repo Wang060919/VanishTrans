@@ -1,9 +1,10 @@
-﻿import { Check, KeyRound, Moon, Plus, Server, Sun, Trash2 } from "lucide-react";
+﻿import { Check, Database, KeyRound, Moon, Plus, Server, Sun, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import HotkeyEditor from "../components/HotkeyEditor";
 import SettingInput from "../components/SettingInput";
 import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
 import type { ThemeMode } from "../hooks/useTheme";
+import TmPanel from "./TmPanel";
 
 interface SettingsPanelProps {
   baseUrl: string;
@@ -23,12 +24,13 @@ interface SettingsPanelProps {
   onThemeChange: (theme: ThemeMode) => void;
 }
 
-type SettingsTab = "api" | "hotkeys" | "glossary" | "appearance";
+type SettingsTab = "api" | "hotkeys" | "glossary" | "tm" | "appearance";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "api", label: "API" },
   { id: "hotkeys", label: "快捷键" },
   { id: "glossary", label: "术语表" },
+  { id: "tm", label: "翻译记忆" },
   { id: "appearance", label: "外观" },
 ];
 
@@ -43,6 +45,7 @@ export default function SettingsPanel({
   const [activeTab, setActiveTab] = useState<SettingsTab>("api");
   const [draftGlossary, setDraftGlossary] = useState(glossary);
   const [saved, setSaved] = useState(false);
+  const [tmSearch, setTmSearch] = useState("");
 
   useEffect(() => setDraftGlossary(glossary), [glossary]);
 
@@ -120,15 +123,29 @@ export default function SettingsPanel({
             {draftGlossary.length === 0 ? <div className="settings-empty">还没有术语。添加后会在翻译提示中自动应用。</div> : (
               <div className="glossary-list">
                 {draftGlossary.map((entry, index) => (
-                  <div className="glossary-row" key={index}>
-                    <input aria-label={`术语原文 ${index + 1}`} value={entry.source} onChange={(event) => updateTerm(index, "source", event.target.value)} onBlur={() => onGlossaryChange(draftGlossary)} placeholder="原文" />
+                  <div className="glossary-row" key={`${entry.source}-${entry.target}-${index}`}>
+                    <input aria-label={`术语原文 ${index + 1}`} value={entry.source} onChange={(event) => {
+                      const next = draftGlossary.map((e, i) => i === index ? { ...e, source: event.target.value } : e);
+                      setDraftGlossary(next);
+                      onGlossaryChange(next);
+                    }} placeholder="原文" />
                     <span>→</span>
-                    <input aria-label={`术语译文 ${index + 1}`} value={entry.target} onChange={(event) => updateTerm(index, "target", event.target.value)} onBlur={() => onGlossaryChange(draftGlossary)} placeholder="译文" />
+                    <input aria-label={`术语译文 ${index + 1}`} value={entry.target} onChange={(event) => {
+                      const next = draftGlossary.map((e, i) => i === index ? { ...e, target: event.target.value } : e);
+                      setDraftGlossary(next);
+                      onGlossaryChange(next);
+                    }} placeholder="译文" />
                     <button type="button" aria-label={`删除术语 ${index + 1}`} onClick={() => deleteTerm(index)}><Trash2 size={14} /></button>
                   </div>
                 ))}
               </div>
             )}
+          </section>
+        )}
+
+        {activeTab === "tm" && (
+          <section className="settings-section" style={{ padding: 0, overflow: "hidden" }}>
+            <TmPanel searchQuery={tmSearch} onSearchChange={setTmSearch} />
           </section>
         )}
 

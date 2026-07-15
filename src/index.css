@@ -275,6 +275,7 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
   background: var(--color-surface);
   color: var(--color-ink);
   border: 1px solid var(--color-line);
+  border-radius: 8px;
   box-shadow: var(--shadow-window);
   animation: appEnter var(--duration-normal) var(--ease-standard) both;
 }
@@ -288,10 +289,34 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
   padding: 0 7px 0 13px;
   border-bottom: 1px solid var(--color-line);
   background: var(--color-surface-raised);
+  cursor: default;
+  user-select: none;
 }
 .app-brand { min-width: 0; display: flex; align-items: center; height: 100%; }
 .app-header-actions { display: flex; align-items: center; gap: 1px; }
-.window-close:hover { color: #fff; background: var(--color-danger); }
+
+/* Window controls */
+.window-controls {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+  -webkit-app-region: no-drag;
+}
+.window-controls__btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+.window-controls__btn:hover { color: var(--color-ink); background: var(--color-surface-subtle); }
+.window-controls__btn--close:hover { color: #fff; background: var(--color-danger); }
 
 .translation-workspace {
   position: relative;
