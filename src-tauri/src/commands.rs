@@ -179,16 +179,25 @@ pub async fn translate(
 pub async fn translate_with_direction(
     state: tauri::State<'_, ApiConfig>,
     history: tauri::State<'_, HistoryStore>,
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
     text: String,
     direction: String,
 ) -> Result<String, String> {
-    let seq = state.next_request_seq();
     let target = crate::translate::resolve_target_lang(&text, &direction);
+
+    // Check Translation Memory first
+    if let Some(cached) = tm.lookup(&text, "auto", target) {
+        history.add(&text, &cached, &direction);
+        return Ok(cached);
+    }
+
+    let seq = state.next_request_seq();
     let result = do_translate_async(&state, &text, "auto", target).await?;
     if !state.is_current_request(seq) {
         return Err("CANCELLED".into());
     }
-    // Record successful translation in history
+    // Store in TM and history
+    tm.store(&text, &result, "auto", target);
     history.add(&text, &result, &direction);
     Ok(result)
 }
@@ -198,11 +207,21 @@ pub async fn translate_stream(
     app: tauri::AppHandle,
     state: tauri::State<'_, ApiConfig>,
     history: tauri::State<'_, HistoryStore>,
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
     text: String,
     direction: String,
 ) -> Result<String, String> {
-    let seq = state.next_request_seq();
     let target = crate::translate::resolve_target_lang(&text, &direction);
+
+    // Check Translation Memory first
+    if let Some(cached) = tm.lookup(&text, "auto", target) {
+        let _ = app.emit("translate-stream-chunk", &cached);
+        let _ = app.emit("translate-stream-done", &cached);
+        history.add(&text, &cached, &direction);
+        return Ok(cached);
+    }
+
+    let seq = state.next_request_seq();
     let app_clone = app.clone();
     let seq_for_closure = seq;
     let state_for_closure = state.inner();
@@ -226,7 +245,8 @@ pub async fn translate_stream(
     }
 
     let _ = app.emit("translate-stream-done", &result);
-    // Record successful translation in history
+    // Store in TM and history
+    tm.store(&text, &result, "auto", target);
     history.add(&text, &result, &direction);
     Ok(result)
 }
@@ -405,6 +425,58 @@ pub fn finish_ocr(app: tauri::AppHandle, text: String) -> Result<(), String> {
         let _ = w.emit("ocr-translate", text);
     }
     Ok(())
+}
+
+// -----------------------------------------------------------
+// Translation Memory commands
+// -----------------------------------------------------------
+
+#[tauri::command]
+pub fn tm_search(
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
+    query: Option<String>,
+) -> Result<Vec<crate::tm::TmEntry>, String> {
+    Ok(tm.search(query.as_deref().unwrap_or("")))
+}
+
+#[tauri::command]
+pub fn tm_delete(
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
+    id: i64,
+) -> Result<(), String> {
+    tm.delete(id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn tm_clear(
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
+) -> Result<(), String> {
+    tm.clear();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn tm_stats(
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
+) -> Result<crate::tm::TmStats, String> {
+    Ok(tm.stats())
+}
+
+#[tauri::command]
+pub fn tm_export(
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
+    path: String,
+) -> Result<usize, String> {
+    tm.export_csv(std::path::Path::new(&path))
+}
+
+#[tauri::command]
+pub fn tm_import(
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
+    path: String,
+) -> Result<usize, String> {
+    tm.import_csv(std::path::Path::new(&path))
 }
 
 
