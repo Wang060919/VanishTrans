@@ -104,22 +104,15 @@ export default function MainLayout({
     try { await getCurrentWindow().close(); } catch (e) { console.error("close failed", e); }
   }, []);
 
-  // Custom drag: startDragging is more reliable than -webkit-app-region
-  const handleDragStart = useCallback(async (e: React.MouseEvent) => {
-    // Only drag on the header background, not on buttons
-    if ((e.target as HTMLElement).closest("button, .window-controls")) return;
-    try { await getCurrentWindow().startDragging(); } catch (_) {}
-  }, []);
-
   return (
     <div className="app-shell">
-      <header className="app-header" onMouseDown={handleDragStart}>
+      <header className="app-header" data-tauri-drag-region>
         <div className="app-brand"><VanishMark /></div>
-        <div className="app-header-actions">
+        <div className="app-header-actions" data-tauri-drag-region="false">
           <IconButton icon={<Pin size={15} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />
           <IconButton icon={<History size={15} />} label="打开历史记录" active={activePanel === "history"} onClick={openHistory} />
           <IconButton icon={<Settings size={15} />} label="打开设置" active={activePanel === "settings"} onClick={openSettings} title="API 设置" />
-          <div className="window-controls">
+          <div className="window-controls" data-tauri-drag-region="false">
             <button className="window-controls__btn" onClick={handleMinimize} title="最小化"><Minus size={14} /></button>
             <button className="window-controls__btn" onClick={handleMaximize} title="最大化"><Square size={11} /></button>
             <button className="window-controls__btn window-controls__btn--close" onClick={handleClose} title="关闭"><X size={14} /></button>
