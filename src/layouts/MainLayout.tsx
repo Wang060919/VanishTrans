@@ -94,15 +94,27 @@ export default function MainLayout({
     debounceRef.current = setTimeout(() => loadHistory(query || undefined), 200);
   }, [loadHistory]);
 
-  const win = getCurrentWindow();
-  const handleMinimize = useCallback(() => { win.minimize(); }, [win]);
-  const handleMaximize = useCallback(() => { win.toggleMaximize(); }, [win]);
-  const handleClose = useCallback(() => { win.close(); }, [win]);
+  const handleMinimize = useCallback(async () => {
+    try { await getCurrentWindow().minimize(); } catch (e) { console.error("minimize failed", e); }
+  }, []);
+  const handleMaximize = useCallback(async () => {
+    try { await getCurrentWindow().toggleMaximize(); } catch (e) { console.error("maximize failed", e); }
+  }, []);
+  const handleClose = useCallback(async () => {
+    try { await getCurrentWindow().close(); } catch (e) { console.error("close failed", e); }
+  }, []);
+
+  // Custom drag: startDragging is more reliable than -webkit-app-region
+  const handleDragStart = useCallback(async (e: React.MouseEvent) => {
+    // Only drag on the header background, not on buttons
+    if ((e.target as HTMLElement).closest("button, .window-controls")) return;
+    try { await getCurrentWindow().startDragging(); } catch (_) {}
+  }, []);
 
   return (
     <div className="app-shell">
-      <header className="app-header" data-tauri-drag-region>
-        <div className="app-brand" data-tauri-drag-region><VanishMark /></div>
+      <header className="app-header" onMouseDown={handleDragStart}>
+        <div className="app-brand"><VanishMark /></div>
         <div className="app-header-actions">
           <IconButton icon={<Pin size={15} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />
           <IconButton icon={<History size={15} />} label="打开历史记录" active={activePanel === "history"} onClick={openHistory} />
