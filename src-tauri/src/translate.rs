@@ -75,11 +75,11 @@ const CRED_TARGET: &str = "VanishTrans_APIKey";
 
 #[cfg(target_os = "windows")]
 fn save_api_key_credential(key: &str) -> Result<(), String> {
+    use windows::core::HSTRING;
     use windows::Win32::Security::Credentials::{
         CredDeleteW, CredWriteW, CREDENTIALW, CRED_FLAGS, CRED_PERSIST_LOCAL_MACHINE,
         CRED_TYPE_GENERIC,
     };
-    use windows::core::HSTRING;
 
     if key.is_empty() {
         unsafe {
@@ -116,12 +116,21 @@ fn save_api_key_credential(key: &str) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn load_api_key_credential() -> Option<String> {
-    use windows::Win32::Security::Credentials::{CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC};
     use windows::core::HSTRING;
+    use windows::Win32::Security::Credentials::{
+        CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
+    };
 
     let mut pcred: *mut CREDENTIALW = std::ptr::null_mut();
     unsafe {
-        if CredReadW(&HSTRING::from(CRED_TARGET), CRED_TYPE_GENERIC, 0, &mut pcred).is_err() {
+        if CredReadW(
+            &HSTRING::from(CRED_TARGET),
+            CRED_TYPE_GENERIC,
+            0,
+            &mut pcred,
+        )
+        .is_err()
+        {
             return None;
         }
         if pcred.is_null() {
@@ -136,7 +145,11 @@ fn load_api_key_credential() -> Option<String> {
         let bytes = std::slice::from_raw_parts(blob_ptr, blob_size);
         let key = String::from_utf8_lossy(bytes).to_string();
         CredFree(pcred as *const _);
-        if key.is_empty() { None } else { Some(key) }
+        if key.is_empty() {
+            None
+        } else {
+            Some(key)
+        }
     }
 }
 
@@ -196,10 +209,26 @@ impl ApiConfig {
             std::fs::read_to_string(&config_path)
                 .ok()
                 .and_then(|d| serde_json::from_str::<PersistedConfig>(&d).ok())
-                .map(|c| (c.base_url, c.model, c.hotkeys, c.glossary, c.max_records, true))
+                .map(|c| {
+                    (
+                        c.base_url,
+                        c.model,
+                        c.hotkeys,
+                        c.glossary,
+                        c.max_records,
+                        true,
+                    )
+                })
                 .unwrap_or_else(|| {
                     let (b, _, m) = Self::defaults();
-                    (b, m, Self::default_hotkeys(), Vec::new(), default_max_records(), false)
+                    (
+                        b,
+                        m,
+                        Self::default_hotkeys(),
+                        Vec::new(),
+                        default_max_records(),
+                        false,
+                    )
                 });
         let api_key = load_api_key_credential().unwrap_or_default();
         let client = reqwest::Client::builder()
@@ -215,7 +244,11 @@ impl ApiConfig {
             client: Mutex::new(client),
             config_path,
             request_seq: AtomicU64::new(0),
-            hotkeys: Mutex::new(if hotkeys.is_empty() { Self::default_hotkeys() } else { hotkeys }),
+            hotkeys: Mutex::new(if hotkeys.is_empty() {
+                Self::default_hotkeys()
+            } else {
+                hotkeys
+            }),
             glossary: Mutex::new(glossary),
             max_records: std::sync::atomic::AtomicUsize::new(max_records),
         };
@@ -254,12 +287,29 @@ impl ApiConfig {
             let _ = std::fs::create_dir_all(p);
         }
         let tmp_path = self.config_path.with_extension("json.tmp");
-        match serde_json::to_string_pretty(&cfg) {
+        let mut value = match serde_json::to_value(&cfg) {
+            Ok(value) => value,
+            Err(e) => {
+                log::error!("[config] Failed to serialize config: {}", e);
+                return;
+            }
+        };
+        if let Ok(existing) = std::fs::read_to_string(&self.config_path) {
+            if let Ok(serde_json::Value::Object(mut existing)) =
+                serde_json::from_str::<serde_json::Value>(&existing)
+            {
+                if let serde_json::Value::Object(updated) = &value {
+                    existing.extend(updated.clone());
+                    value = serde_json::Value::Object(existing);
+                }
+            }
+        }
+        match serde_json::to_string_pretty(&value) {
             Ok(j) => {
-                if std::fs::write(&tmp_path, j).is_ok() {
-                    if std::fs::rename(&tmp_path, &self.config_path).is_err() {
-                        let _ = std::fs::remove_file(&tmp_path);
-                    }
+                if std::fs::write(&tmp_path, j).is_ok()
+                    && std::fs::rename(&tmp_path, &self.config_path).is_err()
+                {
+                    let _ = std::fs::remove_file(&tmp_path);
                 }
             }
             Err(e) => {
@@ -417,7 +467,10 @@ pub async fn do_translate_async(
         });
     }
 
-    let bytes = resp.bytes().await.map_err(|e| format!("读取响应失败: {}", e))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取响应失败: {}", e))?;
     if bytes.len() > MAX_RESPONSE_BYTES {
         return Err(format!(
             "API 响应体过大（{} KB），超过限制（{} KB）",
@@ -452,6 +505,41 @@ struct StreamChoice {
 #[derive(Deserialize)]
 struct StreamChunk {
     choices: Vec<StreamChoice>,
+}
+
+fn process_sse_line(
+    line_bytes: &[u8],
+    full_text: &mut String,
+    on_chunk: &impl Fn(String),
+) -> Result<bool, String> {
+    let line = std::str::from_utf8(line_bytes)
+        .map_err(|e| format!("流响应包含无效 UTF-8: {}", e))?
+        .trim();
+    if line.is_empty() || line.starts_with(':') {
+        return Ok(false);
+    }
+
+    let Some(data) = line.strip_prefix("data:") else {
+        return Ok(false);
+    };
+    let data = data.trim_start();
+    if data == "[DONE]" {
+        return Ok(true);
+    }
+
+    if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+        if let Some(content) = chunk
+            .choices
+            .first()
+            .and_then(|choice| choice.delta.content.as_ref())
+        {
+            if !content.is_empty() {
+                full_text.push_str(content);
+                on_chunk(content.clone());
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Streaming translation — emits text chunks via `on_chunk` callback.
@@ -553,82 +641,31 @@ pub async fn do_translate_stream_async(
 
     let mut stream = resp.bytes_stream();
     let mut full_text = String::new();
-    let mut buffer = String::new();
+    let mut buffer: Vec<u8> = Vec::new();
+    let mut response_bytes = 0usize;
 
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("流读取失败: {}", e))?;
-        let chunk_str = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&chunk_str);
+        response_bytes = response_bytes.saturating_add(chunk.len());
+        if response_bytes > MAX_RESPONSE_BYTES {
+            return Err(format!(
+                "API 流响应体过大（{} KB），超过限制（{} KB）",
+                response_bytes / 1024,
+                MAX_RESPONSE_BYTES / 1024
+            ));
+        }
+        buffer.extend_from_slice(&chunk);
 
-        // Process complete SSE lines
-        while let Some(line_end) = buffer.find('\n') {
-            let line = buffer[..line_end].trim().to_string();
-            buffer = buffer[line_end + 1..].to_string();
-
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-
-            if let Some(data) = line.strip_prefix("data: ") {
-                let data = data.trim();
-                if data == "[DONE]" {
-                    // Process any remaining buffer lines before returning
-                    while let Some(line_end) = buffer.find('\n') {
-                        let remaining = buffer[..line_end].trim().to_string();
-                        buffer = buffer[line_end + 1..].to_string();
-                        if remaining.is_empty() || remaining.starts_with(':') {
-                            continue;
-                        }
-                        if let Some(d) = remaining.strip_prefix("data: ") {
-                            let d = d.trim();
-                            if d == "[DONE]" { break; }
-                            if let Ok(c) = serde_json::from_str::<StreamChunk>(d) {
-                                if let Some(choice) = c.choices.first() {
-                                    if let Some(content) = &choice.delta.content {
-                                        if !content.is_empty() {
-                                            full_text.push_str(content);
-                                            on_chunk(content.clone());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    return Ok(full_text);
-                }
-
-                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-                    if let Some(choice) = chunk.choices.first() {
-                        if let Some(content) = &choice.delta.content {
-                            if !content.is_empty() {
-                                full_text.push_str(content);
-                                on_chunk(content.clone());
-                            }
-                        }
-                    }
-                }
+        while let Some(line_end) = buffer.iter().position(|byte| *byte == b'\n') {
+            let line: Vec<u8> = buffer.drain(..=line_end).collect();
+            if process_sse_line(&line, &mut full_text, &on_chunk)? {
+                return Ok(full_text);
             }
         }
     }
 
-    // Process any remaining buffer (stream ended without [DONE] or trailing newline)
-    if !buffer.trim().is_empty() {
-        let line = buffer.trim().to_string();
-        if let Some(data) = line.strip_prefix("data: ") {
-            let data = data.trim();
-            if data != "[DONE]" {
-                if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-                    if let Some(choice) = chunk.choices.first() {
-                        if let Some(content) = &choice.delta.content {
-                            if !content.is_empty() {
-                                full_text.push_str(content);
-                                on_chunk(content.clone());
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if !buffer.is_empty() {
+        let _ = process_sse_line(&buffer, &mut full_text, &on_chunk)?;
     }
 
     Ok(full_text)
@@ -697,5 +734,40 @@ mod tests {
     fn cjk_ratio_handles_mixed_text() {
         let ratio = cjk_ratio("hi你好");
         assert!(ratio > 0.0 && ratio < 1.0);
+    }
+
+    #[test]
+    fn sse_line_decodes_chinese_and_accepts_missing_space() {
+        let mut full_text = String::new();
+        let chunks = std::sync::Mutex::new(Vec::new());
+        let line = r#"data:{"choices":[{"delta":{"content":"你好"}}]}"#;
+        let done = process_sse_line(line.as_bytes(), &mut full_text, &|chunk| {
+            chunks.lock().unwrap().push(chunk);
+        })
+        .unwrap();
+        assert!(!done);
+        assert_eq!(full_text, "你好");
+        assert_eq!(*chunks.lock().unwrap(), vec!["你好"]);
+    }
+
+    #[test]
+    fn saving_config_preserves_ball_position_fields() {
+        let dir = std::env::temp_dir().join(format!("vt_config_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"base_url":"https://api.openai.com","model":"test","ball_x":321,"ball_y":654}"#,
+        )
+        .unwrap();
+        let config = ApiConfig::load_or_default(dir.clone());
+        *config.model.lock().unwrap() = "updated".into();
+        config.save_to_disk();
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["ball_x"], 321);
+        assert_eq!(saved["ball_y"], 654);
+        assert_eq!(saved["model"], "updated");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

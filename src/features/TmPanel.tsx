@@ -79,22 +79,23 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
       input.type = "file";
       input.accept = ".csv";
       input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
-        // Read file to temp location, then import
-        const text = await file.text();
-        const dir = await appDataDir();
-        const tmpPath = `${dir}/_import_tmp.csv`;
-        // Write to temp file via a blob trick — actually Tauri can't write from frontend easily
-        // Use the file path directly if it's accessible
-        // For safety, just alert the user to place the CSV in the app data dir
-        window.alert("请将 CSV 文件放到应用数据目录后使用后端导入命令");
+        try {
+          const file = input.files?.[0];
+          if (!file) return;
+          const text = await file.text();
+          const count = await invoke<number>("tm_import_content", { content: text });
+          await loadEntries(searchQuery || undefined);
+          await loadStats();
+          window.alert(`已导入 ${count} 条翻译记忆`);
+        } catch (e: any) {
+          window.alert(`导入失败: ${e}`);
+        }
       };
       input.click();
     } catch (e: any) {
       window.alert(`导入失败: ${e}`);
     }
-  }, []);
+  }, [loadEntries, loadStats, searchQuery]);
 
   return (
     <div className="history-panel">

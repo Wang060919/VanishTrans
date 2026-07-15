@@ -148,7 +148,9 @@ pub fn set_max_records(
     max_records: usize,
 ) -> Result<(), String> {
     let max = max_records.clamp(50, 1000);
-    state.max_records.store(max, std::sync::atomic::Ordering::Relaxed);
+    state
+        .max_records
+        .store(max, std::sync::atomic::Ordering::Relaxed);
     state.save_to_disk();
     // Update HistoryStore limit
     app.state::<HistoryStore>().set_max_records(max);
@@ -336,13 +338,21 @@ pub fn run_ocr_on_crop(
             .image
             .lock()
             .map_err(|_| "截图缓冲区状态异常".to_string())?;
-        guard.as_ref().ok_or("没有截图数据，请先截屏 (Alt+W)")?.clone()
+        guard
+            .as_ref()
+            .ok_or("没有截图数据，请先截屏 (Alt+W)")?
+            .clone()
     };
 
     let (img_w, img_h) = (img.width(), img.height());
     log::info!(
         "[ocr] image: {}x{}, crop request: ({},{}) {}x{}",
-        img_w, img_h, x, y, w, h
+        img_w,
+        img_h,
+        x,
+        y,
+        w,
+        h
     );
     if img_w == 0 || img_h == 0 {
         return Err("截图尺寸无效".into());
@@ -358,8 +368,14 @@ pub fn run_ocr_on_crop(
     let crop = img.crop_imm(x, y, w, h);
 
     // 放大 3 倍，显著提升 OCR 对小字号中文的识别准确率
-    let scaled_w = crop.width().checked_mul(crate::ocr::OCR_SCALE_FACTOR).ok_or_else(|| "OCR 图像宽度过大".to_string())?;
-    let scaled_h = crop.height().checked_mul(crate::ocr::OCR_SCALE_FACTOR).ok_or_else(|| "OCR 图像高度过大".to_string())?;
+    let scaled_w = crop
+        .width()
+        .checked_mul(crate::ocr::OCR_SCALE_FACTOR)
+        .ok_or_else(|| "OCR 图像宽度过大".to_string())?;
+    let scaled_h = crop
+        .height()
+        .checked_mul(crate::ocr::OCR_SCALE_FACTOR)
+        .ok_or_else(|| "OCR 图像高度过大".to_string())?;
     let scaled = crop.resize_exact(scaled_w, scaled_h, image::imageops::FilterType::Lanczos3);
     log::info!("[ocr] scaled to {}x{}", scaled.width(), scaled.height());
 
@@ -449,9 +465,7 @@ pub fn tm_delete(
 }
 
 #[tauri::command]
-pub fn tm_clear(
-    tm: tauri::State<'_, crate::tm::TranslationMemory>,
-) -> Result<(), String> {
+pub fn tm_clear(tm: tauri::State<'_, crate::tm::TranslationMemory>) -> Result<(), String> {
     tm.clear();
     Ok(())
 }
@@ -479,9 +493,52 @@ pub fn tm_import(
     tm.import_csv(std::path::Path::new(&path))
 }
 
+#[tauri::command]
+pub fn tm_import_content(
+    tm: tauri::State<'_, crate::tm::TranslationMemory>,
+    content: String,
+) -> Result<usize, String> {
+    tm.import_csv_content(&content)
+}
+
 // -----------------------------------------------------------
 // Ball window commands
 // -----------------------------------------------------------
+
+#[tauri::command]
+pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "找不到主窗口".to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn translate_clipboard_from_ball(app: tauri::AppHandle) -> Result<(), String> {
+    let text = app
+        .clipboard()
+        .read_text()
+        .map_err(|e| format!("读取剪贴板失败: {}", e))?;
+    if text.trim().is_empty() {
+        return Err("剪贴板里没有可翻译的文本".into());
+    }
+    let cleaned = cleanup_clipboard_text(text)?;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "找不到主窗口".to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    window
+        .emit("clipboard-watch-translate", cleaned)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn start_screenshot_from_ball(app: tauri::AppHandle) {
+    crate::setup::start_screenshot(app);
+}
 
 #[tauri::command]
 pub fn toggle_ball_show_main(app: tauri::AppHandle) -> Result<(), String> {
@@ -509,11 +566,7 @@ pub fn toggle_ball(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_ball_position(
-    app: tauri::AppHandle,
-    x: i32,
-    y: i32,
-) -> Result<(), String> {
+pub fn save_ball_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("ball") {
         let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
     }
@@ -532,7 +585,10 @@ pub fn save_ball_position(
     if let Some(p) = config_path.parent() {
         let _ = std::fs::create_dir_all(p);
     }
-    let _ = std::fs::write(&config_path, serde_json::to_string_pretty(&cfg).unwrap_or_default());
+    let _ = std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&cfg).unwrap_or_default(),
+    );
     Ok(())
 }
 
@@ -552,7 +608,6 @@ pub fn get_ball_position(app: tauri::AppHandle) -> Result<(i32, i32), String> {
     Ok((x, y))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -569,7 +624,10 @@ mod tests {
 
     #[test]
     fn cleanup_merges_hyphen_line_breaks() {
-        assert_eq!(cleanup_clipboard_text("computa-\ntion".into()).unwrap(), "computation");
+        assert_eq!(
+            cleanup_clipboard_text("computa-\ntion".into()).unwrap(),
+            "computation"
+        );
     }
 
     #[test]
@@ -584,6 +642,9 @@ mod tests {
 
     #[test]
     fn cleanup_preserves_normal_text() {
-        assert_eq!(cleanup_clipboard_text("hello world".into()).unwrap(), "hello world");
+        assert_eq!(
+            cleanup_clipboard_text("hello world".into()).unwrap(),
+            "hello world"
+        );
     }
 }
