@@ -1,9 +1,10 @@
-﻿import { Check, KeyRound, Moon, Plus, Server, Sun, Trash2 } from "lucide-react";
+﻿import { Check, Database, KeyRound, Moon, Plus, Server, Sun, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import HotkeyEditor from "../components/HotkeyEditor";
 import SettingInput from "../components/SettingInput";
 import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
 import type { ThemeMode } from "../hooks/useTheme";
+import TmPanel from "./TmPanel";
 
 interface SettingsPanelProps {
   baseUrl: string;
@@ -23,12 +24,13 @@ interface SettingsPanelProps {
   onThemeChange: (theme: ThemeMode) => void;
 }
 
-type SettingsTab = "api" | "hotkeys" | "glossary" | "appearance";
+type SettingsTab = "api" | "hotkeys" | "glossary" | "tm" | "appearance";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "api", label: "API" },
   { id: "hotkeys", label: "快捷键" },
   { id: "glossary", label: "术语表" },
+  { id: "tm", label: "翻译记忆" },
   { id: "appearance", label: "外观" },
 ];
 
@@ -43,6 +45,7 @@ export default function SettingsPanel({
   const [activeTab, setActiveTab] = useState<SettingsTab>("api");
   const [draftGlossary, setDraftGlossary] = useState(glossary);
   const [saved, setSaved] = useState(false);
+  const [tmSearch, setTmSearch] = useState("");
 
   useEffect(() => setDraftGlossary(glossary), [glossary]);
 
@@ -129,6 +132,12 @@ export default function SettingsPanel({
                 ))}
               </div>
             )}
+          </section>
+        )}
+
+        {activeTab === "tm" && (
+          <section className="settings-section" style={{ padding: 0, overflow: "hidden" }}>
+            <TmPanel searchQuery={tmSearch} onSearchChange={setTmSearch} />
           </section>
         )}
 

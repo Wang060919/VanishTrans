@@ -4,6 +4,7 @@ mod history;
 mod keyboard;
 mod ocr;
 mod setup;
+mod tm;
 mod translate;
 
 use std::path::PathBuf;
@@ -62,7 +63,13 @@ pub fn run() {
                 .unwrap_or_else(|_| PathBuf::from("."));
             let api_config = ApiConfig::load_or_default(config_dir.clone());
             app.manage(api_config);
-            app.manage(HistoryStore::load_or_default(config_dir));
+            app.manage(HistoryStore::load_or_default(config_dir.clone()));
+
+            // Initialize Translation Memory (SQLite)
+            match tm::TranslationMemory::open(&config_dir) {
+                Ok(tmem) => { app.manage(tmem); }
+                Err(e) => { log::error!("[tm] Failed to init: {}", e); }
+            }
 
             // Periodic history flush — every 5 seconds, write dirty records to disk
             let flush_handle = app.handle().clone();
@@ -126,6 +133,12 @@ pub fn run() {
             commands::get_history,
             commands::delete_history_record,
             commands::clear_history,
+            commands::tm_search,
+            commands::tm_delete,
+            commands::tm_clear,
+            commands::tm_stats,
+            commands::tm_export,
+            commands::tm_import,
         ])
         .run(tauri::generate_context!())
         .expect("启动 VanishTrans 失败");
