@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import VanishMark from "../components/brand/VanishMark";
 
 /**
@@ -12,8 +12,14 @@ import VanishMark from "../components/brand/VanishMark";
  */
 export default function BallWindow() {
   const [translating, setTranslating] = useState(false);
+  const justDraggedRef = useRef(false);
 
   const handleClick = useCallback(async () => {
+    // Skip click if we just finished dragging
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
     try {
       await invoke("toggle_ball_show_main");
     } catch (e) {
@@ -21,14 +27,20 @@ export default function BallWindow() {
     }
   }, []);
 
-  const handleDragStart = useCallback(async (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
     try {
       const win = getCurrentWindow();
+      const startX = e.clientX;
+      const startY = e.clientY;
       await win.startDragging();
-      // Persist new position after drag
+      // Check if mouse actually moved (drag vs click)
       const pos = await win.outerPosition();
-      await invoke("save_ball_position", { x: pos.x, y: pos.y });
+      const moved = Math.abs(pos.x - (startX || pos.x)) > 5 || Math.abs(pos.y - (startY || pos.y)) > 5;
+      if (moved) {
+        justDraggedRef.current = true;
+        await invoke("save_ball_position", { x: pos.x, y: pos.y });
+      }
     } catch (_) {}
   }, []);
 
@@ -52,7 +64,7 @@ export default function BallWindow() {
         transition: "box-shadow 0.2s, background 0.2s",
         animation: translating ? "ballPulse 1.5s ease-in-out infinite" : "none",
       }}
-      onMouseDown={handleDragStart}
+      onMouseDown={handleMouseDown}
       onClick={handleClick}
     >
       <div style={{ pointerEvents: "none", transform: "scale(0.7)" }}>
