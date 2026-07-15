@@ -174,18 +174,23 @@ impl TranslationMemory {
         }
     }
 
-    /// Export TM to CSV.
+    /// Export TM to CSV (with UTF-8 BOM for Excel compatibility).
     pub fn export_csv(&self, path: &Path) -> Result<usize, String> {
         let entries = self.search("");
         let count = entries.len();
-        let mut wtr = csv::Writer::from_path(path)
-            .map_err(|e| format!("创建 CSV 文件失败: {}", e))?;
 
+        // Write UTF-8 BOM first, then CSV data
+        let mut content = String::from("\u{FEFF}");
+        let mut wtr = csv::Writer::from_writer(Vec::new());
         for entry in &entries {
             wtr.serialize((&entry.source, &entry.target, &entry.source_lang, &entry.target_lang))
-                .map_err(|e| format!("写入 CSV 失败: {}", e))?;
+                .map_err(|e| format!("序列化 CSV 失败: {}", e))?;
         }
         wtr.flush().map_err(|e| format!("flush CSV 失败: {}", e))?;
+        let csv_data = String::from_utf8(wtr.into_inner().unwrap_or_default())
+            .map_err(|e| format!("CSV 编码失败: {}", e))?;
+        content.push_str(&csv_data);
+        std::fs::write(path, content).map_err(|e| format!("写入 CSV 文件失败: {}", e))?;
         Ok(count)
     }
 
