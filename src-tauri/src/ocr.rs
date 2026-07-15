@@ -80,8 +80,22 @@ pub fn native_ocr_on_png(png_data: &[u8]) -> Result<OcrOutput, String> {
     use windows::Media::Ocr::OcrEngine;
     use windows::Storage::StorageFile;
 
-    let tmp_path = std::env::temp_dir().join(format!("vt_ocr_{}.png", std::process::id()));
+    // Unique temp filename: PID + atomic counter to avoid race conditions
+    static OCR_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = OCR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = std::env::temp_dir().join(format!(
+        "vt_ocr_{}_{}.png",
+        std::process::id(),
+        seq
+    ));
     std::fs::write(&tmp_path, png_data).map_err(|e| format!("write tmp: {e}"))?;
+
+    // Drop guard: ensure temp file is cleaned up even on panic
+    struct TmpFileGuard(std::path::PathBuf);
+    impl Drop for TmpFileGuard {
+        fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
+    }
+    let _guard = TmpFileGuard(tmp_path.clone());
 
     let result = (|| -> Result<OcrOutput, String> {
         let tmp_path_str = tmp_path
@@ -137,7 +151,7 @@ pub fn native_ocr_on_png(png_data: &[u8]) -> Result<OcrOutput, String> {
         Ok(OcrOutput { text: text.trim().to_string(), confidence })
     })();
 
-    let _ = std::fs::remove_file(&tmp_path);
+    // _guard handles cleanup via Drop
     result
 }
 

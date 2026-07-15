@@ -94,6 +94,7 @@ pub fn get_api_config(state: tauri::State<'_, ApiConfig>) -> Result<serde_json::
         "model": *state.model.lock().unwrap(),
         "hotkeys": *state.hotkeys.lock().unwrap(),
         "glossary": *state.glossary.lock().unwrap(),
+        "maxRecords": state.max_records.load(std::sync::atomic::Ordering::Relaxed),
     }))
 }
 
@@ -137,6 +138,20 @@ pub fn set_glossary(
 ) -> Result<(), String> {
     *state.glossary.lock().unwrap() = glossary;
     state.save_to_disk();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_max_records(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ApiConfig>,
+    max_records: usize,
+) -> Result<(), String> {
+    let max = max_records.clamp(50, 1000);
+    state.max_records.store(max, std::sync::atomic::Ordering::Relaxed);
+    state.save_to_disk();
+    // Update HistoryStore limit
+    app.state::<HistoryStore>().set_max_records(max);
     Ok(())
 }
 

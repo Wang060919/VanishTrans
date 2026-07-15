@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 
@@ -19,6 +20,7 @@ export function useTauriEvents({
 }: TauriEventsOptions) {
   useEffect(() => {
     const cleanups: (() => void)[] = [];
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
     const setup = async () => {
       const u1 = await listen("shortcut-translate", async () => {
@@ -59,11 +61,27 @@ export function useTauriEvents({
         onStreamDone(event.payload);
       });
       cleanups.push(u6);
+
+      // Auto-hide: Rust emits event, JS handles the 150ms delay
+      const u7 = await listen("schedule-auto-hide", () => {
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(async () => {
+          try {
+            const win = getCurrentWindow();
+            const focused = await win.isFocused();
+            if (!focused) {
+              await win.hide();
+            }
+          } catch (_) {}
+        }, 150);
+      });
+      cleanups.push(u7);
     };
 
     setup();
 
     return () => {
+      if (hideTimer) clearTimeout(hideTimer);
       cleanups.forEach((fn) => fn());
     };
     // Intentionally stable — callbacks are identity-stable from the caller

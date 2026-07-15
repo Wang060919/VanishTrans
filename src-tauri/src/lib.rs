@@ -97,17 +97,9 @@ pub fn run() {
             if let tauri::WindowEvent::Focused(false) = e {
                 let label = w.label();
                 if label == "main" && !w.state::<AppState>().pinned.load(Ordering::SeqCst) {
-                    // Delay auto-hide by 150ms so the user can click elsewhere
-                    // to select text without the window disappearing instantly.
-                    let wh = w.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(150));
-                        // Only hide if the window is still unfocused
-                        if wh.is_focused().unwrap_or(true) {
-                            return;
-                        }
-                        let _ = wh.hide();
-                    });
+                    // Delegate auto-hide to frontend via JS setTimeout —
+                    // avoids spawning a Rust thread for a simple delay.
+                    let _ = w.emit("schedule-auto-hide", ());
                 }
             }
         })
@@ -121,6 +113,7 @@ pub fn run() {
             commands::set_api_config,
             commands::set_hotkeys,
             commands::set_glossary,
+            commands::set_max_records,
             commands::translate,
             commands::translate_with_direction,
             commands::translate_stream,

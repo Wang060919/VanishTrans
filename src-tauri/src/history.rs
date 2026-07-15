@@ -1,11 +1,11 @@
-﻿use std::sync::atomic::{AtomicBool, Ordering};
+﻿use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-/// Maximum number of history records to keep.
-const MAX_RECORDS: usize = 100;
+/// Default maximum number of history records to keep.
+const DEFAULT_MAX_RECORDS: usize = 200;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TranslationRecord {
@@ -22,10 +22,16 @@ pub struct HistoryStore {
     next_id: std::sync::atomic::AtomicU64,
     /// Tracks whether records have been added since last flush.
     dirty: AtomicBool,
+    /// Maximum records to keep (configurable).
+    max_records: AtomicUsize,
 }
 
 impl HistoryStore {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
+        Self::load_or_default_with_max(config_dir, DEFAULT_MAX_RECORDS)
+    }
+
+    pub fn load_or_default_with_max(config_dir: std::path::PathBuf, max_records: usize) -> Self {
         let path = config_dir.join("history.json");
         let records: Vec<TranslationRecord> = std::fs::read_to_string(&path)
             .ok()
@@ -37,6 +43,19 @@ impl HistoryStore {
             path,
             next_id: std::sync::atomic::AtomicU64::new(next_id),
             dirty: AtomicBool::new(false),
+            max_records: AtomicUsize::new(max_records),
+        }
+    }
+
+    pub fn set_max_records(&self, max: usize) {
+        self.max_records.store(max, Ordering::Relaxed);
+        // Trim existing records if new limit is lower
+        let mut records = self.records.lock().unwrap();
+        let limit = self.max_records.load(Ordering::Relaxed);
+        if records.len() > limit {
+            let drain_count = records.len() - limit;
+            records.drain(..drain_count);
+            self.dirty.store(true, Ordering::Relaxed);
         }
     }
 
@@ -55,8 +74,9 @@ impl HistoryStore {
         };
         let mut records = self.records.lock().unwrap();
         records.push(record);
-        // Keep only the latest MAX_RECORDS
-        if records.len() > MAX_RECORDS {
+        // Keep only the latest max_records
+        let limit = self.max_records.load(Ordering::Relaxed);
+        if records.len() > limit {
             let drain_count = records.len() - MAX_RECORDS;
             records.drain(..drain_count);
         }
