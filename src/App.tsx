@@ -2,13 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ScreenshotOverlay from "./ScreenshotOverlay";
+import BallWindow from "./features/BallWindow";
 import MainLayout from "./layouts/MainLayout";
 import { useTranslation } from "./hooks/useTranslation";
 import { useConfig } from "./hooks/useConfig";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 
 export default function App() {
-  const [isScreenshot, setIsScreenshot] = useState(false);
+  const [windowType, setWindowType] = useState<"main" | "screenshot" | "ball">("main");
   const [pinned, setPinned] = useState(false);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -16,10 +17,11 @@ export default function App() {
   const translation = useTranslation();
   const config = useConfig();
 
-  // Detect screenshot window
+  // Detect window type
   useEffect(() => {
     const label = getCurrentWindow().label;
-    if (label === "screenshot") setIsScreenshot(true);
+    if (label === "screenshot") setWindowType("screenshot");
+    else if (label === "ball") setWindowType("ball");
   }, []);
 
   // Tauri event wiring
@@ -50,10 +52,10 @@ export default function App() {
 
   // Signal Rust that frontend listeners are mounted
   useEffect(() => {
-    if (!isScreenshot) {
-      invoke("frontend_ready");
+    if (windowType === "main") {
+      invoke("frontend_ready").catch((e) => console.error("[app] frontend_ready failed:", e));
     }
-  }, [isScreenshot]);
+  }, [windowType]);
 
   const handlePin = useCallback(async () => {
     setPinned(await invoke<boolean>("toggle_pin"));
@@ -63,7 +65,8 @@ export default function App() {
     await translation.doTranslateStream(translation.inputText);
   }, [translation.inputText, translation.doTranslateStream]);
 
-  if (isScreenshot) return <ScreenshotOverlay />;
+  if (windowType === "screenshot") return <ScreenshotOverlay />;
+  if (windowType === "ball") return <BallWindow />;
 
   return (
     <MainLayout

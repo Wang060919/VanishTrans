@@ -32,22 +32,29 @@ export function useConfig() {
   const [hotkeys, setHotkeys] = useState<HotkeyEntry[]>(DEFAULT_HOTKEYS);
 
   useEffect(() => {
-    invoke<{ baseUrl: string; hasApiKey: boolean; model: string; glossary: [string, string][]; hotkeys: [string, string][] }>("get_api_config").then((cfg) => {
-      setBaseUrl(cfg.baseUrl);
-      setHasStoredApiKey(cfg.hasApiKey);
-      setModel(cfg.model);
-      if (cfg.glossary) {
-        setGlossary(cfg.glossary.map(([source, target]) => ({ source, target })));
-      }
-      if (cfg.hotkeys && cfg.hotkeys.length > 0) {
-        setHotkeys(cfg.hotkeys.map(([action, shortcut]) => ({ action, shortcut })));
-      }
-    });
+    invoke<{ baseUrl: string; hasApiKey: boolean; model: string; glossary: [string, string][]; hotkeys: [string, string][] }>("get_api_config")
+      .then((cfg) => {
+        setBaseUrl(cfg.baseUrl);
+        setHasStoredApiKey(cfg.hasApiKey);
+        setModel(cfg.model);
+        if (cfg.glossary) {
+          setGlossary(cfg.glossary.map(([source, target]) => ({ source, target })));
+        }
+        if (cfg.hotkeys && cfg.hotkeys.length > 0) {
+          setHotkeys(cfg.hotkeys.map(([action, shortcut]) => ({ action, shortcut })));
+        }
+      })
+      .catch((e) => console.error("[config] Failed to load:", e));
   }, []);
 
   const saveConfig = async (forcedApiKey?: string) => {
+    // Only send apiKey when user actually changed it — avoid overwriting with null
     const apiKey = forcedApiKey === undefined ? apiKeyUpdate : forcedApiKey;
-    await invoke("set_api_config", { baseUrl, apiKey, model });
+    await invoke("set_api_config", {
+      baseUrl,
+      apiKey: apiKey !== null ? apiKey : undefined,
+      model,
+    });
     if (apiKey !== null) {
       setHasStoredApiKey(apiKey.length > 0);
       setApiKeyUpdate(null);

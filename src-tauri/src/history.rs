@@ -1,11 +1,11 @@
-﻿use std::sync::atomic::{AtomicBool, Ordering};
+﻿use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-/// Maximum number of history records to keep.
-const MAX_RECORDS: usize = 100;
+/// Default maximum number of history records to keep.
+const DEFAULT_MAX_RECORDS: usize = 200;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TranslationRecord {
@@ -22,10 +22,16 @@ pub struct HistoryStore {
     next_id: std::sync::atomic::AtomicU64,
     /// Tracks whether records have been added since last flush.
     dirty: AtomicBool,
+    /// Maximum records to keep (configurable).
+    max_records: AtomicUsize,
 }
 
 impl HistoryStore {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
+        Self::load_or_default_with_max(config_dir, DEFAULT_MAX_RECORDS)
+    }
+
+    pub fn load_or_default_with_max(config_dir: std::path::PathBuf, max_records: usize) -> Self {
         let path = config_dir.join("history.json");
         let records: Vec<TranslationRecord> = std::fs::read_to_string(&path)
             .ok()
@@ -37,6 +43,18 @@ impl HistoryStore {
             path,
             next_id: std::sync::atomic::AtomicU64::new(next_id),
             dirty: AtomicBool::new(false),
+            max_records: AtomicUsize::new(max_records),
+        }
+    }
+
+    pub fn set_max_records(&self, max: usize) {
+        self.max_records.store(max, Ordering::Relaxed);
+        // Trim existing records if new limit is lower
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        if records.len() > max {
+            let drain_count = records.len() - max;
+            records.drain(..drain_count);
+            self.dirty.store(true, Ordering::Relaxed);
         }
     }
 
@@ -53,11 +71,12 @@ impl HistoryStore {
             direction: direction.to_string(),
             timestamp,
         };
-        let mut records = self.records.lock().unwrap();
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.push(record);
-        // Keep only the latest MAX_RECORDS
-        if records.len() > MAX_RECORDS {
-            let drain_count = records.len() - MAX_RECORDS;
+        // Keep only the latest max_records
+        let limit = self.max_records.load(Ordering::Relaxed);
+        if records.len() > limit {
+            let drain_count = records.len() - limit;
             records.drain(..drain_count);
         }
         // Mark dirty — actual disk write deferred to periodic flush
@@ -67,20 +86,20 @@ impl HistoryStore {
     /// Flush pending changes to disk. Called periodically and on app shutdown.
     pub fn flush(&self) {
         if !self.dirty.swap(false, Ordering::Relaxed) {
-            return; // Nothing to flush
+            return;
         }
-        let records = self.records.lock().unwrap();
+        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         self.save_locked(&records);
     }
 
     pub fn get_all(&self) -> Vec<TranslationRecord> {
-        let records = self.records.lock().unwrap();
+        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.iter().rev().cloned().collect()
     }
 
     pub fn search(&self, query: &str) -> Vec<TranslationRecord> {
         let query_lower = query.to_lowercase();
-        let records = self.records.lock().unwrap();
+        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records
             .iter()
             .rev()
@@ -93,13 +112,13 @@ impl HistoryStore {
     }
 
     pub fn delete(&self, id: u64) {
-        let mut records = self.records.lock().unwrap();
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.retain(|r| r.id != id);
         self.save_locked(&records);
     }
 
     pub fn clear(&self) {
-        let mut records = self.records.lock().unwrap();
+        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
         records.clear();
         self.save_locked(&records);
     }
