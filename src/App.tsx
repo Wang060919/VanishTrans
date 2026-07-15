@@ -46,6 +46,11 @@ export default function App() {
       translation.setInputText("");
     }, []),
 
+    onScreenshotError: useCallback((message: string) => {
+      translation.setOutputText(`❌ ${message}`);
+      translation.setLoading(false);
+    }, []),
+
     onStreamChunk: translation.handleStreamChunk,
     onStreamDone: translation.handleStreamDone,
   });
