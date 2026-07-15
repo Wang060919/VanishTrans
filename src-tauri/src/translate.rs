@@ -169,6 +169,8 @@ pub struct ApiConfig {
     pub hotkeys: Mutex<Vec<(String, String)>>,
     /// Custom glossary: Vec of (source, target) term pairs.
     pub glossary: Mutex<Vec<(String, String)>>,
+    /// Maximum history records to keep.
+    pub max_records: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -179,19 +181,25 @@ struct PersistedConfig {
     hotkeys: Vec<(String, String)>,
     #[serde(default)]
     glossary: Vec<(String, String)>,
+    #[serde(default = "default_max_records")]
+    max_records: usize,
+}
+
+fn default_max_records() -> usize {
+    200
 }
 
 impl ApiConfig {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
         let config_path = config_dir.join("config.json");
-        let (base_url, model, hotkeys, glossary, config_existed) =
+        let (base_url, model, hotkeys, glossary, max_records, config_existed) =
             std::fs::read_to_string(&config_path)
                 .ok()
                 .and_then(|d| serde_json::from_str::<PersistedConfig>(&d).ok())
-                .map(|c| (c.base_url, c.model, c.hotkeys, c.glossary, true))
+                .map(|c| (c.base_url, c.model, c.hotkeys, c.glossary, c.max_records, true))
                 .unwrap_or_else(|| {
                     let (b, _, m) = Self::defaults();
-                    (b, m, Self::default_hotkeys(), Vec::new(), false)
+                    (b, m, Self::default_hotkeys(), Vec::new(), default_max_records(), false)
                 });
         let api_key = load_api_key_credential().unwrap_or_default();
         let client = reqwest::Client::builder()
@@ -209,6 +217,7 @@ impl ApiConfig {
             request_seq: AtomicU64::new(0),
             hotkeys: Mutex::new(if hotkeys.is_empty() { Self::default_hotkeys() } else { hotkeys }),
             glossary: Mutex::new(glossary),
+            max_records: std::sync::atomic::AtomicUsize::new(max_records),
         };
         // Only persist when the file didn't exist — avoid a sync write on every cold start
         if !config_existed {
@@ -239,6 +248,7 @@ impl ApiConfig {
             model: self.model.lock().unwrap().clone(),
             hotkeys: self.hotkeys.lock().unwrap().clone(),
             glossary: self.glossary.lock().unwrap().clone(),
+            max_records: self.max_records.load(std::sync::atomic::Ordering::Relaxed),
         };
         if let Some(p) = self.config_path.parent() {
             let _ = std::fs::create_dir_all(p);
