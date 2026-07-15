@@ -4,7 +4,7 @@
     Manager,
 };
 
-use crate::{toggle_clipboard_watch, toggle_main, toggle_shortcuts, toggle_top};
+use crate::{toggle_ball, toggle_clipboard_watch, toggle_main, toggle_shortcuts, toggle_top};
 use crate::{ShortcutsMenuItem, WatchMenuItem};
 
 struct BallMenuItem(MenuItem<tauri::Wry>);

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+use tauri::Emitter;
 use tauri::Manager;
 
 use crate::clipboard::ClipboardGuard;
@@ -170,7 +171,7 @@ pub fn run() {
 // Tray menu helpers (called from setup::tray)
 // -----------------------------------------------------------
 
-fn toggle_main(app: &tauri::AppHandle) {
+pub fn toggle_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
@@ -181,7 +182,7 @@ fn toggle_main(app: &tauri::AppHandle) {
     }
 }
 
-fn toggle_top(app: &tauri::AppHandle) {
+pub fn toggle_top(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let t = w.is_always_on_top().unwrap_or(false);
         let _ = w.set_always_on_top(!t);
@@ -189,7 +190,7 @@ fn toggle_top(app: &tauri::AppHandle) {
     }
 }
 
-fn toggle_ball(app: &tauri::AppHandle) {
+pub fn toggle_ball(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("ball") {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
