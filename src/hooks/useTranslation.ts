@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { useCallback, useRef, useState } from "react";
 import {
   detectFileType,
@@ -79,6 +80,7 @@ export function useTranslation() {
     setLoading(true);
     setStreaming(true);
     const reqId = ++requestIdRef.current;
+    void emit("translation-state", true).catch(() => {});
     try {
       await invoke<string>("translate_stream", {
         text: cleaned,
@@ -95,6 +97,7 @@ export function useTranslation() {
         if (reqId === requestIdRef.current) {
           setLoading(false);
           setStreaming(false);
+          void emit("translation-state", false).catch(() => {});
         }
         return;
       }
@@ -105,6 +108,7 @@ export function useTranslation() {
     }
     if (reqId === requestIdRef.current) {
       setLoading(false);
+      void emit("translation-state", false).catch(() => {});
     }
   }, []);
 
@@ -123,14 +127,15 @@ export function useTranslation() {
   /// Handle file drag-and-drop: parse structured files, translate, reassemble.
   const doTranslateFile = useCallback(async (filename: string, content: string) => {
     const fileType = detectFileType(filename);
-    const reqId = ++requestIdRef.current;
 
     if (fileType === "txt") {
-      // Plain text — just load into input
-      setInputText(content);
+      setFileStatus(`${filename} 翻译中...`);
+      await doTranslateStream(content);
       setFileStatus(null);
       return;
     }
+
+    const reqId = ++requestIdRef.current;
 
     // Structured file (.srt / .json): parse → extract → batch translate → reassemble
     setFileStatus(`正在解析 ${filename}...`);
@@ -227,7 +232,7 @@ export function useTranslation() {
       }
     }
     if (reqId === requestIdRef.current) setLoading(false);
-  }, []);
+  }, [doTranslateStream]);
 
   return {
     inputText, setInputText,

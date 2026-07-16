@@ -10,6 +10,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
+  emit: vi.fn(() => Promise.resolve()),
   listen: vi.fn((eventName: string, cb: (event: { payload: unknown }) => void) => {
     listeners[eventName] = cb;
     return Promise.resolve(() => {

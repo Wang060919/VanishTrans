@@ -1,4 +1,4 @@
-﻿use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -63,7 +63,9 @@ impl HistoryStore {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let id = self.next_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let id = self
+            .next_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let record = TranslationRecord {
             id,
             original: original.to_string(),
@@ -129,15 +131,12 @@ impl HistoryStore {
         }
         let tmp = self.path.with_extension("json.tmp");
         if let Ok(j) = serde_json::to_string_pretty(records) {
-            if std::fs::write(&tmp, j).is_ok() {
-                if std::fs::rename(&tmp, &self.path).is_err() {
-                    let _ = std::fs::remove_file(&tmp);
-                }
+            if std::fs::write(&tmp, j).is_ok() && std::fs::rename(&tmp, &self.path).is_err() {
+                let _ = std::fs::remove_file(&tmp);
             }
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -223,7 +222,9 @@ mod tests {
 
     #[test]
     fn max_records_is_enforced() {
-        let (store, dir) = temp_store();
+        let dir = std::env::temp_dir().join(format!("vt_test_limit_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let store = HistoryStore::load_or_default_with_max(dir.clone(), 100);
         for i in 0..105 {
             store.add(&format!("text{}", i), &format!("翻译{}", i), "auto2zh");
         }

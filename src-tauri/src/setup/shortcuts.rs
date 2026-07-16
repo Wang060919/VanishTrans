@@ -7,10 +7,10 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+use crate::clipboard::ClipboardGuard;
 use crate::commands::FRONTEND_READY;
 use crate::keyboard;
 use crate::translate::{self, ApiConfig};
-use crate::clipboard::ClipboardGuard;
 use crate::AppState;
 
 /// Currently registered shortcuts, protected by Mutex for dynamic updates.
@@ -106,7 +106,12 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
         match parse_shortcut(combo_str) {
             Ok(sc) => {
                 if let Err(e) = shortcut_plugin.register(sc) {
-                    log::warn!("[shortcut] Failed to register {} ({}): {}", action, combo_str, e);
+                    log::warn!(
+                        "[shortcut] Failed to register {} ({}): {}",
+                        action,
+                        combo_str,
+                        e
+                    );
                 } else {
                     registered.push((sc, action.clone()));
                 }
@@ -154,7 +159,8 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                 // Look up the action for this shortcut
                 let action = {
                     let registered = get_shortcuts().lock().unwrap();
-                    registered.iter()
+                    registered
+                        .iter()
                         .find(|(s, _)| *s == *sc)
                         .map(|(_, a)| a.clone())
                 };
@@ -162,7 +168,7 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                 match action.as_deref() {
                     Some("translate") => handle_alt_q(app),
                     Some("replace") => handle_alt_r(app.clone()),
-                    Some("screenshot") => handle_alt_w(app.clone()),
+                    Some("screenshot") => start_screenshot(app.clone()),
                     _ => {}
                 }
             })
@@ -235,14 +241,15 @@ fn handle_alt_r(app: tauri::AppHandle) {
         let api_config = app.state::<ApiConfig>();
         let seq = api_config.next_request_seq();
         let translated =
-            match app.state::<AppState>().runtime.block_on(
-                translate::do_translate_async(
+            match app
+                .state::<AppState>()
+                .runtime
+                .block_on(translate::do_translate_async(
                     &api_config,
                     &cleaned,
                     "auto",
                     target,
-                ),
-            ) {
+                )) {
                 Ok(t) => {
                     if !api_config.is_current_request(seq) {
                         return;
@@ -252,10 +259,7 @@ fn handle_alt_r(app: tauri::AppHandle) {
                 Err(e) => {
                     if let Some(w) = app.get_webview_window("main") {
                         let _ = w.show();
-                        let _ = w.emit(
-                            "ocr-translate",
-                            format!("❌ Alt+R 失败: {}", e),
-                        );
+                        let _ = w.emit("ocr-translate", format!("❌ Alt+R 失败: {}", e));
                     }
                     return;
                 }
@@ -271,22 +275,21 @@ fn handle_alt_r(app: tauri::AppHandle) {
 }
 
 /// Alt+W: Screenshot OCR.
-fn handle_alt_w(app: tauri::AppHandle) {
+pub(crate) fn start_screenshot(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         if let Some(w) = app.get_webview_window("main") {
             let _ = w.emit("screenshot-start", ());
         }
-        let (data_uri, raw_image) =
-            match crate::ocr::capture_screenshot_as_data_uri() {
-                Some(d) => d,
-                None => {
-                    log::error!("[screenshot] Capture failed");
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.emit("screenshot-error", "截图失败，请检查屏幕录制权限");
-                    }
-                    return;
+        let (data_uri, raw_image) = match crate::ocr::capture_screenshot_as_data_uri() {
+            Some(d) => d,
+            None => {
+                log::error!("[screenshot] Capture failed");
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.emit("screenshot-error", "截图失败，请检查屏幕录制权限");
                 }
-            };
+                return;
+            }
+        };
         {
             let sb = app.state::<crate::ocr::ScreenshotBuffer>();
             *sb.data_uri.lock().unwrap() = Some(data_uri.clone());

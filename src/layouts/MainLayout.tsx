@@ -101,7 +101,7 @@ export default function MainLayout({
     try { await getCurrentWindow().toggleMaximize(); } catch (e) { console.error("maximize failed", e); }
   }, []);
   const handleClose = useCallback(async () => {
-    try { await getCurrentWindow().close(); } catch (e) { console.error("close failed", e); }
+    try { await invoke("hide_window"); } catch (e) { console.error("hide failed", e); }
   }, []);
 
   // Drag: use startDragging() with permission, fallback to data-tauri-drag-region

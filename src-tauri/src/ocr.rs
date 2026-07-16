@@ -39,7 +39,8 @@ pub fn capture_screenshot_as_data_uri() -> Option<(String, image::DynamicImage)>
 
     let monitors = Monitor::all().ok()?;
     // Prefer the primary monitor at (0,0); fall back to the first one.
-    let primary = monitors.iter()
+    let primary = monitors
+        .iter()
         .find(|m| m.x().unwrap_or(-1) == 0 && m.y().unwrap_or(-1) == 0)
         .or_else(|| monitors.first())?;
     let img = primary.capture_image().ok()?;
@@ -64,9 +65,7 @@ pub fn capture_screenshot_as_data_uri() -> Option<(String, image::DynamicImage)>
     // JPEG quality — — much smaller than PNG, sharp enough for OCR
     let mut cursor = std::io::Cursor::new(Vec::new());
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, JPEG_QUALITY);
-    encoder
-        .encode_image(&resized)
-        .ok()?;
+    encoder.encode_image(&resized).ok()?;
     let bytes = cursor.into_inner();
     log::info!("[capture] JPEG: {} bytes", bytes.len());
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
@@ -83,17 +82,15 @@ pub fn native_ocr_on_png(png_data: &[u8]) -> Result<OcrOutput, String> {
     // Unique temp filename: PID + atomic counter to avoid race conditions
     static OCR_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = OCR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmp_path = std::env::temp_dir().join(format!(
-        "vt_ocr_{}_{}.png",
-        std::process::id(),
-        seq
-    ));
+    let tmp_path = std::env::temp_dir().join(format!("vt_ocr_{}_{}.png", std::process::id(), seq));
     std::fs::write(&tmp_path, png_data).map_err(|e| format!("write tmp: {e}"))?;
 
     // Drop guard: ensure temp file is cleaned up even on panic
     struct TmpFileGuard(std::path::PathBuf);
     impl Drop for TmpFileGuard {
-        fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
     }
     let _guard = TmpFileGuard(tmp_path.clone());
 
@@ -148,7 +145,10 @@ pub fn native_ocr_on_png(png_data: &[u8]) -> Result<OcrOutput, String> {
         );
         // Confidence not available in windows 0.58 OcrWord API
         let confidence = if text.is_empty() { 0.0 } else { 0.85 };
-        Ok(OcrOutput { text: text.trim().to_string(), confidence })
+        Ok(OcrOutput {
+            text: text.trim().to_string(),
+            confidence,
+        })
     })();
 
     // _guard handles cleanup via Drop
