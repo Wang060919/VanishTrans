@@ -38,8 +38,10 @@
 ### 全局悬浮翻译球
 
 - 桌面常驻 52×52 品牌 logo 圆球
-- 点击切换主窗口，拖拽移动位置
-- 位置自动保存，重启恢复
+- 单击展开快捷工具坞，可直接执行剪贴板翻译、截图 OCR 或打开主界面
+- 根据屏幕边缘自动选择展开方向，失焦或按 `Esc` 自动收起
+- 收起状态下可拖拽移动，位置自动保存并在重启后恢复
+- 翻译过程中显示动态状态反馈
 
 ### 其他特性
 
@@ -83,7 +85,7 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-输出位于 `src-tauri/target/release/bundle/`。
+可执行文件位于 `src-tauri/target/release/vanish-trans.exe`。
 
 ---
 
