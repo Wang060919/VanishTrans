@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::clipboard::ClipboardGuard;
 use crate::history::HistoryStore;
@@ -67,17 +67,19 @@ pub fn run() {
 
             // Initialize Translation Memory (SQLite)
             match tm::TranslationMemory::open(&config_dir) {
-                Ok(tmem) => { app.manage(tmem); }
-                Err(e) => { log::error!("[tm] Failed to init: {}", e); }
+                Ok(tmem) => {
+                    app.manage(tmem);
+                }
+                Err(e) => {
+                    log::error!("[tm] Failed to init: {}", e);
+                }
             }
 
             // Periodic history flush — every 5 seconds, write dirty records to disk
             let flush_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    flush_handle.state::<HistoryStore>().flush();
-                }
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                flush_handle.state::<HistoryStore>().flush();
             });
 
             setup::setup_tray(app)?;
@@ -113,7 +115,11 @@ pub fn run() {
                 } else {
                     format!("{}/v1/models", base_url)
                 };
-                let _ = client.head(&url).timeout(std::time::Duration::from_secs(5)).send().await;
+                let _ = client
+                    .head(&url)
+                    .timeout(std::time::Duration::from_secs(5))
+                    .send()
+                    .await;
             });
 
             Ok(())
@@ -157,6 +163,10 @@ pub fn run() {
             commands::tm_stats,
             commands::tm_export,
             commands::tm_import,
+            commands::tm_import_content,
+            commands::show_main_window,
+            commands::translate_clipboard_from_ball,
+            commands::start_screenshot_from_ball,
             commands::toggle_ball_show_main,
             commands::toggle_ball,
             commands::save_ball_position,

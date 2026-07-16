@@ -7,6 +7,7 @@ interface TauriEventsOptions {
   onClipboardTranslate: (text: string) => void;
   onOcrTranslate: (text: string) => void;
   onScreenshotStart: () => void;
+  onScreenshotError: (message: string) => void;
   onStreamChunk: (chunk: string) => void;
   onStreamDone: (fullText: string) => void;
 }
@@ -15,6 +16,7 @@ export function useTauriEvents({
   onClipboardTranslate,
   onOcrTranslate,
   onScreenshotStart,
+  onScreenshotError,
   onStreamChunk,
   onStreamDone,
 }: TauriEventsOptions) {
@@ -59,6 +61,12 @@ export function useTauriEvents({
       });
       if (!aliveRef.current) { u4(); return; }
       cleanupsRef.current.push(u4);
+
+      const screenshotErrorCleanup = await listen<string>("screenshot-error", (event) => {
+        onScreenshotError(event.payload);
+      });
+      if (!aliveRef.current) { screenshotErrorCleanup(); return; }
+      cleanupsRef.current.push(screenshotErrorCleanup);
 
       const u5 = await listen<string>("translate-stream-chunk", (event) => {
         onStreamChunk(event.payload);
