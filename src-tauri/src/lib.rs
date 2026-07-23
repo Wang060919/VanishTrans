@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 use crate::clipboard::ClipboardGuard;
 use crate::history::HistoryStore;
@@ -128,9 +128,21 @@ pub fn run() {
             if let tauri::WindowEvent::Focused(false) = e {
                 let label = w.label();
                 if label == "main" && !w.state::<AppState>().pinned.load(Ordering::SeqCst) {
-                    // Delegate auto-hide to frontend via JS setTimeout —
-                    // avoids spawning a Rust thread for a simple delay.
-                    let _ = w.emit("schedule-auto-hide", ());
+                    let app = w.app_handle().clone();
+                    let state_app = app.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(150));
+                        let _ = app.run_on_main_thread(move || {
+                            if state_app.state::<AppState>().pinned.load(Ordering::SeqCst) {
+                                return;
+                            }
+                            if let Some(main) = state_app.get_webview_window("main") {
+                                if !main.is_focused().unwrap_or(true) {
+                                    let _ = main.hide();
+                                }
+                            }
+                        });
+                    });
                 }
             }
         })
@@ -140,6 +152,7 @@ pub fn run() {
             commands::write_clipboard_safe,
             commands::hide_window,
             commands::toggle_pin,
+            commands::get_pin_state,
             commands::get_api_config,
             commands::set_api_config,
             commands::set_hotkeys,

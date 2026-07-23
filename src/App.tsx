@@ -55,15 +55,21 @@ export default function App() {
     onStreamDone: translation.handleStreamDone,
   });
 
-  // Signal Rust that frontend listeners are mounted
+  // Signal Rust that the main window listeners are mounted and synchronize pin state.
   useEffect(() => {
-    if (windowType === "main") {
-      invoke("frontend_ready").catch((e) => console.error("[app] frontend_ready failed:", e));
-    }
-  }, [windowType]);
+    if (getCurrentWindow().label !== "main") return;
+    invoke("frontend_ready").catch((e) => console.error("[app] frontend_ready failed:", e));
+    invoke<boolean>("get_pin_state")
+      .then(setPinned)
+      .catch((e) => console.error("[app] get_pin_state failed:", e));
+  }, []);
 
   const handlePin = useCallback(async () => {
-    setPinned(await invoke<boolean>("toggle_pin"));
+    try {
+      setPinned(await invoke<boolean>("toggle_pin"));
+    } catch (e) {
+      console.error("[app] toggle_pin failed:", e);
+    }
   }, []);
 
   const handleTranslate = useCallback(async () => {

@@ -243,4 +243,27 @@ mod tests {
         assert_eq!(results.len(), 2);
         cleanup(&dir);
     }
+
+    #[test]
+    fn flush_persists_recent_records_before_exit() {
+        let dir = std::env::temp_dir().join(format!(
+            "vt_history_flush_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = HistoryStore::load_or_default(dir.clone());
+        store.add("recent", "最近", "en2zh");
+        store.flush();
+        drop(store);
+
+        let reloaded = HistoryStore::load_or_default(dir.clone());
+        assert_eq!(reloaded.get_all().len(), 1);
+        assert_eq!(reloaded.get_all()[0].translated, "最近");
+        drop(reloaded);
+        cleanup(&dir);
+    }
 }

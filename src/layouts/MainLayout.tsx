@@ -34,12 +34,12 @@ interface MainLayoutProps {
   hasStoredApiKey: boolean;
   apiKeyUpdate: string | null;
   onApiKeyChange: (v: string | null) => void;
-  onSaveConfig: (forcedApiKey?: string) => void;
+  onSaveConfig: (forcedApiKey?: string) => Promise<void>;
   glossary: GlossaryEntry[];
-  onGlossaryChange: (entries: GlossaryEntry[]) => void;
+  onGlossaryChange: (entries: GlossaryEntry[]) => Promise<void>;
   hotkeys: HotkeyEntry[];
   hotkeyLabels: Record<string, string>;
-  onHotkeysChange: (entries: HotkeyEntry[]) => void;
+  onHotkeysChange: (entries: HotkeyEntry[]) => Promise<void>;
   streaming: boolean;
   fileStatus: string | null;
   onTranslateFile: (filename: string, content: string) => void;
