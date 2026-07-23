@@ -1,15 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 interface TauriEventsOptions {
   onClipboardTranslate: (text: string) => void;
   onOcrTranslate: (text: string) => void;
   onScreenshotStart: () => void;
   onScreenshotError: (message: string) => void;
-  onStreamChunk: (chunk: string) => void;
-  onStreamDone: (fullText: string) => void;
+  onStreamChunk: (payload: { requestId: number; chunk: string }) => void;
+  onStreamDone: (payload: { requestId: number; fullText: string }) => void;
 }
 
 export function useTauriEvents({
@@ -20,13 +19,14 @@ export function useTauriEvents({
   onStreamChunk,
   onStreamDone,
 }: TauriEventsOptions) {
-  const aliveRef = useRef(true);
-  const cleanupsRef = useRef<(() => void)[]>([]);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   useEffect(() => {
-    aliveRef.current = true;
-    cleanupsRef.current = [];
+    let cancelled = false;
+    const cleanups: (() => void)[] = [];
+
+    const addCleanup = (cleanup: () => void) => {
+      if (cancelled) cleanup();
+      else cleanups.push(cleanup);
+    };
 
     const setup = async () => {
       const u1 = await listen("shortcut-translate", async () => {
@@ -41,69 +41,52 @@ export function useTauriEvents({
           onClipboardTranslate(`ERROR:${e}`);
         }
       });
-      if (!aliveRef.current) { u1(); return; }
-      cleanupsRef.current.push(u1);
+      if (cancelled) { u1(); return; }
+      addCleanup(u1);
 
       const u2 = await listen<string>("ocr-translate", (event) => {
         onOcrTranslate(event.payload);
       });
-      if (!aliveRef.current) { u2(); return; }
-      cleanupsRef.current.push(u2);
+      if (cancelled) { u2(); return; }
+      addCleanup(u2);
 
       const u3 = await listen<string>("clipboard-watch-translate", (event) => {
         onClipboardTranslate(event.payload);
       });
-      if (!aliveRef.current) { u3(); return; }
-      cleanupsRef.current.push(u3);
+      if (cancelled) { u3(); return; }
+      addCleanup(u3);
 
       const u4 = await listen("screenshot-start", () => {
         onScreenshotStart();
       });
-      if (!aliveRef.current) { u4(); return; }
-      cleanupsRef.current.push(u4);
+      if (cancelled) { u4(); return; }
+      addCleanup(u4);
 
       const screenshotErrorCleanup = await listen<string>("screenshot-error", (event) => {
         onScreenshotError(event.payload);
       });
-      if (!aliveRef.current) { screenshotErrorCleanup(); return; }
-      cleanupsRef.current.push(screenshotErrorCleanup);
+      if (cancelled) { screenshotErrorCleanup(); return; }
+      addCleanup(screenshotErrorCleanup);
 
-      const u5 = await listen<string>("translate-stream-chunk", (event) => {
+      const u5 = await listen<{ requestId: number; chunk: string }>("translate-stream-chunk", (event) => {
         onStreamChunk(event.payload);
       });
-      if (!aliveRef.current) { u5(); return; }
-      cleanupsRef.current.push(u5);
+      if (cancelled) { u5(); return; }
+      addCleanup(u5);
 
-      const u6 = await listen<string>("translate-stream-done", (event) => {
+      const u6 = await listen<{ requestId: number; fullText: string }>("translate-stream-done", (event) => {
         onStreamDone(event.payload);
       });
-      if (!aliveRef.current) { u6(); return; }
-      cleanupsRef.current.push(u6);
+      if (cancelled) { u6(); return; }
+      addCleanup(u6);
 
-      // Auto-hide: Rust emits event, JS handles the 150ms delay
-      const u7 = await listen("schedule-auto-hide", () => {
-        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = setTimeout(async () => {
-          try {
-            const win = getCurrentWindow();
-            const focused = await win.isFocused();
-            if (!focused) {
-              await win.hide();
-            }
-          } catch (_) {}
-        }, 150);
-      });
-      if (!aliveRef.current) { u7(); return; }
-      cleanupsRef.current.push(u7);
     };
 
-    setup();
+    void setup();
 
     return () => {
-      aliveRef.current = false;
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      cleanupsRef.current.forEach((fn) => fn());
-      cleanupsRef.current = [];
+      cancelled = true;
+      cleanups.forEach((fn) => fn());
     };
     // Intentionally stable — callbacks are identity-stable from the caller
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -82,7 +82,32 @@ fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
     }
 
     let key = key_code.ok_or_else(|| format!("缺少按键: {}", s))?;
+    if modifiers.is_empty() {
+        return Err(format!("快捷键必须包含修饰键: {}", s));
+    }
     Ok(Shortcut::new(Some(modifiers), key))
+}
+
+fn validate_shortcuts(hotkeys: &[(String, String)]) -> Result<Vec<(Shortcut, String)>, String> {
+    let mut validated = Vec::with_capacity(hotkeys.len());
+    for (action, combo) in hotkeys {
+        if !matches!(action.as_str(), "translate" | "replace" | "screenshot") {
+            return Err(format!("未知快捷键操作: {}", action));
+        }
+        if validated
+            .iter()
+            .any(|(_, existing_action)| existing_action == action)
+        {
+            return Err(format!("快捷键操作重复: {}", action));
+        }
+
+        let shortcut = parse_shortcut(combo)?;
+        if validated.iter().any(|(existing, _)| *existing == shortcut) {
+            return Err(format!("快捷键重复: {}", combo));
+        }
+        validated.push((shortcut, action.clone()));
+    }
+    Ok(validated)
 }
 
 /// Synchronize registered shortcuts with the current config.
@@ -91,37 +116,42 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
     let api_config = app.state::<ApiConfig>();
     let hotkeys = api_config.hotkeys.lock().unwrap().clone();
     let shortcut_plugin = app.global_shortcut();
+    let validated = validate_shortcuts(&hotkeys)?;
 
-    // Unregister all current shortcuts
-    {
+    // Validate the complete replacement set before touching active bindings.
+    let previous = {
         let mut registered = get_shortcuts().lock().unwrap();
-        for (sc, _) in registered.drain(..) {
-            let _ = shortcut_plugin.unregister(sc);
-        }
+        std::mem::take(&mut *registered)
+    };
+    for (shortcut, _) in &previous {
+        let _ = shortcut_plugin.unregister(*shortcut);
     }
 
-    // Register new shortcuts
-    let mut registered = get_shortcuts().lock().unwrap();
-    for (action, combo_str) in &hotkeys {
-        match parse_shortcut(combo_str) {
-            Ok(sc) => {
-                if let Err(e) = shortcut_plugin.register(sc) {
-                    log::warn!(
-                        "[shortcut] Failed to register {} ({}): {}",
-                        action,
-                        combo_str,
-                        e
-                    );
-                } else {
-                    registered.push((sc, action.clone()));
+    let mut replacement = Vec::with_capacity(validated.len());
+    for (shortcut, action) in validated {
+        if let Err(error) = shortcut_plugin.register(shortcut) {
+            for (registered, _) in replacement.drain(..) {
+                let _ = shortcut_plugin.unregister(registered);
+            }
+
+            let mut restored = Vec::with_capacity(previous.len());
+            for (old_shortcut, old_action) in previous {
+                match shortcut_plugin.register(old_shortcut) {
+                    Ok(()) => restored.push((old_shortcut, old_action)),
+                    Err(restore_error) => log::error!(
+                        "[shortcut] Failed to restore {:?}: {}",
+                        old_shortcut,
+                        restore_error
+                    ),
                 }
             }
-            Err(e) => {
-                log::warn!("[shortcut] Failed to parse {}: {}", combo_str, e);
-            }
+            *get_shortcuts().lock().unwrap() = restored;
+            return Err(format!("注册快捷键 {} 失败: {}", action, error));
         }
+        replacement.push((shortcut, action));
     }
 
+    *get_shortcuts().lock().unwrap() = replacement;
     Ok(())
 }
 
@@ -316,4 +346,37 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
             .build();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_supported_shortcuts() {
+        assert!(parse_shortcut("Alt+Q").is_ok());
+        assert!(parse_shortcut("Ctrl+Shift+Space").is_ok());
+        assert!(parse_shortcut("Meta+1").is_ok());
+    }
+
+    #[test]
+    fn rejects_shortcuts_without_modifier_or_unsupported_keys() {
+        assert!(parse_shortcut("Q").is_err());
+        assert!(parse_shortcut("Alt+↑").is_err());
+        assert!(parse_shortcut("Alt+F1").is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_actions_and_shortcuts() {
+        assert!(validate_shortcuts(&[
+            ("translate".into(), "Alt+Q".into()),
+            ("translate".into(), "Alt+W".into()),
+        ])
+        .is_err());
+        assert!(validate_shortcuts(&[
+            ("translate".into(), "Alt+Q".into()),
+            ("replace".into(), "Alt+Q".into()),
+        ])
+        .is_err());
+    }
 }

@@ -15,7 +15,6 @@ export default function ScreenshotOverlay() {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [status, setStatus] = useState("");
-  const suppressErrorRef = useRef(false); // Suppress onError during image reload
   const drawingRef = useRef(false);
   const rectRef = useRef<Rect | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -32,11 +31,8 @@ export default function ScreenshotOverlay() {
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
     if (imgRef.current) {
-      suppressErrorRef.current = true;
-      imgRef.current.removeAttribute("src");
-      requestAnimationFrame(() => {
-        if (imgRef.current) imgRef.current.src = uri;
-      });
+      // Assign directly so errors from the replacement resource remain visible.
+      imgRef.current.src = uri;
     }
   }, []);
 
@@ -67,7 +63,6 @@ export default function ScreenshotOverlay() {
   }, [fetchLatest]);
 
   const handleImgLoad = useCallback(() => {
-    suppressErrorRef.current = false;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio;
@@ -204,9 +199,7 @@ export default function ScreenshotOverlay() {
       <img
         ref={imgRef}
         onLoad={handleImgLoad}
-        onError={() => {
-          if (!suppressErrorRef.current) setStatus("图片加载失败");
-        }}
+        onError={() => setStatus("图片加载失败")}
         draggable={false}
         className="absolute inset-0 w-full h-full object-fill block"
       />

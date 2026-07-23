@@ -7,6 +7,7 @@ import {
   rebuildSrt,
   parseJson,
   rebuildJson,
+  MAX_TRANSLATION_CHARS,
 } from "../lib/fileParser";
 
 export interface TranslateState {
@@ -74,17 +75,19 @@ export function useTranslation() {
   /// Streaming translation — emits chunks via Tauri events.
   const doTranslateStream = useCallback(async (text: string) => {
     if (!text.trim()) return;
-    const cleaned = await invoke<string>("cleanup_clipboard_text", { text });
-    setInputText(cleaned);
-    setOutputText("");
-    setLoading(true);
-    setStreaming(true);
     const reqId = ++requestIdRef.current;
-    void emit("translation-state", true).catch(() => {});
     try {
+      const cleaned = await invoke<string>("cleanup_clipboard_text", { text });
+      if (reqId !== requestIdRef.current) return;
+      setInputText(cleaned);
+      setOutputText("");
+      setLoading(true);
+      setStreaming(true);
+      void emit("translation-state", true).catch(() => {});
       await invoke<string>("translate_stream", {
         text: cleaned,
         direction: directionRef.current,
+        requestId: reqId,
       });
       // Stream done — finalize
       if (reqId === requestIdRef.current) {
@@ -102,7 +105,9 @@ export function useTranslation() {
         return;
       }
       if (reqId === requestIdRef.current) {
-        setOutputText(`❌ ${e}`);
+        setOutputText((previous) => previous
+          ? `❌ ${e}\n\n已接收的部分译文：\n${previous}`
+          : `❌ ${e}`);
         setStreaming(false);
       }
     }
@@ -113,12 +118,14 @@ export function useTranslation() {
   }, []);
 
   /// Called by useTauriEvents when a stream chunk arrives.
-  const handleStreamChunk = useCallback((chunk: string) => {
-    setOutputText((prev) => prev + chunk);
+  const handleStreamChunk = useCallback((payload: { requestId: number; chunk: string }) => {
+    if (payload.requestId !== requestIdRef.current) return;
+    setOutputText((prev) => prev + payload.chunk);
   }, []);
 
   /// Called by useTauriEvents when stream is complete.
-  const handleStreamDone = useCallback((_fullText: string) => {
+  const handleStreamDone = useCallback((payload: { requestId: number; fullText: string }) => {
+    if (payload.requestId !== requestIdRef.current) return;
     setStreaming(false);
   }, []);
 
@@ -127,6 +134,15 @@ export function useTranslation() {
   /// Handle file drag-and-drop: parse structured files, translate, reassemble.
   const doTranslateFile = useCallback(async (filename: string, content: string) => {
     const fileType = detectFileType(filename);
+    const contentLength = Array.from(content).length;
+
+    if (fileType === "txt" && contentLength > MAX_TRANSLATION_CHARS) {
+      setOutputText(`❌ 文件内容过长（${contentLength.toLocaleString()} 字符），最多支持 ${MAX_TRANSLATION_CHARS.toLocaleString()} 字符`);
+      setLoading(false);
+      setStreaming(false);
+      setFileStatus(null);
+      return;
+    }
 
     if (fileType === "txt") {
       setFileStatus(`${filename} 翻译中...`);
@@ -175,13 +191,21 @@ export function useTranslation() {
         reassemble = (translated) => {
           const map = new Map<string, string>();
           jsonSegments.forEach((s, i) => {
-            if (translated[i]) map.set(s.path, translated[i]);
+            if (translated[i] !== undefined) map.set(s.path, translated[i]);
           });
           return rebuildJson(content, map);
         };
         setFileStatus(`解析到 ${segments.length} 段文本，翻译中...`);
       } else {
         setOutputText(`❌ 不支持的文件类型: ${filename}`);
+        setLoading(false);
+        setFileStatus(null);
+        return;
+      }
+
+      const batchLength = Array.from(segments.join("\n\n===SEGMENT_BREAK===\n\n")).length;
+      if (batchLength > MAX_TRANSLATION_CHARS) {
+        setOutputText(`❌ 文件内容过长（批处理共 ${batchLength.toLocaleString()} 字符），最多支持 ${MAX_TRANSLATION_CHARS.toLocaleString()} 字符`);
         setLoading(false);
         setFileStatus(null);
         return;
