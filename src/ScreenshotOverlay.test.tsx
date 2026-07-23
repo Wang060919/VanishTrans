@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import ScreenshotOverlay from "./ScreenshotOverlay";
 
 const listeners: Record<string, (event: { payload: unknown }) => void> = {};
@@ -82,5 +82,16 @@ describe("ScreenshotOverlay", () => {
       (c) => c[0] === "get_screenshot_data_uri",
     ).length;
     expect(callsAfter).toBe(callsBefore);
+  });
+
+  it("shows an error when the replacement screenshot cannot be loaded", async () => {
+    mockedInvoke.mockResolvedValue("data:image/png;base64,AAA");
+    const { container, getByText } = render(<ScreenshotOverlay />);
+    const img = container.querySelector("img") as HTMLImageElement;
+
+    await waitFor(() => expect(img.src).toContain("data:image/png;base64,AAA"));
+    fireEvent.error(img);
+
+    expect(getByText("图片加载失败")).toBeInTheDocument();
   });
 });

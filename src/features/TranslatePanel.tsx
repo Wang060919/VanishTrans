@@ -6,8 +6,6 @@ import AnimatedContent from "../components/AnimatedContent";
 import CharCounter from "../components/CharCounter";
 import SignalBurst from "../components/SignalBurst";
 import VanishMark from "../components/brand/VanishMark";
-import { MAX_FILE_SIZE } from "../lib/fileParser";
-
 const MAX_INPUT_CHARS = 10_000;
 
 interface TranslatePanelProps {
@@ -90,12 +88,9 @@ export default function TranslatePanel({
     setDragging(false);
     const file = event.dataTransfer.files[0];
     if (!file) return;
-    if (file.size > MAX_FILE_SIZE) {
-      const sizeKB = Math.round(file.size / 1024);
-      if (!window.confirm(`文件较大 (${sizeKB} KB)，翻译可能较慢。继续？`)) return;
-    }
     const reader = new FileReader();
     reader.onload = () => onTranslateFile(file.name, reader.result as string);
+    reader.onerror = () => window.alert("读取文件失败，请检查文件是否可访问。");
     reader.readAsText(file);
   }, [onTranslateFile]);
 

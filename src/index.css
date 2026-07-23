@@ -484,6 +484,7 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
 .secondary-button:hover { border-color: var(--color-signal-line); color: var(--color-signal); }
 .save-indicator { display: flex; align-items: center; gap: 5px; min-height: 18px; color: var(--color-success); font-size: 11px; opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
 .save-indicator--visible { opacity: 1; }
+.save-indicator--error { color: var(--color-danger); }
 .hotkey-list { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
 .glossary-list { display: flex; flex-direction: column; gap: 7px; }
 .glossary-row { display: grid; grid-template-columns: minmax(0, 1fr) 15px minmax(0, 1fr) 28px; align-items: center; gap: 5px; }

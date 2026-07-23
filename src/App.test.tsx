@@ -1,9 +1,11 @@
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
-const listeners: Record<string, (event: { payload: unknown }) => void> = {};
+type Listener = (event: { payload: unknown }) => void;
+const listeners: Record<string, Set<Listener>> = {};
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -11,10 +13,13 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn(() => Promise.resolve()),
-  listen: vi.fn((eventName: string, cb: (event: { payload: unknown }) => void) => {
-    listeners[eventName] = cb;
+  listen: vi.fn((eventName: string, cb: Listener) => {
+    const eventListeners = listeners[eventName] ?? new Set<Listener>();
+    eventListeners.add(cb);
+    listeners[eventName] = eventListeners;
     return Promise.resolve(() => {
-      delete listeners[eventName];
+      eventListeners.delete(cb);
+      if (eventListeners.size === 0) delete listeners[eventName];
     });
   }),
 }));
@@ -28,14 +33,14 @@ import { invoke } from "@tauri-apps/api/core";
 const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
 
 function emit(eventName: string, payload: unknown = undefined) {
-  listeners[eventName]?.({ payload });
+  listeners[eventName]?.forEach((listener) => listener({ payload }));
 }
 
 describe("App", () => {
   beforeEach(() => {
     mockedInvoke.mockReset();
     for (const key of Object.keys(listeners)) delete listeners[key];
-    mockedInvoke.mockImplementation((cmd: string) => {
+    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
       if (cmd === "get_api_config") {
         return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
       }
@@ -45,9 +50,9 @@ describe("App", () => {
       if (cmd === "translate_stream") {
         // Simulate streaming: emit chunks then resolve
         setTimeout(() => {
-          emit("translate-stream-chunk", "你好");
-          emit("translate-stream-chunk", "世界");
-          emit("translate-stream-done", "你好世界");
+          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "你好" });
+          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "世界" });
+          emit("translate-stream-done", { requestId: args?.requestId, fullText: "你好世界" });
         }, 0);
         return Promise.resolve("你好世界");
       }
@@ -63,7 +68,7 @@ describe("App", () => {
   });
 
   it("preserves a stored API key when saving another setting", async () => {
-    mockedInvoke.mockImplementation((cmd: string) => {
+    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
       if (cmd === "get_api_config") {
         return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: true, model: "gpt-4o-mini" });
       }
@@ -93,14 +98,14 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(listeners["shortcut-translate"]).toBeDefined());
 
-    mockedInvoke.mockImplementation((cmd: string) => {
+    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
       if (cmd === "read_clipboard_safe") return Promise.resolve("hello world");
       if (cmd === "cleanup_clipboard_text") return Promise.resolve("hello world");
       if (cmd === "translate_stream") {
         setTimeout(() => {
-          emit("translate-stream-chunk", "你好");
-          emit("translate-stream-chunk", "世界");
-          emit("translate-stream-done", "你好世界");
+          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "你好" });
+          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "世界" });
+          emit("translate-stream-done", { requestId: args?.requestId, fullText: "你好世界" });
         }, 0);
         return Promise.resolve("你好世界");
       }
@@ -178,6 +183,64 @@ describe("App", () => {
         expect.objectContaining({ direction: "zh2en" }),
       );
     });
+  });
+
+  it("keeps one Tauri listener per event in StrictMode", async () => {
+    render(<StrictMode><App /></StrictMode>);
+
+    await waitFor(() => {
+      expect(listeners["translate-stream-chunk"]?.size).toBe(1);
+      expect(listeners["translate-stream-done"]?.size).toBe(1);
+    });
+  });
+
+  it("updates the pin control after the native window state changes", async () => {
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_api_config") {
+        return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
+      }
+      if (cmd === "get_pin_state") return Promise.resolve(false);
+      if (cmd === "toggle_pin") return Promise.resolve(true);
+      return Promise.resolve(undefined);
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    const pinButton = await screen.findByRole("button", { name: "窗口置顶" });
+    await user.click(pinButton);
+
+    await waitFor(() => expect(pinButton).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("ignores stream chunks from a superseded request", async () => {
+    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
+      if (cmd === "get_api_config") {
+        return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
+      }
+      if (cmd === "cleanup_clipboard_text") return Promise.resolve("hello world");
+      if (cmd === "translate_stream") return Promise.resolve("hello world");
+      return Promise.resolve(undefined);
+    });
+
+    render(<App />);
+    await waitFor(() => expect(listeners["ocr-translate"]).toBeDefined());
+    emit("ocr-translate", "first");
+    await waitFor(() => {
+      expect(mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream")).toHaveLength(1);
+    });
+    emit("ocr-translate", "second");
+
+    await waitFor(() => {
+      const calls = mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream");
+      expect(calls).toHaveLength(2);
+      const firstRequest = calls[0][1].requestId;
+      const secondRequest = calls[1][1].requestId;
+      emit("translate-stream-chunk", { requestId: firstRequest, chunk: "旧结果" });
+      emit("translate-stream-chunk", { requestId: secondRequest, chunk: "新结果" });
+    });
+
+    await waitFor(() => expect(screen.getByText(/新结果/)).toBeInTheDocument());
+    expect(screen.queryByText(/旧结果/)).not.toBeInTheDocument();
   });
 
   it("shows an error when translation fails", async () => {

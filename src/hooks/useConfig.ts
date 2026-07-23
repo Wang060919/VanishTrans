@@ -62,15 +62,15 @@ export function useConfig() {
   };
 
   const saveGlossary = async (entries: GlossaryEntry[]) => {
-    setGlossary(entries);
     const pairs: [string, string][] = entries.map((e) => [e.source, e.target]);
     await invoke("set_glossary", { glossary: pairs });
+    setGlossary(entries);
   };
 
   const saveHotkeys = async (entries: HotkeyEntry[]) => {
-    setHotkeys(entries);
     const pairs: [string, string][] = entries.map((e) => [e.action, e.shortcut]);
     await invoke("set_hotkeys", { hotkeys: pairs });
+    setHotkeys(entries);
   };
 
   return {
