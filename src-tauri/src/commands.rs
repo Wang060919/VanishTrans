@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::sync::atomic::AtomicBool;
 use tauri::{Emitter, Manager};
 
@@ -14,6 +15,20 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// Set to true once the frontend has mounted its event listeners.
 /// The Alt+Q handler checks this before emitting events.
 pub static FRONTEND_READY: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamChunkEvent {
+    request_id: u64,
+    chunk: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamDoneEvent {
+    request_id: u64,
+    full_text: String,
+}
 
 #[tauri::command]
 pub fn frontend_ready() {
@@ -60,26 +75,37 @@ pub fn write_clipboard_safe(
 // -----------------------------------------------------------
 
 #[tauri::command]
-pub fn hide_window(window: tauri::Window) {
-    if let Some(w) = window.get_webview_window("main") {
+pub fn hide_window(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
 }
 
 #[tauri::command]
 pub fn toggle_pin(
-    window: tauri::Window,
+    app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<bool, String> {
-    if let Some(w) = window.get_webview_window("main") {
+    if let Some(w) = app.get_webview_window("main") {
         let is = w.is_always_on_top().map_err(|e| e.to_string())?;
         let new = !is;
         w.set_always_on_top(new).map_err(|e| e.to_string())?;
-        state.pinned.store(new, std::sync::atomic::Ordering::SeqCst);
-        Ok(new)
+        let pinned = w.is_always_on_top().map_err(|e| e.to_string())?;
+        state
+            .pinned
+            .store(pinned, std::sync::atomic::Ordering::SeqCst);
+        Ok(pinned)
     } else {
         Err("找不到主窗口".into())
     }
+}
+
+#[tauri::command]
+pub fn get_pin_state(app: tauri::AppHandle) -> Result<bool, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "找不到主窗口".to_string())?;
+    window.is_always_on_top().map_err(|e| e.to_string())
 }
 
 // -----------------------------------------------------------
@@ -105,18 +131,29 @@ pub fn set_api_config(
     api_key: Option<String>,
     model: String,
 ) -> Result<(), String> {
-    if !base_url.is_empty() {
-        *state.base_url.lock().unwrap() = base_url.trim_end_matches('/').to_string();
+    let base_url = base_url.trim().trim_end_matches('/').to_string();
+    let model = model.trim().to_string();
+    if base_url.is_empty() {
+        return Err("Base URL 不能为空".into());
     }
+    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+        return Err("Base URL 必须以 http:// 或 https:// 开头".into());
+    }
+    if model.is_empty() {
+        return Err("模型名称不能为空".into());
+    }
+
     if let Some(api_key) = api_key {
+        let previous_key = state.api_key.lock().unwrap().clone();
         *state.api_key.lock().unwrap() = api_key;
-        state.save_api_key()?;
+        if let Err(error) = state.save_api_key() {
+            *state.api_key.lock().unwrap() = previous_key;
+            return Err(error);
+        }
     }
-    if !model.is_empty() {
-        *state.model.lock().unwrap() = model;
-    }
-    state.save_to_disk();
-    Ok(())
+    *state.base_url.lock().unwrap() = base_url;
+    *state.model.lock().unwrap() = model;
+    state.save_to_disk()
 }
 
 #[tauri::command]
@@ -125,10 +162,14 @@ pub fn set_hotkeys(
     state: tauri::State<'_, ApiConfig>,
     hotkeys: Vec<(String, String)>,
 ) -> Result<(), String> {
+    let previous = state.hotkeys.lock().unwrap().clone();
     *state.hotkeys.lock().unwrap() = hotkeys;
-    state.save_to_disk();
     // Re-register global shortcuts with the new bindings
-    crate::setup::sync_shortcuts(&app).map_err(|e| format!("快捷键更新失败: {}", e))
+    if let Err(error) = crate::setup::sync_shortcuts(&app) {
+        *state.hotkeys.lock().unwrap() = previous;
+        return Err(format!("快捷键更新失败: {}", error));
+    }
+    state.save_to_disk()
 }
 
 #[tauri::command]
@@ -137,8 +178,7 @@ pub fn set_glossary(
     glossary: Vec<(String, String)>,
 ) -> Result<(), String> {
     *state.glossary.lock().unwrap() = glossary;
-    state.save_to_disk();
-    Ok(())
+    state.save_to_disk()
 }
 
 #[tauri::command]
@@ -151,7 +191,7 @@ pub fn set_max_records(
     state
         .max_records
         .store(max, std::sync::atomic::Ordering::Relaxed);
-    state.save_to_disk();
+    state.save_to_disk()?;
     // Update HistoryStore limit
     app.state::<HistoryStore>().set_max_records(max);
     Ok(())
@@ -186,14 +226,17 @@ pub async fn translate_with_direction(
     direction: String,
 ) -> Result<String, String> {
     let target = crate::translate::resolve_target_lang(&text, &direction);
+    let seq = state.next_request_seq();
 
     // Check Translation Memory first
     if let Some(cached) = tm.lookup(&text, "auto", target) {
+        if !state.is_current_request(seq) {
+            return Err("CANCELLED".into());
+        }
         history.add(&text, &cached, &direction);
         return Ok(cached);
     }
 
-    let seq = state.next_request_seq();
     let result = do_translate_async(&state, &text, "auto", target).await?;
     if !state.is_current_request(seq) {
         return Err("CANCELLED".into());
@@ -212,18 +255,34 @@ pub async fn translate_stream(
     tm: tauri::State<'_, crate::tm::TranslationMemory>,
     text: String,
     direction: String,
+    request_id: u64,
 ) -> Result<String, String> {
     let target = crate::translate::resolve_target_lang(&text, &direction);
+    let seq = state.next_request_seq();
 
     // Check Translation Memory first
     if let Some(cached) = tm.lookup(&text, "auto", target) {
-        let _ = app.emit("translate-stream-chunk", &cached);
-        let _ = app.emit("translate-stream-done", &cached);
+        if !state.is_current_request(seq) {
+            return Err("CANCELLED".into());
+        }
+        let _ = app.emit(
+            "translate-stream-chunk",
+            StreamChunkEvent {
+                request_id,
+                chunk: cached.clone(),
+            },
+        );
+        let _ = app.emit(
+            "translate-stream-done",
+            StreamDoneEvent {
+                request_id,
+                full_text: cached.clone(),
+            },
+        );
         history.add(&text, &cached, &direction);
         return Ok(cached);
     }
 
-    let seq = state.next_request_seq();
     let app_clone = app.clone();
     let seq_for_closure = seq;
     let state_for_closure = state.inner();
@@ -237,7 +296,10 @@ pub async fn translate_stream(
             if !state_for_closure.is_current_request(seq_for_closure) {
                 return;
             }
-            let _ = app_clone.emit("translate-stream-chunk", chunk);
+            let _ = app_clone.emit(
+                "translate-stream-chunk",
+                StreamChunkEvent { request_id, chunk },
+            );
         },
     )
     .await?;
@@ -246,7 +308,13 @@ pub async fn translate_stream(
         return Err("CANCELLED".into());
     }
 
-    let _ = app.emit("translate-stream-done", &result);
+    let _ = app.emit(
+        "translate-stream-done",
+        StreamDoneEvent {
+            request_id,
+            full_text: result.clone(),
+        },
+    );
     // Store in TM and history
     tm.store(&text, &result, "auto", target);
     history.add(&text, &result, &direction);

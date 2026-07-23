@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 pub const BASE_SYSTEM_PROMPT: &str = r#"You are a professional translation engine. Your ONLY task is to translate the user's input text.
@@ -36,6 +37,24 @@ const MAX_INPUT_CHARS: usize = 10_000;
 
 /// Maximum response body size in bytes (1 MB).
 const MAX_RESPONSE_BYTES: usize = 1_024 * 1_024;
+
+async fn read_response_body_limited(response: reqwest::Response) -> Result<Vec<u8>, String> {
+    let mut stream = response.bytes_stream();
+    let mut body = Vec::new();
+
+    while let Some(chunk_result) = stream.next().await {
+        let chunk = chunk_result.map_err(|e| format!("读取响应失败: {}", e))?;
+        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+            return Err(format!(
+                "API 响应体过大（超过 {} KB）",
+                MAX_RESPONSE_BYTES / 1024
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+
+    Ok(body)
+}
 
 #[derive(Serialize)]
 struct ChatMessage {
@@ -232,7 +251,11 @@ impl ApiConfig {
                 });
         let api_key = load_api_key_credential().unwrap_or_default();
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
+            // Non-streaming requests apply their own total timeout below.
+            // Streaming requests use a per-chunk idle timeout so active streams
+            // are not cut off after a fixed wall-clock duration.
+            .timeout(Duration::from_secs(24 * 60 * 60))
+            .connect_timeout(Duration::from_secs(10))
             .pool_max_idle_per_host(4)
             .tcp_keepalive(Duration::from_secs(60))
             .build()
@@ -254,7 +277,9 @@ impl ApiConfig {
         };
         // Only persist when the file didn't exist — avoid a sync write on every cold start
         if !config_existed {
-            this.save_to_disk();
+            if let Err(e) = this.save_to_disk() {
+                log::error!("[config] Failed to create default config: {}", e);
+            }
         }
         this
     }
@@ -275,7 +300,7 @@ impl ApiConfig {
         ]
     }
 
-    pub fn save_to_disk(&self) {
+    pub fn save_to_disk(&self) -> Result<(), String> {
         let cfg = PersistedConfig {
             base_url: self.base_url.lock().unwrap().clone(),
             model: self.model.lock().unwrap().clone(),
@@ -284,14 +309,13 @@ impl ApiConfig {
             max_records: self.max_records.load(std::sync::atomic::Ordering::Relaxed),
         };
         if let Some(p) = self.config_path.parent() {
-            let _ = std::fs::create_dir_all(p);
+            std::fs::create_dir_all(p).map_err(|e| format!("创建配置目录失败: {}", e))?;
         }
         let tmp_path = self.config_path.with_extension("json.tmp");
         let mut value = match serde_json::to_value(&cfg) {
             Ok(value) => value,
             Err(e) => {
-                log::error!("[config] Failed to serialize config: {}", e);
-                return;
+                return Err(format!("序列化配置失败: {}", e));
             }
         };
         if let Ok(existing) = std::fs::read_to_string(&self.config_path) {
@@ -304,18 +328,14 @@ impl ApiConfig {
                 }
             }
         }
-        match serde_json::to_string_pretty(&value) {
-            Ok(j) => {
-                if std::fs::write(&tmp_path, j).is_ok()
-                    && std::fs::rename(&tmp_path, &self.config_path).is_err()
-                {
-                    let _ = std::fs::remove_file(&tmp_path);
-                }
-            }
-            Err(e) => {
-                log::error!("[config] Failed to serialize config: {}", e);
-            }
+        let json =
+            serde_json::to_string_pretty(&value).map_err(|e| format!("序列化配置失败: {}", e))?;
+        std::fs::write(&tmp_path, json).map_err(|e| format!("写入临时配置失败: {}", e))?;
+        if let Err(e) = std::fs::rename(&tmp_path, &self.config_path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("替换配置文件失败: {}", e));
         }
+        Ok(())
     }
 
     pub fn save_api_key(&self) -> Result<(), String> {
@@ -444,6 +464,7 @@ pub async fn do_translate_async(
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&body)
+        .timeout(Duration::from_secs(30))
         .send()
         .await
         .map_err(|e| {
@@ -458,7 +479,9 @@ pub async fn do_translate_async(
 
     let status = resp.status();
     if !status.is_success() {
-        let b = resp.text().await.unwrap_or_default();
+        let b =
+            String::from_utf8_lossy(&read_response_body_limited(resp).await.unwrap_or_default())
+                .to_string();
         return Err(match status.as_u16() {
             401 => "API Key 无效或已过期，请在设置中更新".into(),
             429 => "API 请求频率超限，请稍后重试".into(),
@@ -467,17 +490,7 @@ pub async fn do_translate_async(
         });
     }
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
-    if bytes.len() > MAX_RESPONSE_BYTES {
-        return Err(format!(
-            "API 响应体过大（{} KB），超过限制（{} KB）",
-            bytes.len() / 1024,
-            MAX_RESPONSE_BYTES / 1024
-        ));
-    }
+    let bytes = read_response_body_limited(resp).await?;
 
     let cr: ChatResponse =
         serde_json::from_slice(&bytes).map_err(|e| format!("解析响应 JSON 失败: {}", e))?;
@@ -551,8 +564,6 @@ pub async fn do_translate_stream_async(
     target_lang: &str,
     on_chunk: impl Fn(String),
 ) -> Result<String, String> {
-    use futures_util::StreamExt;
-
     if text.chars().count() > MAX_INPUT_CHARS {
         return Err(format!(
             "输入文本过长（{} 字符），最多支持 {} 字符",
@@ -611,26 +622,32 @@ pub async fn do_translate_stream_async(
     };
 
     let client = state.client.lock().unwrap().clone();
-    let resp = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            if e.is_timeout() {
-                "请求超时 (30s)，请检查网络或 API 服务状态".into()
-            } else if e.is_connect() {
-                format!("无法连接到 {}，请检查 Base URL 和网络", base_url)
-            } else {
-                format!("请求失败: {}", e)
-            }
-        })?;
+    let resp = tokio::time::timeout(
+        Duration::from_secs(30),
+        client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send(),
+    )
+    .await
+    .map_err(|_| "请求超时 (30s)，请检查网络或 API 服务状态".to_string())?
+    .map_err(|e| {
+        if e.is_timeout() {
+            "请求超时 (30s)，请检查网络或 API 服务状态".into()
+        } else if e.is_connect() {
+            format!("无法连接到 {}，请检查 Base URL 和网络", base_url)
+        } else {
+            format!("请求失败: {}", e)
+        }
+    })?;
 
     let status = resp.status();
     if !status.is_success() {
-        let b = resp.text().await.unwrap_or_default();
+        let b =
+            String::from_utf8_lossy(&read_response_body_limited(resp).await.unwrap_or_default())
+                .to_string();
         return Err(match status.as_u16() {
             401 => "API Key 无效或已过期，请在设置中更新".into(),
             429 => "API 请求频率超限，请稍后重试".into(),
@@ -644,7 +661,13 @@ pub async fn do_translate_stream_async(
     let mut buffer: Vec<u8> = Vec::new();
     let mut response_bytes = 0usize;
 
-    while let Some(chunk_result) = stream.next().await {
+    loop {
+        let next_chunk = tokio::time::timeout(Duration::from_secs(30), stream.next())
+            .await
+            .map_err(|_| "流式响应空闲超时 (30s)，请检查网络或 API 服务状态".to_string())?;
+        let Some(chunk_result) = next_chunk else {
+            break;
+        };
         let chunk = chunk_result.map_err(|e| format!("流读取失败: {}", e))?;
         response_bytes = response_bytes.saturating_add(chunk.len());
         if response_bytes > MAX_RESPONSE_BYTES {
@@ -762,7 +785,7 @@ mod tests {
         .unwrap();
         let config = ApiConfig::load_or_default(dir.clone());
         *config.model.lock().unwrap() = "updated".into();
-        config.save_to_disk();
+        config.save_to_disk().unwrap();
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(saved["ball_x"], 321);

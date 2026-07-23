@@ -47,6 +47,7 @@ export function rebuildSrt(blocks: SrtBlock[]): string {
 // ── JSON Parser ─────────────────────────────────────────────
 
 export interface JsonSegment {
+  /** RFC 6901 JSON Pointer, with "" representing the root value. */
   path: string;
   text: string;
 }
@@ -66,12 +67,17 @@ function collectStrings(value: unknown, path: string, out: JsonSegment[]): void 
   if (typeof value === "string" && value.trim()) {
     out.push({ path, text: value });
   } else if (Array.isArray(value)) {
-    value.forEach((item, i) => collectStrings(item, `${path}[${i}]`, out));
+    value.forEach((item, i) => collectStrings(item, appendJsonPointer(path, i), out));
   } else if (value && typeof value === "object") {
     for (const [key, val] of Object.entries(value)) {
-      collectStrings(val, path ? `${path}.${key}` : key, out);
+      collectStrings(val, appendJsonPointer(path, key), out);
     }
   }
+}
+
+function appendJsonPointer(path: string, segment: string | number): string {
+  const escaped = String(segment).replace(/~/g, "~0").replace(/\//g, "~1");
+  return `${path}/${escaped}`;
 }
 
 /**
@@ -80,47 +86,33 @@ function collectStrings(value: unknown, path: string, out: JsonSegment[]): void 
  */
 export function rebuildJson(original: string, translations: Map<string, string>): string {
   const obj = JSON.parse(original);
-  applyTranslations(obj, "", translations);
-  return JSON.stringify(obj, null, 2);
+  return JSON.stringify(applyTranslations(obj, "", translations), null, 2);
 }
 
 /**
- * Recursively walk the object tree and replace string values
- * whose path exists in the translations map.
- *
- * Bug fix: must mutate `parent[key]` / `parent[index]`, not reassign
- * the local parameter — primitives are passed by value in JS.
+ * Recursively rebuild the JSON value with mapped strings replaced.
+ * Returning the updated value also supports a root-level JSON string.
  */
 function applyTranslations(
   value: unknown,
   path: string,
   translations: Map<string, string>,
-): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, i) => {
-      if (typeof item === "string") {
-        const key = `${path}[${i}]`;
-        const translated = translations.get(key);
-        if (translated !== undefined) {
-          value[i] = translated;
-        }
-      } else if (item && typeof item === "object") {
-        applyTranslations(item, `${path}[${i}]`, translations);
-      }
-    });
-  } else if (value && typeof value === "object") {
-    for (const [key, val] of Object.entries(value)) {
-      const fullPath = path ? `${path}.${key}` : key;
-      if (typeof val === "string") {
-        const translated = translations.get(fullPath);
-        if (translated !== undefined) {
-          (value as Record<string, unknown>)[key] = translated;
-        }
-      } else if (val && typeof val === "object") {
-        applyTranslations(val, fullPath, translations);
-      }
-    }
+): unknown {
+  if (typeof value === "string") {
+    return translations.get(path) ?? value;
   }
+  if (Array.isArray(value)) {
+    return value.map((item, index) => applyTranslations(item, appendJsonPointer(path, index), translations));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        applyTranslations(item, appendJsonPointer(path, key), translations),
+      ]),
+    );
+  }
+  return value;
 }
 
 // ── File Type Detection ─────────────────────────────────────
@@ -135,5 +127,5 @@ export function detectFileType(filename: string): FileType {
   return "unknown";
 }
 
-/** Max file size in bytes before warning. */
-export const MAX_FILE_SIZE = 50 * 1024;
+/** Maximum source characters accepted by the translation backend. */
+export const MAX_TRANSLATION_CHARS = 10_000;

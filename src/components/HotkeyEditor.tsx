@@ -28,19 +28,19 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
     if (e.shiftKey) parts.push("Shift");
     if (e.metaKey) parts.push("Meta");
 
-    // Map key names to readable labels
-    const key = e.key
-      .replace("ArrowUp", "↑")
-      .replace("ArrowDown", "↓")
-      .replace("ArrowLeft", "←")
-      .replace("ArrowRight", "→")
-      .replace("Escape", "Esc")
-      .replace(" ", "Space");
-
     // Skip if only modifiers were pressed
     if (parts.length === 0) return;
 
-    parts.push(key.length === 1 ? key.toUpperCase() : key);
+    const key = e.key === "Escape"
+      ? "Esc"
+      : e.key === " "
+        ? "Space"
+        : e.key.length === 1
+          ? e.key.toUpperCase()
+          : "";
+    if (!/^[A-Z0-9]$/.test(key) && key !== "Esc" && key !== "Space") return;
+
+    parts.push(key);
     const combo = parts.join("+");
     setPending(combo);
     setRecording(false);

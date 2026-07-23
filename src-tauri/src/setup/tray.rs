@@ -37,7 +37,10 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "toggle_ball" => toggle_ball(app),
             "toggle_shortcuts" => toggle_shortcuts(app),
             "toggle_watch" => toggle_clipboard_watch(app),
-            "quit" => app.exit(0),
+            "quit" => {
+                app.state::<crate::history::HistoryStore>().flush();
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

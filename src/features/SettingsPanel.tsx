@@ -1,5 +1,5 @@
 ﻿import { Check, Database, KeyRound, Moon, Plus, Server, Sun, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import HotkeyEditor from "../components/HotkeyEditor";
 import SettingInput from "../components/SettingInput";
 import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
@@ -14,12 +14,12 @@ interface SettingsPanelProps {
   hasStoredApiKey: boolean;
   apiKeyUpdate: string | null;
   onApiKeyChange: (v: string | null) => void;
-  onSave: (forcedApiKey?: string) => void;
+  onSave: (forcedApiKey?: string) => Promise<void>;
   glossary: GlossaryEntry[];
-  onGlossaryChange: (entries: GlossaryEntry[]) => void;
+  onGlossaryChange: (entries: GlossaryEntry[]) => Promise<void>;
   hotkeys: HotkeyEntry[];
   hotkeyLabels: Record<string, string>;
-  onHotkeysChange: (entries: HotkeyEntry[]) => void;
+  onHotkeysChange: (entries: HotkeyEntry[]) => Promise<void>;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
 }
@@ -45,20 +45,49 @@ export default function SettingsPanel({
   const [activeTab, setActiveTab] = useState<SettingsTab>("api");
   const [draftGlossary, setDraftGlossary] = useState(glossary);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [tmSearch, setTmSearch] = useState("");
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => setDraftGlossary(glossary), [glossary]);
+  useEffect(() => () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+  }, []);
 
-  const saveConfig = useCallback((forcedApiKey?: string) => {
-    onSave(forcedApiKey);
-    setSaved(true);
-    const timer = setTimeout(() => setSaved(false), 1000);
-    return () => clearTimeout(timer);
-  }, [onSave]);
+  const reportError = useCallback((error: unknown) => {
+    setSaved(false);
+    setSaveError(String(error).replace(/^Error:\s*/, "") || "保存失败，请重试");
+  }, []);
 
-  const handleHotkeyChange = useCallback((action: string, shortcut: string) => {
-    onHotkeysChange(hotkeys.map((entry) => entry.action === action ? { ...entry, shortcut } : entry));
-  }, [hotkeys, onHotkeysChange]);
+  const saveConfig = useCallback(async (forcedApiKey?: string) => {
+    try {
+      await onSave(forcedApiKey);
+      setSaveError("");
+      setSaved(true);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => setSaved(false), 1000);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [onSave, reportError]);
+
+  const handleHotkeyChange = useCallback(async (action: string, shortcut: string) => {
+    try {
+      await onHotkeysChange(hotkeys.map((entry) => entry.action === action ? { ...entry, shortcut } : entry));
+      setSaveError("");
+    } catch (error) {
+      reportError(error);
+    }
+  }, [hotkeys, onHotkeysChange, reportError]);
+
+  const persistGlossary = useCallback(async (entries: GlossaryEntry[]) => {
+    try {
+      await onGlossaryChange(entries);
+      setSaveError("");
+    } catch (error) {
+      reportError(error);
+    }
+  }, [onGlossaryChange, reportError]);
 
   const updateTerm = (index: number, field: keyof GlossaryEntry, value: string) => {
     setDraftGlossary((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, [field]: value } : entry));
@@ -72,7 +101,7 @@ export default function SettingsPanel({
   const deleteTerm = (index: number) => {
     const next = draftGlossary.filter((_, itemIndex) => itemIndex !== index);
     setDraftGlossary(next);
-    onGlossaryChange(next);
+    void persistGlossary(next);
   };
 
   return (
@@ -86,21 +115,22 @@ export default function SettingsPanel({
       </div>
 
       <div className="settings-scroll">
+        {saveError && <div className="save-indicator save-indicator--visible save-indicator--error" role="alert">{saveError}</div>}
         {activeTab === "api" && (
           <section className="settings-section" aria-labelledby="api-settings-title">
             <div className="settings-section-heading">
               <Server size={17} aria-hidden="true" />
               <div><h3 id="api-settings-title">模型连接</h3><p>连接任意兼容 OpenAI API 的服务。</p></div>
             </div>
-            <SettingInput label="Base URL" value={baseUrl} onChange={(event) => onBaseUrlChange(event.target.value)} onBlur={() => saveConfig()} placeholder="https://api.openai.com" />
+            <SettingInput label="Base URL" value={baseUrl} onChange={(event) => onBaseUrlChange(event.target.value)} onBlur={() => void saveConfig()} placeholder="https://api.openai.com" />
             <div className="setting-field">
               <label htmlFor="api-key">API Key</label>
               <div className="setting-inline">
-                <input id="api-key" type="password" value={apiKeyUpdate ?? ""} onChange={(event) => onApiKeyChange(event.target.value)} onBlur={() => saveConfig()} placeholder={hasStoredApiKey ? "已安全保存，输入新 Key 可替换" : "sk-..."} />
-                {hasStoredApiKey && apiKeyUpdate === null && <button type="button" className="secondary-button" onClick={() => saveConfig("")}>清除</button>}
+                <input id="api-key" type="password" value={apiKeyUpdate ?? ""} onChange={(event) => onApiKeyChange(event.target.value)} onBlur={() => void saveConfig()} placeholder={hasStoredApiKey ? "已安全保存，输入新 Key 可替换" : "sk-..."} />
+                {hasStoredApiKey && apiKeyUpdate === null && <button type="button" className="secondary-button" onClick={() => void saveConfig("")}>清除</button>}
               </div>
             </div>
-            <SettingInput label="模型名称" value={model} onChange={(event) => onModelChange(event.target.value)} onBlur={() => saveConfig()} placeholder="gpt-4o-mini" />
+            <SettingInput label="模型名称" value={model} onChange={(event) => onModelChange(event.target.value)} onBlur={() => void saveConfig()} placeholder="gpt-4o-mini" />
             <div className={`save-indicator ${saved ? "save-indicator--visible" : ""}`} role="status"><Check size={13} />设置已保存</div>
           </section>
         )}
@@ -109,7 +139,7 @@ export default function SettingsPanel({
           <section className="settings-section" aria-labelledby="hotkey-settings-title">
             <div className="settings-section-heading"><KeyRound size={17} /><div><h3 id="hotkey-settings-title">全局快捷键</h3><p>在其他应用中也可以呼出 VanishTrans。</p></div></div>
             <div className="hotkey-list">
-              {hotkeys.map((entry) => <HotkeyEditor key={entry.action} label={hotkeyLabels[entry.action] || entry.action} value={entry.shortcut} onChange={(shortcut) => handleHotkeyChange(entry.action, shortcut)} />)}
+              {hotkeys.map((entry) => <HotkeyEditor key={entry.action} label={hotkeyLabels[entry.action] || entry.action} value={entry.shortcut} onChange={(shortcut) => { void handleHotkeyChange(entry.action, shortcut); }} />)}
             </div>
           </section>
         )}
@@ -127,13 +157,13 @@ export default function SettingsPanel({
                     <input aria-label={`术语原文 ${index + 1}`} value={entry.source} onChange={(event) => {
                       const next = draftGlossary.map((e, i) => i === index ? { ...e, source: event.target.value } : e);
                       setDraftGlossary(next);
-                      onGlossaryChange(next);
+                      void persistGlossary(next);
                     }} placeholder="原文" />
                     <span>→</span>
                     <input aria-label={`术语译文 ${index + 1}`} value={entry.target} onChange={(event) => {
                       const next = draftGlossary.map((e, i) => i === index ? { ...e, target: event.target.value } : e);
                       setDraftGlossary(next);
-                      onGlossaryChange(next);
+                      void persistGlossary(next);
                     }} placeholder="译文" />
                     <button type="button" aria-label={`删除术语 ${index + 1}`} onClick={() => deleteTerm(index)}><Trash2 size={14} /></button>
                   </div>
