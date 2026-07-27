@@ -29,7 +29,7 @@ export function useTranslation() {
   const [loading, setLoading] = useState(false);
   const [glowActive, setGlowActive] = useState(false);
   const [streaming, setStreaming] = useState(false);
-  const [direction, setDirection] = useState<LangDirection>("auto2zh");
+  const [direction, setDirection] = useState<LangDirection>("auto");
   const [fileStatus, setFileStatus] = useState<string | null>(null);
   const [translationKey, setTranslationKey] = useState(0);
 
@@ -94,6 +94,7 @@ export function useTranslation() {
         setStreaming(false);
         setTranslationKey(++translationIdCounter);
         setGlowActive(true);
+        void emit("translation-state", false).catch(() => {});
       }
     } catch (e: any) {
       if (e === "CANCELLED" || e?.toString?.() === "CANCELLED") {

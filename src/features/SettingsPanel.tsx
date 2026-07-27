@@ -48,10 +48,16 @@ export default function SettingsPanel({
   const [saveError, setSaveError] = useState("");
   const [tmSearch, setTmSearch] = useState("");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const glossaryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const glossaryDraftRef = useRef(draftGlossary);
+  const userEditedRef = useRef(false);
 
-  useEffect(() => setDraftGlossary(glossary), [glossary]);
+  useEffect(() => {
+    if (!userEditedRef.current) setDraftGlossary(glossary);
+  }, [glossary]);
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (glossaryTimerRef.current) clearTimeout(glossaryTimerRef.current);
   }, []);
 
   const reportError = useCallback((error: unknown) => {
@@ -89,8 +95,19 @@ export default function SettingsPanel({
     }
   }, [onGlossaryChange, reportError]);
 
+  const scheduleGlossarySave = useCallback((entries: GlossaryEntry[]) => {
+    glossaryDraftRef.current = entries;
+    if (glossaryTimerRef.current) clearTimeout(glossaryTimerRef.current);
+    glossaryTimerRef.current = setTimeout(() => {
+      void persistGlossary(glossaryDraftRef.current);
+    }, 400);
+  }, [persistGlossary]);
+
   const updateTerm = (index: number, field: keyof GlossaryEntry, value: string) => {
-    setDraftGlossary((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, [field]: value } : entry));
+    userEditedRef.current = true;
+    const next = draftGlossary.map((entry, itemIndex) => itemIndex === index ? { ...entry, [field]: value } : entry);
+    setDraftGlossary(next);
+    scheduleGlossarySave(next);
   };
 
   const addTerm = () => {
@@ -99,9 +116,10 @@ export default function SettingsPanel({
   };
 
   const deleteTerm = (index: number) => {
+    userEditedRef.current = true;
     const next = draftGlossary.filter((_, itemIndex) => itemIndex !== index);
     setDraftGlossary(next);
-    void persistGlossary(next);
+    scheduleGlossarySave(next);
   };
 
   return (
@@ -155,15 +173,17 @@ export default function SettingsPanel({
                 {draftGlossary.map((entry, index) => (
                   <div className="glossary-row" key={`${entry.source}-${entry.target}-${index}`}>
                     <input aria-label={`术语原文 ${index + 1}`} value={entry.source} onChange={(event) => {
+                      userEditedRef.current = true;
                       const next = draftGlossary.map((e, i) => i === index ? { ...e, source: event.target.value } : e);
                       setDraftGlossary(next);
-                      void persistGlossary(next);
+                      scheduleGlossarySave(next);
                     }} placeholder="原文" />
                     <span>→</span>
                     <input aria-label={`术语译文 ${index + 1}`} value={entry.target} onChange={(event) => {
+                      userEditedRef.current = true;
                       const next = draftGlossary.map((e, i) => i === index ? { ...e, target: event.target.value } : e);
                       setDraftGlossary(next);
-                      void persistGlossary(next);
+                      scheduleGlossarySave(next);
                     }} placeholder="译文" />
                     <button type="button" aria-label={`删除术语 ${index + 1}`} onClick={() => deleteTerm(index)}><Trash2 size={14} /></button>
                   </div>

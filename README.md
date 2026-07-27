@@ -105,6 +105,8 @@ pnpm tauri build
 VanishTrans/
 ├── src/                          # 前端 (React + TypeScript)
 │   ├── App.tsx                   # 应用入口，窗口类型路由
+│   ├── ScreenshotOverlay.tsx     # 截图 OCR 覆盖层
+│   ├── types.ts                  # 共享类型定义
 │   ├── features/
 │   │   ├── TranslatePanel.tsx    # 翻译主面板（输入/输出/拖拽）
 │   │   ├── SettingsPanel.tsx     # 设置面板（API/快捷键/术语/主题）
@@ -114,10 +116,18 @@ VanishTrans/
 │   ├── hooks/
 │   │   ├── useTranslation.ts     # 翻译状态管理
 │   │   ├── useConfig.ts          # 配置管理
+│   │   ├── useTheme.ts           # 主题切换
 │   │   └── useTauriEvents.ts     # Tauri 事件监听
+│   ├── layouts/
+│   │   └── MainLayout.tsx        # 主窗口布局
 │   ├── components/               # 可复用 UI 组件
+│   │   ├── HotkeyEditor.tsx      # 快捷键编辑器
+│   │   ├── LanguageSwitcher.tsx  # 语言切换器
+│   │   ├── OverlayDrawer.tsx     # 抽屉组件
+│   │   ├── AnimatedList.tsx      # 动画列表
+│   │   └── ...
 │   └── lib/
-│       └── fileParser.ts         # SRT/JSON 文件解析
+│       └── fileParser.ts         # SRT/JSON/TXT 文件解析
 ├── src-tauri/                    # 后端 (Rust + Tauri 2)
 │   └── src/
 │       ├── lib.rs                # 应用入口，窗口/托盘/快捷键
@@ -129,6 +139,9 @@ VanishTrans/
 │       ├── keyboard.rs           # 键盘模拟（Ctrl+C/V）
 │       ├── clipboard.rs          # 剪贴板守卫
 │       └── setup/                # 窗口/快捷键/剪贴板初始化
+│           ├── shortcuts.rs      # 全局快捷键注册
+│           ├── tray.rs           # 系统托盘
+│           └── clipboard_watch.rs # 剪贴板监听
 └── start.bat                     # 一键启动脚本
 ```
 

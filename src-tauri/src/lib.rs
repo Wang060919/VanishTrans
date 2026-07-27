@@ -30,6 +30,9 @@ pub struct AppState {
     /// Shared tokio runtime for background translation (Alt+R).
     /// Avoids creating a new runtime per request.
     pub runtime: tokio::runtime::Runtime,
+    /// Timestamp (ms) of the last explicit show-window request.
+    /// The focus-loss auto-hide skips hiding within this window.
+    pub last_show_at: std::sync::atomic::AtomicU64,
 }
 
 pub struct ShortcutsMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
@@ -50,6 +53,7 @@ pub fn run() {
             clipboard_watch_enabled: AtomicBool::new(false),
             alt_r_lock: Mutex::new(()),
             runtime: tokio::runtime::Runtime::new().expect("Failed to create tokio runtime"),
+            last_show_at: std::sync::atomic::AtomicU64::new(0),
         })
         .manage(ClipboardGuard::new())
         .manage(ScreenshotBuffer {
@@ -86,7 +90,7 @@ pub fn run() {
             setup::setup_shortcuts(app)?;
             setup::setup_clipboard_watch(app);
 
-            // Restore ball window position from config
+            // Restore ball window position from config, clamped to visible monitor bounds
             if let Some(ball_w) = app.get_webview_window("ball") {
                 let config_dir = app
                     .path()
@@ -95,8 +99,41 @@ pub fn run() {
                 let config_path = config_dir.join("config.json");
                 if let Ok(cfg_str) = std::fs::read_to_string(&config_path) {
                     if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&cfg_str) {
-                        let x = cfg["ball_x"].as_i64().unwrap_or(100) as i32;
-                        let y = cfg["ball_y"].as_i64().unwrap_or(100) as i32;
+                        let mut x = cfg["ball_x"].as_i64().unwrap_or(100) as i32;
+                        let mut y = cfg["ball_y"].as_i64().unwrap_or(100) as i32;
+                        log::info!("[ball] restoring saved position: ({}, {})", x, y);
+
+                        // Validate position: must be within any connected monitor's bounds
+                        if let Ok(monitors) = ball_w.available_monitors() {
+                            log::info!("[ball] found {} monitors", monitors.len());
+                            let mut valid = false;
+                            for m in &monitors {
+                                let mx = m.position().x;
+                                let my = m.position().y;
+                                let mw = m.size().width as i32;
+                                let mh = m.size().height as i32;
+                                log::info!(
+                                    "[ball] monitor: pos=({}, {}), size={}x{}",
+                                    mx, my, mw, mh
+                                );
+                                // Ball top-left must be inside monitor (with 8px tolerance for edge snapping)
+                                if x >= mx - 8 && x < mx + mw - 44
+                                    && y >= my - 8 && y < my + mh - 44
+                                {
+                                    valid = true;
+                                    break;
+                                }
+                            }
+                            if !valid {
+                                log::warn!(
+                                    "[ball] saved position ({}, {}) is outside all monitors, resetting",
+                                    x, y
+                                );
+                                x = 100;
+                                y = 100;
+                            }
+                        }
+
                         let _ = ball_w.set_position(tauri::Position::Physical(
                             tauri::PhysicalPosition { x, y },
                         ));
@@ -134,6 +171,15 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_millis(150));
                         let _ = app.run_on_main_thread(move || {
                             if state_app.state::<AppState>().pinned.load(Ordering::SeqCst) {
+                                return;
+                            }
+                            // Skip hiding if the window was explicitly shown recently (e.g. from tray)
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            let last_show = state_app.state::<AppState>().last_show_at.load(Ordering::Relaxed);
+                            if now.saturating_sub(last_show) < 300 {
                                 return;
                             }
                             if let Some(main) = state_app.get_webview_window("main") {
@@ -198,6 +244,12 @@ fn toggle_main(app: &tauri::AppHandle) {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
         } else {
+            // Record show timestamp so focus-loss handler won't immediately re-hide
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            app.state::<AppState>().last_show_at.store(now, Ordering::Relaxed);
             let _ = w.show();
             let _ = w.set_focus();
         }

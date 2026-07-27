@@ -5,6 +5,9 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
+/// Mutex protecting concurrent reads/writes to config.json.
+pub static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
+
 pub const BASE_SYSTEM_PROMPT: &str = r#"You are a professional translation engine. Your ONLY task is to translate the user's input text.
 
 RULES (violating any will be considered a failure):
@@ -301,6 +304,7 @@ impl ApiConfig {
     }
 
     pub fn save_to_disk(&self) -> Result<(), String> {
+        let _lock = CONFIG_FILE_LOCK.lock().unwrap();
         let cfg = PersistedConfig {
             base_url: self.base_url.lock().unwrap().clone(),
             model: self.model.lock().unwrap().clone(),
@@ -562,6 +566,7 @@ pub async fn do_translate_stream_async(
     text: &str,
     source_lang: &str,
     target_lang: &str,
+    seq: u64,
     on_chunk: impl Fn(String),
 ) -> Result<String, String> {
     if text.chars().count() > MAX_INPUT_CHARS {
@@ -662,6 +667,11 @@ pub async fn do_translate_stream_async(
     let mut response_bytes = 0usize;
 
     loop {
+        // Check if a newer request has superseded this one — abort early to free the connection
+        if !state.is_current_request(seq) {
+            return Err("CANCELLED".into());
+        }
+
         let next_chunk = tokio::time::timeout(Duration::from_secs(30), stream.next())
             .await
             .map_err(|_| "流式响应空闲超时 (30s)，请检查网络或 API 服务状态".to_string())?;

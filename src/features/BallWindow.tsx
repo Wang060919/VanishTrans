@@ -5,6 +5,7 @@ import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { Clipboard, PanelTopOpen, ScanLine } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import VanishMark from "../components/brand/VanishMark";
+import { useThemeSync } from "../hooks/useTheme";
 
 const ORB_SIZE = 52;
 const DOCK_WIDTH = 278;
@@ -188,6 +189,20 @@ export default function BallWindow() {
 
   const clearPointerOrigin = useCallback(() => {
     pointerOriginRef.current = null;
+  }, []);
+
+  useThemeSync();
+
+  // Delay initial theme application to give the main window's broadcast time to arrive
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Only apply system theme if no theme has been set by a broadcast yet
+      if (!document.documentElement.dataset.theme) {
+        const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
+      }
+    }, 400);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {

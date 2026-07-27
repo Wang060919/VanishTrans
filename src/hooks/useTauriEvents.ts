@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 interface TauriEventsOptions {
   onClipboardTranslate: (text: string) => void;
@@ -19,6 +19,24 @@ export function useTauriEvents({
   onStreamChunk,
   onStreamDone,
 }: TauriEventsOptions) {
+  // Keep refs to the latest callbacks so event listeners never go stale
+  const callbacksRef = useRef({
+    onClipboardTranslate,
+    onOcrTranslate,
+    onScreenshotStart,
+    onScreenshotError,
+    onStreamChunk,
+    onStreamDone,
+  });
+  callbacksRef.current = {
+    onClipboardTranslate,
+    onOcrTranslate,
+    onScreenshotStart,
+    onScreenshotError,
+    onStreamChunk,
+    onStreamDone,
+  };
+
   useEffect(() => {
     let cancelled = false;
     const cleanups: (() => void)[] = [];
@@ -36,46 +54,46 @@ export function useTauriEvents({
             throw e;
           });
           if (!text || text.trim().length === 0) return;
-          onClipboardTranslate(text);
+          callbacksRef.current.onClipboardTranslate(text);
         } catch (e: any) {
-          onClipboardTranslate(`ERROR:${e}`);
+          callbacksRef.current.onClipboardTranslate(`ERROR:${e}`);
         }
       });
       if (cancelled) { u1(); return; }
       addCleanup(u1);
 
       const u2 = await listen<string>("ocr-translate", (event) => {
-        onOcrTranslate(event.payload);
+        callbacksRef.current.onOcrTranslate(event.payload);
       });
       if (cancelled) { u2(); return; }
       addCleanup(u2);
 
       const u3 = await listen<string>("clipboard-watch-translate", (event) => {
-        onClipboardTranslate(event.payload);
+        callbacksRef.current.onClipboardTranslate(event.payload);
       });
       if (cancelled) { u3(); return; }
       addCleanup(u3);
 
       const u4 = await listen("screenshot-start", () => {
-        onScreenshotStart();
+        callbacksRef.current.onScreenshotStart();
       });
       if (cancelled) { u4(); return; }
       addCleanup(u4);
 
       const screenshotErrorCleanup = await listen<string>("screenshot-error", (event) => {
-        onScreenshotError(event.payload);
+        callbacksRef.current.onScreenshotError(event.payload);
       });
       if (cancelled) { screenshotErrorCleanup(); return; }
       addCleanup(screenshotErrorCleanup);
 
       const u5 = await listen<{ requestId: number; chunk: string }>("translate-stream-chunk", (event) => {
-        onStreamChunk(event.payload);
+        callbacksRef.current.onStreamChunk(event.payload);
       });
       if (cancelled) { u5(); return; }
       addCleanup(u5);
 
       const u6 = await listen<{ requestId: number; fullText: string }>("translate-stream-done", (event) => {
-        onStreamDone(event.payload);
+        callbacksRef.current.onStreamDone(event.payload);
       });
       if (cancelled) { u6(); return; }
       addCleanup(u6);
@@ -88,7 +106,5 @@ export function useTauriEvents({
       cancelled = true;
       cleanups.forEach((fn) => fn());
     };
-    // Intentionally stable — callbacks are identity-stable from the caller
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

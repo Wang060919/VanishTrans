@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ScreenshotOverlay from "./ScreenshotOverlay";
@@ -62,6 +63,15 @@ export default function App() {
     invoke<boolean>("get_pin_state")
       .then(setPinned)
       .catch((e) => console.error("[app] get_pin_state failed:", e));
+    // Broadcast current theme so ball window syncs on launch
+    const broadcast = () => {
+      const resolved = document.documentElement.dataset.theme || "light";
+      void emit("theme-change", resolved).catch(() => {});
+    };
+    broadcast();
+    // Retry after a short delay in case ball window listener isn't ready yet
+    const timer = setTimeout(broadcast, 300);
+    return () => clearTimeout(timer);
   }, []);
 
   const handlePin = useCallback(async () => {

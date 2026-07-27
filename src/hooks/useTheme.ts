@@ -1,4 +1,5 @@
-﻿import { useEffect, useState } from "react";
+﻿import { emit } from "@tauri-apps/api/event";
+import { useEffect, useState } from "react";
 
 export type ThemeMode = "system" | "light" | "dark";
 
@@ -20,8 +21,11 @@ export function useTheme() {
 
   useEffect(() => {
     const applyTheme = () => {
-      document.documentElement.dataset.theme = theme === "system" ? resolveSystemTheme() : theme;
+      const resolved = theme === "system" ? resolveSystemTheme() : theme;
+      document.documentElement.dataset.theme = resolved;
       document.documentElement.dataset.themeMode = theme;
+      // Broadcast to other windows (e.g. ball window)
+      void emit("theme-change", resolved).catch(() => {});
     };
 
     applyTheme();
@@ -34,4 +38,27 @@ export function useTheme() {
   }, [theme]);
 
   return { theme, setTheme };
+}
+
+/** Listen for theme changes broadcast from the main window. */
+export function useThemeSync() {
+  useEffect(() => {
+    let cancelled = false;
+    let cleanup: (() => void) | null = null;
+    void (async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      if (cancelled) return;
+      const unlisten = await listen<string>("theme-change", (event) => {
+        if (!cancelled) {
+          document.documentElement.dataset.theme = event.payload;
+        }
+      });
+      if (cancelled) { unlisten(); return; }
+      cleanup = unlisten;
+    })();
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
 }

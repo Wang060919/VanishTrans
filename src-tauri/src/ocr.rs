@@ -9,7 +9,7 @@ const MAX_PREVIEW_WIDTH: u32 = 1920;
 const JPEG_QUALITY: u8 = 85;
 
 /// Scale factor applied to cropped image before OCR for better accuracy.
-pub const OCR_SCALE_FACTOR: u32 = 3;
+pub const OCR_SCALE_FACTOR: u32 = 4;
 
 /// OCR output with text and confidence score.
 #[derive(serde::Serialize, Clone, Debug)]
@@ -30,15 +30,13 @@ fn preview_text(text: &str, max_chars: usize) -> String {
     text.chars().take(max_chars).collect()
 }
 
-/// Capture the primary monitor, resize to max `MAX_PREVIEW_WIDTH` wide,
-/// encode as JPEG85% quality, and return the data URI along with the
-/// resized `DynamicImage` (stored as `data_uri` for preview; used directly
-/// for OCR crop).
+/// Capture the primary monitor, resize to max `MAX_PREVIEW_WIDTH` wide for
+/// the preview JPEG, and return both the preview data URI and the
+/// **original full-resolution** image for OCR cropping.
 pub fn capture_screenshot_as_data_uri() -> Option<(String, image::DynamicImage)> {
     use xcap::Monitor;
 
     let monitors = Monitor::all().ok()?;
-    // Prefer the primary monitor at (0,0); fall back to the first one.
     let primary = monitors
         .iter()
         .find(|m| m.x().unwrap_or(-1) == 0 && m.y().unwrap_or(-1) == 0)
@@ -48,7 +46,7 @@ pub fn capture_screenshot_as_data_uri() -> Option<(String, image::DynamicImage)>
     let (w, h) = (original.width(), original.height());
     log::info!("[capture] raw: {}x{}", w, h);
 
-    // Resize to max width to save memory — JPEG encoding is much smaller than PNG
+    // Build preview JPEG from a resized copy (for display only)
     let resized = if w > MAX_PREVIEW_WIDTH {
         let new_h = (h as u64 * MAX_PREVIEW_WIDTH as u64) / w as u64;
         original.resize_exact(
@@ -57,19 +55,18 @@ pub fn capture_screenshot_as_data_uri() -> Option<(String, image::DynamicImage)>
             image::imageops::FilterType::Lanczos3,
         )
     } else {
-        original
+        original.clone()
     };
-    let (rw, rh) = (resized.width(), resized.height());
-    log::info!("[capture] resized to {}x{}", rw, rh);
+    log::info!("[capture] preview resized to {}x{}", resized.width(), resized.height());
 
-    // JPEG quality — — much smaller than PNG, sharp enough for OCR
     let mut cursor = std::io::Cursor::new(Vec::new());
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, JPEG_QUALITY);
     encoder.encode_image(&resized).ok()?;
     let bytes = cursor.into_inner();
     log::info!("[capture] JPEG: {} bytes", bytes.len());
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
-    Some((format!("data:image/jpeg;base64,{}", b64), resized))
+    // Return original full-res image for OCR, resized for preview
+    Some((format!("data:image/jpeg;base64,{}", b64), original))
 }
 
 #[cfg(target_os = "windows")]

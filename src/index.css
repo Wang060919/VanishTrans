@@ -2,6 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Serif SC";
+  src: url("/fonts/NotoSerifSC-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Serif SC";
+  src: url("/fonts/NotoSerifSC-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --color-canvas: #f1f0ec;
   --color-surface: #faf9f6;
@@ -31,7 +71,7 @@
   --duration-slow: 360ms;
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
-  font-family: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  font-family: "Source Serif 4", "Noto Serif SC", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
   font-size: 14px;
   color-scheme: light;
   -webkit-font-smoothing: antialiased;
@@ -463,7 +503,7 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
 .panel-empty span { font-size: 11px; }
 
 /* Settings drawer */
-.settings-tabs { height: 43px; display: grid; grid-template-columns: repeat(4, 1fr); flex: none; padding: 6px 10px 0; border-bottom: 1px solid var(--color-line); }
+.settings-tabs { height: 43px; display: grid; grid-template-columns: repeat(5, 1fr); flex: none; padding: 6px 10px 0; border-bottom: 1px solid var(--color-line); }
 .settings-tabs button { position: relative; border: 0; background: transparent; color: var(--color-ink-muted); font-size: 11px; font-weight: 600; cursor: pointer; }
 .settings-tabs button::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -1px; height: 2px; border-radius: 2px; background: var(--color-signal); opacity: 0; transform: scaleX(0.55); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
 .settings-tabs button[aria-selected="true"] { color: var(--color-ink); }
@@ -550,10 +590,6 @@ body.ball-window-body #root {
 
 .translation-orb--expanded .translation-orb__core {
   cursor: pointer;
-  background: var(--color-ink);
-  border-color: var(--color-ink);
-  color: var(--color-surface-raised);
-  box-shadow: 0 9px 22px color-mix(in srgb, var(--color-ink) 24%, transparent);
 }
 
 .translation-orb__core:hover {

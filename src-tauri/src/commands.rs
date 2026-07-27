@@ -144,8 +144,10 @@ pub fn set_api_config(
     }
 
     if let Some(api_key) = api_key {
-        let previous_key = state.api_key.lock().unwrap().clone();
-        *state.api_key.lock().unwrap() = api_key;
+        let mut key_guard = state.api_key.lock().unwrap();
+        let previous_key = key_guard.clone();
+        *key_guard = api_key;
+        drop(key_guard);
         if let Err(error) = state.save_api_key() {
             *state.api_key.lock().unwrap() = previous_key;
             return Err(error);
@@ -291,6 +293,7 @@ pub async fn translate_stream(
         &text,
         "auto",
         target,
+        seq,
         |chunk| {
             // Check cancellation before emitting each chunk
             if !state_for_closure.is_current_request(seq_for_closure) {
@@ -578,6 +581,14 @@ pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "找不到主窗口".to_string())?;
+    // Record show timestamp so focus-loss handler won't immediately re-hide
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    app.state::<crate::AppState>()
+        .last_show_at
+        .store(now, std::sync::atomic::Ordering::Relaxed);
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
     Ok(())
@@ -614,6 +625,14 @@ pub fn toggle_ball_show_main(app: tauri::AppHandle) -> Result<(), String> {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
         } else {
+            // Record show timestamp so focus-loss handler won't immediately re-hide
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            app.state::<crate::AppState>()
+                .last_show_at
+                .store(now, std::sync::atomic::Ordering::Relaxed);
             let _ = w.show();
             let _ = w.set_focus();
         }
@@ -635,10 +654,37 @@ pub fn toggle_ball(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn save_ball_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("ball") {
-        let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
-    }
-    // Persist to config
+    let (x, y) = if let Some(w) = app.get_webview_window("ball") {
+        // Validate position: must be within any connected monitor's bounds
+        let mut cx = x;
+        let mut cy = y;
+        if let Ok(monitors) = w.available_monitors() {
+            let mut valid = false;
+            for m in &monitors {
+                let mx = m.position().x;
+                let my = m.position().y;
+                let mw = m.size().width as i32;
+                let mh = m.size().height as i32;
+                if cx >= mx - 8 && cx < mx + mw - 44
+                    && cy >= my - 8 && cy < my + mh - 44
+                {
+                    valid = true;
+                    break;
+                }
+            }
+            if !valid {
+                // Reset to safe default instead of saving an off-screen position
+                cx = 100;
+                cy = 100;
+            }
+        }
+        let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: cx, y: cy }));
+        (cx, cy)
+    } else {
+        (x, y)
+    };
+    // Persist to config (with lock to avoid concurrent write conflicts)
+    let _lock = crate::translate::CONFIG_FILE_LOCK.lock().unwrap();
     let config_dir = app
         .path()
         .app_data_dir()
