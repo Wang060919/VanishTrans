@@ -29,8 +29,10 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
+import { emit as emitTauriEvent } from "@tauri-apps/api/event";
 
 const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
+const mockedEmit = emitTauriEvent as unknown as ReturnType<typeof vi.fn>;
 
 function emit(eventName: string, payload: unknown = undefined) {
   listeners[eventName]?.forEach((listener) => listener({ payload }));
@@ -39,6 +41,7 @@ function emit(eventName: string, payload: unknown = undefined) {
 describe("App", () => {
   beforeEach(() => {
     mockedInvoke.mockReset();
+    mockedEmit.mockClear();
     for (const key of Object.keys(listeners)) delete listeners[key];
     mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
       if (cmd === "get_api_config") {
@@ -99,7 +102,6 @@ describe("App", () => {
     await waitFor(() => expect(listeners["shortcut-translate"]).toBeDefined());
 
     mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
-      if (cmd === "read_clipboard_safe") return Promise.resolve("hello world");
       if (cmd === "cleanup_clipboard_text") return Promise.resolve("hello world");
       if (cmd === "translate_stream") {
         setTimeout(() => {
@@ -115,7 +117,7 @@ describe("App", () => {
       return Promise.resolve(undefined);
     });
 
-    emit("shortcut-translate");
+    emit("shortcut-translate", "hello world");
 
     await waitFor(() => {
       expect(screen.getByText(/你好/)).toBeInTheDocument();
@@ -124,24 +126,25 @@ describe("App", () => {
       "translate_stream",
       expect.objectContaining({ text: "hello world" }),
     );
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "done" });
   });
 
-  it("skips translation when clipboard content is our own", async () => {
+  it("ignores shortcut-translate when no text is provided", async () => {
     render(<App />);
     await waitFor(() => expect(listeners["shortcut-translate"]).toBeDefined());
 
     mockedInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "read_clipboard_safe") return Promise.reject("SKIP_OWN_CONTENT");
       if (cmd === "get_api_config") {
         return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
       }
       return Promise.resolve(undefined);
     });
 
-    emit("shortcut-translate");
+    emit("shortcut-translate", "");
 
     await waitFor(() => {
-      expect(mockedInvoke).toHaveBeenCalledWith("read_clipboard_safe");
+      expect(mockedInvoke).toHaveBeenCalledWith("get_api_config");
     });
     expect(mockedInvoke).not.toHaveBeenCalledWith(
       "translate_stream",
@@ -263,6 +266,9 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText(/请先在设置中配置 API Key/)).toBeInTheDocument();
     });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "error" });
+    expect(mockedEmit).not.toHaveBeenCalledWith("translation-state", { state: "done" });
   });
   it("exposes the branded compact workspace through accessible controls", async () => {
     render(<App />);

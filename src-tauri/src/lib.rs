@@ -1,17 +1,19 @@
 mod clipboard;
 mod commands;
+mod cursor;
 mod history;
 mod keyboard;
 mod ocr;
 mod setup;
 mod tm;
 mod translate;
+mod window_regions;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::clipboard::ClipboardGuard;
 use crate::history::HistoryStore;
@@ -30,9 +32,6 @@ pub struct AppState {
     /// Shared tokio runtime for background translation (Alt+R).
     /// Avoids creating a new runtime per request.
     pub runtime: tokio::runtime::Runtime,
-    /// Timestamp (ms) of the last explicit show-window request.
-    /// The focus-loss auto-hide skips hiding within this window.
-    pub last_show_at: std::sync::atomic::AtomicU64,
 }
 
 pub struct ShortcutsMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
@@ -53,13 +52,9 @@ pub fn run() {
             clipboard_watch_enabled: AtomicBool::new(false),
             alt_r_lock: Mutex::new(()),
             runtime: tokio::runtime::Runtime::new().expect("Failed to create tokio runtime"),
-            last_show_at: std::sync::atomic::AtomicU64::new(0),
         })
         .manage(ClipboardGuard::new())
-        .manage(ScreenshotBuffer {
-            image: std::sync::Mutex::new(None),
-            data_uri: std::sync::Mutex::new(None),
-        })
+        .manage(ScreenshotBuffer::new())
         .setup(|app| {
             let config_dir = app
                 .path()
@@ -68,6 +63,51 @@ pub fn run() {
             let api_config = ApiConfig::load_or_default(config_dir.clone());
             app.manage(api_config);
             app.manage(HistoryStore::load_or_default(config_dir.clone()));
+
+            // Use the compositor-backed Windows 11 acrylic material. Setting Mica
+            // first enables the immersive dark DWM palette; Acrylic then replaces
+            // the backdrop type while retaining that dark palette. Unlike the old
+            // blur-behind API, this remains stable while dragging and resizing.
+            #[cfg(target_os = "windows")]
+            {
+                for label in ["quick"] {
+                    let Some(glass_window) = app.get_webview_window(label) else {
+                        continue;
+                    };
+                    let _ = window_vibrancy::apply_mica(&glass_window, Some(true));
+                    let _ = window_vibrancy::apply_acrylic(&glass_window, None);
+
+                    // Windows 11 draws a one-pixel DWM outline around Acrylic
+                    // windows even when Tauri decorations are disabled. Hide only
+                    // that outline while keeping the native window shadow.
+                    if let Ok(tauri_hwnd) = glass_window.hwnd() {
+                        use windows::Win32::Foundation::HWND;
+                        use windows::Win32::Graphics::Dwm::{
+                            DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+                            DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+                        };
+
+                        let hwnd = HWND(tauri_hwnd.0 as _);
+                        let border_color = DWMWA_COLOR_NONE;
+                        unsafe {
+                            let _ = DwmSetWindowAttribute(
+                                hwnd,
+                                DWMWA_BORDER_COLOR,
+                                &border_color as *const u32 as *const std::ffi::c_void,
+                                std::mem::size_of::<u32>() as u32,
+                            );
+
+                            let corner_preference = DWMWCP_ROUND;
+                            let _ = DwmSetWindowAttribute(
+                                hwnd,
+                                DWMWA_WINDOW_CORNER_PREFERENCE,
+                                &corner_preference as *const _ as *const std::ffi::c_void,
+                                std::mem::size_of_val(&corner_preference) as u32,
+                            );
+                        }
+                    }
+                }
+            }
 
             // Initialize Translation Memory (SQLite)
             match tm::TranslationMemory::open(&config_dir) {
@@ -92,6 +132,11 @@ pub fn run() {
 
             // Restore ball window position from config, clamped to visible monitor bounds
             if let Some(ball_w) = app.get_webview_window("ball") {
+                let scale = ball_w.scale_factor().unwrap_or(1.0);
+                let _ = ball_w.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                    width: (58.0 * scale).round() as u32,
+                    height: (38.0 * scale).round() as u32,
+                }));
                 let config_dir = app
                     .path()
                     .app_data_dir()
@@ -117,8 +162,8 @@ pub fn run() {
                                     mx, my, mw, mh
                                 );
                                 // Ball top-left must be inside monitor (with 8px tolerance for edge snapping)
-                                if x >= mx - 8 && x < mx + mw - 44
-                                    && y >= my - 8 && y < my + mh - 44
+                                if x >= mx - 8 && x < mx + mw - 50
+                                    && y >= my - 8 && y < my + mh - 30
                                 {
                                     valid = true;
                                     break;
@@ -138,6 +183,9 @@ pub fn run() {
                             tauri::PhysicalPosition { x, y },
                         ));
                     }
+                }
+                if let Err(error) = ball_w.show() {
+                    log::error!("[ball] failed to show window on startup: {error}");
                 }
             }
 
@@ -164,27 +212,15 @@ pub fn run() {
         .on_window_event(|w, e| {
             if let tauri::WindowEvent::Focused(false) = e {
                 let label = w.label();
-                if label == "main" && !w.state::<AppState>().pinned.load(Ordering::SeqCst) {
+                if label == "quick" {
                     let app = w.app_handle().clone();
                     let state_app = app.clone();
                     std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(150));
+                        std::thread::sleep(std::time::Duration::from_millis(120));
                         let _ = app.run_on_main_thread(move || {
-                            if state_app.state::<AppState>().pinned.load(Ordering::SeqCst) {
-                                return;
-                            }
-                            // Skip hiding if the window was explicitly shown recently (e.g. from tray)
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            let last_show = state_app.state::<AppState>().last_show_at.load(Ordering::Relaxed);
-                            if now.saturating_sub(last_show) < 300 {
-                                return;
-                            }
-                            if let Some(main) = state_app.get_webview_window("main") {
-                                if !main.is_focused().unwrap_or(true) {
-                                    let _ = main.hide();
+                            if let Some(quick) = state_app.get_webview_window("quick") {
+                                if !quick.is_focused().unwrap_or(true) {
+                                    let _ = quick.hide();
                                 }
                             }
                         });
@@ -194,11 +230,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::frontend_ready,
+            commands::quick_frontend_ready,
             commands::read_clipboard_safe,
             commands::write_clipboard_safe,
             commands::hide_window,
             commands::toggle_pin,
             commands::get_pin_state,
+            commands::set_ball_window_material,
             commands::get_api_config,
             commands::set_api_config,
             commands::set_hotkeys,
@@ -209,8 +247,8 @@ pub fn run() {
             commands::translate_stream,
             commands::translate_batch,
             commands::cleanup_clipboard_text,
-            commands::get_screenshot_data_uri,
-            commands::clear_screenshot_buffer,
+            commands::get_screenshot_payload,
+            commands::cancel_screenshot,
             commands::run_ocr_on_crop,
             commands::finish_ocr,
             commands::get_history,
@@ -224,6 +262,8 @@ pub fn run() {
             commands::tm_import,
             commands::tm_import_content,
             commands::show_main_window,
+            commands::hide_quick_window,
+            commands::show_main_with_text,
             commands::translate_clipboard_from_ball,
             commands::start_screenshot_from_ball,
             commands::toggle_ball_show_main,
@@ -240,37 +280,19 @@ pub fn run() {
 // -----------------------------------------------------------
 
 fn toggle_main(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        if w.is_visible().unwrap_or(false) {
-            let _ = w.hide();
-        } else {
-            // Record show timestamp so focus-loss handler won't immediately re-hide
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            app.state::<AppState>().last_show_at.store(now, Ordering::Relaxed);
-            let _ = w.show();
-            let _ = w.set_focus();
-        }
+    if let Some(w) = app.get_webview_window("ball") {
+        let _ = w.show();
+        let _ = w.emit("toggle-main-window", ());
+        let _ = w.set_focus();
     }
 }
 
 fn toggle_top(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let t = w.is_always_on_top().unwrap_or(false);
-        let _ = w.set_always_on_top(!t);
-        app.state::<AppState>().pinned.store(!t, Ordering::SeqCst);
-    }
-}
-
-fn toggle_ball(app: &tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("ball") {
-        if w.is_visible().unwrap_or(false) {
-            let _ = w.hide();
-        } else {
-            let _ = w.show();
-        }
+    let state = app.state::<AppState>();
+    let pinned = !state.pinned.load(Ordering::SeqCst);
+    state.pinned.store(pinned, Ordering::SeqCst);
+    if let Some(window) = app.get_webview_window("ball") {
+        let _ = window.emit("pin-state-changed", pinned);
     }
 }
 

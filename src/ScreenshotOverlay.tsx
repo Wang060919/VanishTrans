@@ -10,21 +10,52 @@ interface Rect {
   curY: number;
 }
 
+interface ScreenshotPayload {
+  dataUri: string;
+  imageWidth: number;
+  imageHeight: number;
+  monitorX: number;
+  monitorY: number;
+  monitorWidth: number;
+  monitorHeight: number;
+  scaleFactor: number;
+  smartRegions?: SmartSelectionRegion[];
+}
+
+interface SmartSelectionRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const MANUAL_DRAG_THRESHOLD = 6;
+
 export default function ScreenshotOverlay() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [status, setStatus] = useState("");
   const drawingRef = useRef(false);
+  const manualDragRef = useRef(false);
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const smartCandidateRef = useRef<Rect | null>(null);
   const rectRef = useRef<Rect | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const payloadRef = useRef<ScreenshotPayload | null>(null);
+  const sessionRef = useRef(0);
+  const ocrPendingRef = useRef(false);
 
-  const loadNewImage = useCallback((uri: string) => {
+  const loadNewImage = useCallback((payload: ScreenshotPayload) => {
+    sessionRef.current += 1;
+    payloadRef.current = payload;
+    ocrPendingRef.current = false;
     setImgLoaded(false);
     setStatus("");
     drawingRef.current = false;
+    manualDragRef.current = false;
+    pointerDownRef.current = null;
+    smartCandidateRef.current = null;
     rectRef.current = null;
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext("2d");
@@ -32,20 +63,20 @@ export default function ScreenshotOverlay() {
     }
     if (imgRef.current) {
       // Assign directly so errors from the replacement resource remain visible.
-      imgRef.current.src = uri;
+      imgRef.current.src = payload.dataUri;
     }
   }, []);
 
   const fetchLatest = useCallback(() => {
-    invoke<string>("get_screenshot_data_uri")
-      .then((uri) => loadNewImage(uri))
+    invoke<ScreenshotPayload>("get_screenshot_payload")
+      .then((payload) => loadNewImage(payload))
       .catch(() => {});
   }, [loadNewImage]);
 
   useEffect(() => {
     fetchLatest();
     const setup = async () => {
-      const unlisten = await listen<string>("screenshot-ready", (event) => {
+      const unlisten = await listen<ScreenshotPayload>("screenshot-ready", (event) => {
         if (event.payload) {
           loadNewImage(event.payload);
         } else {
@@ -55,10 +86,8 @@ export default function ScreenshotOverlay() {
       return unlisten;
     };
     const p = setup();
-    window.addEventListener("focus", fetchLatest);
     return () => {
       p.then((fn) => fn());
-      window.removeEventListener("focus", fetchLatest);
     };
   }, [fetchLatest]);
 
@@ -74,12 +103,11 @@ export default function ScreenshotOverlay() {
     canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
-    ctx.fillRect(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
     setImgLoaded(true);
   }, []);
 
-  const redraw = useCallback((sel: Rect | null) => {
+  const redraw = useCallback((sel: Rect | null, smart = false) => {
     const canvas = canvasRef.current;
     const img = imgRef.current;
     if (!canvas || !img) return;
@@ -88,17 +116,20 @@ export default function ScreenshotOverlay() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
-    ctx.fillRect(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
     if (!sel) return;
     const x = Math.min(sel.startX, sel.curX);
     const y = Math.min(sel.startY, sel.curY);
     const rw = Math.abs(sel.curX - sel.startX);
     const rh = Math.abs(sel.curY - sel.startY);
     if (rw < 2 || rh < 2) return;
-    ctx.clearRect(x, y, rw, rh);
-    ctx.strokeStyle = getComputedStyle(canvas).getPropertyValue("--color-signal").trim() || "#0078d4";
-    ctx.lineWidth = 2;
+    const styles = getComputedStyle(canvas);
+    ctx.fillStyle = smart
+      ? "rgba(124, 145, 255, 0.09)"
+      : styles.getPropertyValue("--color-signal-soft").trim() || "rgba(124, 145, 255, 0.12)";
+    ctx.fillRect(x, y, rw, rh);
+    ctx.strokeStyle = styles.getPropertyValue("--color-signal").trim() || "#7c91ff";
+    ctx.lineWidth = 1;
     ctx.strokeRect(x, y, rw, rh);
     const label = `${Math.round(rw)} × ${Math.round(rh)}`;
     ctx.font = "12px 'Segoe UI', sans-serif";
@@ -111,83 +142,157 @@ export default function ScreenshotOverlay() {
     ctx.fillText(label, lx, ly);
   }, []);
 
+  const findSmartRegion = useCallback((clientX: number, clientY: number): Rect | null => {
+    const payload = payloadRef.current;
+    if (!payload) return null;
+    const scaleX = window.innerWidth / payload.imageWidth;
+    const scaleY = window.innerHeight / payload.imageHeight;
+    const region = (payload.smartRegions ?? []).find((candidate) => {
+      const x = candidate.x * scaleX;
+      const y = candidate.y * scaleY;
+      const right = x + candidate.width * scaleX;
+      const bottom = y + candidate.height * scaleY;
+      return clientX >= x && clientX <= right && clientY >= y && clientY <= bottom;
+    });
+    if (!region) return null;
+    return {
+      startX: region.x * scaleX,
+      startY: region.y * scaleY,
+      curX: (region.x + region.width) * scaleX,
+      curY: (region.y + region.height) * scaleY,
+    };
+  }, []);
+
   const doOcr = useCallback(async (sel: Rect) => {
-    const img = imgRef.current;
-    if (!img) return;
+    const payload = payloadRef.current;
+    if (!payload || ocrPendingRef.current) return;
     const x = Math.min(sel.startX, sel.curX);
     const y = Math.min(sel.startY, sel.curY);
     const w = Math.abs(sel.curX - sel.startX);
     const h = Math.abs(sel.curY - sel.startY);
     if (w < 10 || h < 10) return;
+    ocrPendingRef.current = true;
+    const session = sessionRef.current;
     setStatus("OCR 识别中...");
-    const scaleX = img.naturalWidth / window.innerWidth;
-    const scaleY = img.naturalHeight / window.innerHeight;
+    const scaleX = payload.imageWidth / window.innerWidth;
+    const scaleY = payload.imageHeight / window.innerHeight;
     const cropX = Math.round(x * scaleX);
     const cropY = Math.round(y * scaleY);
     const cropW = Math.round(w * scaleX);
     const cropH = Math.round(h * scaleY);
     try {
-      const result = await invoke<{ text: string; confidence: number }>("run_ocr_on_crop", {
+      const result = await invoke<{ text: string }>("run_ocr_on_crop", {
         x: cropX, y: cropY, w: cropW, h: cropH,
       });
+      if (session !== sessionRef.current) return;
       const text = result.text;
-      const confidence = result.confidence;
       if (text.trim()) {
-        const pct = Math.round(confidence * 100);
-        setStatus(`识别置信度: ${pct}%`);
-        timerRef.current = setTimeout(() => {
-          timerRef.current = null;
-          setStatus("");
-          invoke("clear_screenshot_buffer").then(() => invoke("finish_ocr", { text }));
-        }, 600);
+        setStatus("");
+        await invoke("finish_ocr", { text });
       } else {
         setStatus("未识别到文字，点击任意位置重试");
         drawingRef.current = false;
+        smartCandidateRef.current = null;
         rectRef.current = null;
       }
-    } catch (e: any) {
-      setStatus(`OCR 失败: ${e}，点击重试`);
+    } catch (error) {
+      if (session !== sessionRef.current) return;
+      setStatus(`OCR 失败: ${String(error)}，点击重试`);
       drawingRef.current = false;
+      smartCandidateRef.current = null;
       rectRef.current = null;
+    } finally {
+      if (session === sessionRef.current) {
+        ocrPendingRef.current = false;
+      }
     }
   }, []);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!imgLoaded) return;
+    if (e.button !== 0 || !imgLoaded || ocrPendingRef.current) return;
     if (status) {
       setStatus("");
       redraw(null);
     }
     drawingRef.current = true;
-    const r = { startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY };
+    manualDragRef.current = false;
+    pointerDownRef.current = { x: e.clientX, y: e.clientY };
+    const smart = findSmartRegion(e.clientX, e.clientY);
+    smartCandidateRef.current = smart;
+    const r = smart ?? { startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY };
     rectRef.current = r;
-    redraw(r);
-  }, [imgLoaded, redraw, status]);
+    redraw(r, Boolean(smart));
+  }, [findSmartRegion, imgLoaded, redraw, status]);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!drawingRef.current || !rectRef.current) return;
-    const r = { ...rectRef.current, curX: e.clientX, curY: e.clientY };
+    if (!drawingRef.current) {
+      if (!imgLoaded || ocrPendingRef.current || status) return;
+      const smart = findSmartRegion(e.clientX, e.clientY);
+      smartCandidateRef.current = smart;
+      rectRef.current = smart;
+      redraw(smart, Boolean(smart));
+      return;
+    }
+    const pointerDown = pointerDownRef.current;
+    if (!pointerDown) return;
+    const distance = Math.hypot(e.clientX - pointerDown.x, e.clientY - pointerDown.y);
+    if (distance >= MANUAL_DRAG_THRESHOLD) manualDragRef.current = true;
+    if (!manualDragRef.current && smartCandidateRef.current) {
+      rectRef.current = smartCandidateRef.current;
+      redraw(smartCandidateRef.current, true);
+      return;
+    }
+    const r = {
+      startX: pointerDown.x,
+      startY: pointerDown.y,
+      curX: e.clientX,
+      curY: e.clientY,
+    };
     rectRef.current = r;
     redraw(r);
-  }, [redraw]);
+  }, [findSmartRegion, imgLoaded, redraw, status]);
 
   const onMouseUp = useCallback(async () => {
     if (!drawingRef.current || !rectRef.current) return;
     drawingRef.current = false;
-    await doOcr(rectRef.current);
+    pointerDownRef.current = null;
+    const selection = rectRef.current;
+    smartCandidateRef.current = null;
+    manualDragRef.current = false;
+    await doOcr(selection);
   }, [doOcr]);
 
-  useEffect(() => {
-    const setup = async () => {
-      const unlisten = await listen("screenshot-escape", () => {
-        invoke("clear_screenshot_buffer");
-        getCurrentWindow().hide();
-      });
-      return unlisten;
-    };
-    const p = setup();
-    return () => { p.then((fn) => fn()); };
+  const cancelScreenshot = useCallback(async () => {
+    sessionRef.current += 1;
+    payloadRef.current = null;
+    ocrPendingRef.current = false;
+    drawingRef.current = false;
+    manualDragRef.current = false;
+    pointerDownRef.current = null;
+    smartCandidateRef.current = null;
+    rectRef.current = null;
+    setStatus("");
+    try {
+      await invoke("cancel_screenshot");
+    } catch {
+      await getCurrentWindow().hide();
+    }
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      void cancelScreenshot();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [cancelScreenshot]);
+
+  const onContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    void cancelScreenshot();
+  }, [cancelScreenshot]);
 
   return (
     <div
@@ -195,6 +300,7 @@ export default function ScreenshotOverlay() {
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
+      onContextMenu={onContextMenu}
     >
       <img
         ref={imgRef}

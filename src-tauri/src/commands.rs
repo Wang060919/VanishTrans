@@ -4,7 +4,7 @@ use tauri::{Emitter, Manager};
 
 use crate::clipboard::ClipboardGuard;
 use crate::history::HistoryStore;
-use crate::ocr::{OcrOutput, ScreenshotBuffer};
+use crate::ocr::{OcrOutput, ScreenshotBuffer, ScreenshotPayload, ScreenshotWindowState};
 use crate::translate::{do_translate_async, ApiConfig};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -15,6 +15,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// Set to true once the frontend has mounted its event listeners.
 /// The Alt+Q handler checks this before emitting events.
 pub static FRONTEND_READY: AtomicBool = AtomicBool::new(false);
+pub static QUICK_FRONTEND_READY: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +34,11 @@ struct StreamDoneEvent {
 #[tauri::command]
 pub fn frontend_ready() {
     FRONTEND_READY.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn quick_frontend_ready() {
+    QUICK_FRONTEND_READY.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
 // -----------------------------------------------------------
@@ -75,10 +81,8 @@ pub fn write_clipboard_safe(
 // -----------------------------------------------------------
 
 #[tauri::command]
-pub fn hide_window(app: tauri::AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.hide();
-    }
+pub fn hide_window(window: tauri::WebviewWindow) {
+    let _ = window.hide();
 }
 
 #[tauri::command]
@@ -86,26 +90,71 @@ pub fn toggle_pin(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<bool, String> {
-    if let Some(w) = app.get_webview_window("main") {
-        let is = w.is_always_on_top().map_err(|e| e.to_string())?;
-        let new = !is;
-        w.set_always_on_top(new).map_err(|e| e.to_string())?;
-        let pinned = w.is_always_on_top().map_err(|e| e.to_string())?;
-        state
-            .pinned
-            .store(pinned, std::sync::atomic::Ordering::SeqCst);
-        Ok(pinned)
-    } else {
-        Err("找不到主窗口".into())
+    let pinned = !state.pinned.load(std::sync::atomic::Ordering::SeqCst);
+    state
+        .pinned
+        .store(pinned, std::sync::atomic::Ordering::SeqCst);
+    if let Some(window) = app.get_webview_window("ball") {
+        let _ = window.emit("pin-state-changed", pinned);
     }
+    Ok(pinned)
 }
 
 #[tauri::command]
-pub fn get_pin_state(app: tauri::AppHandle) -> Result<bool, String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "找不到主窗口".to_string())?;
-    window.is_always_on_top().map_err(|e| e.to_string())
+pub fn get_pin_state(state: tauri::State<'_, crate::AppState>) -> bool {
+    state.pinned.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+#[tauri::command]
+pub fn set_ball_window_material(window: tauri::WebviewWindow, enabled: bool) -> Result<(), String> {
+    if window.label() != "ball" {
+        return Err("窗口材质只能应用到灵动岛".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if enabled {
+            let _ = window_vibrancy::apply_mica(&window, Some(true));
+            let _ = window_vibrancy::apply_acrylic(&window, None);
+        } else {
+            let _ = window_vibrancy::clear_acrylic(&window);
+            let _ = window_vibrancy::clear_mica(&window);
+        }
+
+        if let Ok(tauri_hwnd) = window.hwnd() {
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::Graphics::Dwm::{
+                DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+                DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+            };
+
+            let hwnd = HWND(tauri_hwnd.0 as _);
+            let border_color = DWMWA_COLOR_NONE;
+            let corner_preference = if enabled {
+                DWMWCP_ROUND
+            } else {
+                DWMWCP_DONOTROUND
+            };
+            unsafe {
+                let _ = DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_BORDER_COLOR,
+                    &border_color as *const u32 as *const std::ffi::c_void,
+                    std::mem::size_of::<u32>() as u32,
+                );
+                let _ = DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    &corner_preference as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of_val(&corner_preference) as u32,
+                );
+            }
+        }
+    }
+
+    window
+        .set_shadow(enabled)
+        .map_err(|error| error.to_string())
 }
 
 // -----------------------------------------------------------
@@ -251,7 +300,7 @@ pub async fn translate_with_direction(
 
 #[tauri::command]
 pub async fn translate_stream(
-    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ApiConfig>,
     history: tauri::State<'_, HistoryStore>,
     tm: tauri::State<'_, crate::tm::TranslationMemory>,
@@ -267,14 +316,14 @@ pub async fn translate_stream(
         if !state.is_current_request(seq) {
             return Err("CANCELLED".into());
         }
-        let _ = app.emit(
+        let _ = window.emit(
             "translate-stream-chunk",
             StreamChunkEvent {
                 request_id,
                 chunk: cached.clone(),
             },
         );
-        let _ = app.emit(
+        let _ = window.emit(
             "translate-stream-done",
             StreamDoneEvent {
                 request_id,
@@ -285,7 +334,7 @@ pub async fn translate_stream(
         return Ok(cached);
     }
 
-    let app_clone = app.clone();
+    let window_clone = window.clone();
     let seq_for_closure = seq;
     let state_for_closure = state.inner();
     let result = crate::translate::do_translate_stream_async(
@@ -299,7 +348,7 @@ pub async fn translate_stream(
             if !state_for_closure.is_current_request(seq_for_closure) {
                 return;
             }
-            let _ = app_clone.emit(
+            let _ = window_clone.emit(
                 "translate-stream-chunk",
                 StreamChunkEvent { request_id, chunk },
             );
@@ -311,7 +360,7 @@ pub async fn translate_stream(
         return Err("CANCELLED".into());
     }
 
-    let _ = app.emit(
+    let _ = window.emit(
         "translate-stream-done",
         StreamDoneEvent {
             request_id,
@@ -379,20 +428,123 @@ pub fn cleanup_clipboard_text(text: String) -> Result<String, String> {
 // -----------------------------------------------------------
 
 #[tauri::command]
-pub fn get_screenshot_data_uri(
+pub fn get_screenshot_payload(
     state: tauri::State<'_, ScreenshotBuffer>,
-) -> Result<String, String> {
-    let guard = state.data_uri.lock().unwrap();
+) -> Result<ScreenshotPayload, String> {
+    let guard = state.payload.lock().unwrap();
     match guard.as_ref() {
-        Some(uri) => Ok(uri.clone()),
+        Some(payload) => Ok(payload.clone()),
         None => Err("没有截图数据，请先截屏 (Alt+W)".into()),
     }
 }
 
-#[tauri::command]
-pub fn clear_screenshot_buffer(state: tauri::State<'_, ScreenshotBuffer>) {
-    *state.data_uri.lock().unwrap() = None;
-    *state.image.lock().unwrap() = None;
+pub(crate) fn prepare_screenshot(app: &tauri::AppHandle) -> Option<u64> {
+    let ball = app.get_webview_window("ball");
+    let windows = ScreenshotWindowState {
+        ball_was_visible: ball
+            .as_ref()
+            .and_then(|window| window.is_visible().ok())
+            .unwrap_or(false),
+    };
+
+    let session_id = app.state::<ScreenshotBuffer>().begin(windows)?;
+    if let Some(window) = app.get_webview_window("screenshot") {
+        let _ = window.hide();
+    }
+    if windows.ball_was_visible {
+        if let Some(window) = ball {
+            let _ = window.hide();
+        }
+    }
+    wait_for_window_compositor();
+    Some(session_id)
+}
+
+#[cfg(target_os = "windows")]
+fn wait_for_window_compositor() {
+    use windows::Win32::Graphics::Dwm::DwmFlush;
+    unsafe {
+        let _ = DwmFlush();
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn wait_for_window_compositor() {
+    std::thread::sleep(std::time::Duration::from_millis(32));
+}
+
+#[cfg(target_os = "windows")]
+fn show_without_activation<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOWNOACTIVATE};
+
+    if let Ok(tauri_hwnd) = window.hwnd() {
+        unsafe {
+            let _ = ShowWindow(HWND(tauri_hwnd.0 as _), SW_SHOWNOACTIVATE);
+        }
+    } else {
+        let _ = window.show();
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn show_without_activation<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    let _ = window.show();
+}
+
+fn wait_for_frontend(ready: &AtomicBool) {
+    let mut waited = 0u32;
+    while !ready.load(std::sync::atomic::Ordering::SeqCst) && waited < 500 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        waited += 10;
+    }
+}
+
+fn position_quick_window(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+    let (x, y) = crate::cursor::compute_cursor_follow_position(app, 392.0, 330.0);
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+}
+
+pub(crate) fn show_quick_translation(app: &tauri::AppHandle, text: String) -> Result<(), String> {
+    let window = app
+        .get_webview_window("quick")
+        .ok_or_else(|| "找不到迷你翻译窗口".to_string())?;
+    position_quick_window(app, &window);
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    wait_for_frontend(&QUICK_FRONTEND_READY);
+    window
+        .emit("quick-translate", text)
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn show_quick_error(app: &tauri::AppHandle, message: &str) -> Result<(), String> {
+    let window = app
+        .get_webview_window("quick")
+        .ok_or_else(|| "找不到迷你翻译窗口".to_string())?;
+    position_quick_window(app, &window);
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    wait_for_frontend(&QUICK_FRONTEND_READY);
+    window
+        .emit("quick-translate-error", message)
+        .map_err(|error| error.to_string())
+}
+
+fn restore_windows_after_cancel(app: &tauri::AppHandle, windows: ScreenshotWindowState) {
+    if windows.ball_was_visible {
+        if let Some(window) = app.get_webview_window("ball") {
+            show_without_activation(&window);
+        }
+    }
+}
+
+fn restore_windows_after_ocr(app: &tauri::AppHandle, windows: ScreenshotWindowState) {
+    if windows.ball_was_visible {
+        if let Some(window) = app.get_webview_window("ball") {
+            show_without_activation(&window);
+        }
+    }
 }
 
 #[tauri::command]
@@ -437,26 +589,24 @@ pub fn run_ocr_on_crop(
     log::info!("[ocr] clamped: ({},{}) {}x{}", x, y, w, h);
 
     let crop = img.crop_imm(x, y, w, h);
+    let max_dimension = crate::ocr::ocr_max_image_dimension();
+    let enhanced = crate::ocr::prepare_enhanced_ocr_image(&crop, max_dimension);
+    log::info!(
+        "[ocr] enhanced to {}x{} (system max {})",
+        enhanced.width(),
+        enhanced.height(),
+        max_dimension
+    );
+    let enhanced_png = crate::ocr::encode_ocr_png(&enhanced)?;
+    let enhanced_output = crate::ocr::native_ocr_on_png(&enhanced_png)?;
+    if !enhanced_output.text.trim().is_empty() {
+        return Ok(enhanced_output);
+    }
 
-    // 放大 3 倍，显著提升 OCR 对小字号中文的识别准确率
-    let scaled_w = crop
-        .width()
-        .checked_mul(crate::ocr::OCR_SCALE_FACTOR)
-        .ok_or_else(|| "OCR 图像宽度过大".to_string())?;
-    let scaled_h = crop
-        .height()
-        .checked_mul(crate::ocr::OCR_SCALE_FACTOR)
-        .ok_or_else(|| "OCR 图像高度过大".to_string())?;
-    let scaled = crop.resize_exact(scaled_w, scaled_h, image::imageops::FilterType::Lanczos3);
-    log::info!("[ocr] scaled to {}x{}", scaled.width(), scaled.height());
-
-    let rgb = scaled.to_rgb8();
-    let mut png_buf = std::io::Cursor::new(Vec::new());
-    rgb.write_to(&mut png_buf, image::ImageFormat::Png)
-        .map_err(|e| format!("PNG 编码失败: {}", e))?;
-    let png_bytes = png_buf.into_inner();
-    log::info!("[ocr] -> {} bytes PNG", png_bytes.len());
-    crate::ocr::native_ocr_on_png(&png_bytes)
+    log::info!("[ocr] enhanced pass was empty, retrying with original colors");
+    let original = crate::ocr::prepare_original_ocr_image(&crop, max_dimension);
+    let original_png = crate::ocr::encode_ocr_png(&original)?;
+    crate::ocr::native_ocr_on_png(&original_png)
 }
 
 // -----------------------------------------------------------
@@ -501,17 +651,31 @@ pub fn clear_history(history: tauri::State<'_, HistoryStore>) -> Result<(), Stri
     Ok(())
 }
 
-#[tauri::command]
-pub fn finish_ocr(app: tauri::AppHandle, text: String) -> Result<(), String> {
+pub(crate) fn dismiss_screenshot(app: &tauri::AppHandle) {
+    let windows = app.state::<ScreenshotBuffer>().cancel();
     if let Some(w) = app.get_webview_window("screenshot") {
         let _ = w.hide();
     }
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.set_focus();
-        let _ = w.emit("ocr-translate", text);
+    if let Some(windows) = windows {
+        restore_windows_after_cancel(app, windows);
     }
-    Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_screenshot(app: tauri::AppHandle) {
+    dismiss_screenshot(&app);
+}
+
+#[tauri::command]
+pub fn finish_ocr(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    let Some(windows) = app.state::<ScreenshotBuffer>().complete() else {
+        return Ok(());
+    };
+    if let Some(w) = app.get_webview_window("screenshot") {
+        let _ = w.hide();
+    }
+    restore_windows_after_ocr(&app, windows);
+    show_quick_translation(&app, text)
 }
 
 // -----------------------------------------------------------
@@ -579,19 +743,40 @@ pub fn tm_import_content(
 #[tauri::command]
 pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "找不到主窗口".to_string())?;
-    // Record show timestamp so focus-loss handler won't immediately re-hide
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    app.state::<crate::AppState>()
-        .last_show_at
-        .store(now, std::sync::atomic::Ordering::Relaxed);
+        .get_webview_window("ball")
+        .ok_or_else(|| "找不到灵动岛窗口".to_string())?;
     window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
-    Ok(())
+    wait_for_frontend(&FRONTEND_READY);
+    window
+        .emit("expand-main-window", ())
+        .map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn hide_quick_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("quick") {
+        let _ = window.hide();
+    }
+}
+
+#[tauri::command]
+pub fn show_main_with_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    if let Some(quick) = app.get_webview_window("quick") {
+        let _ = quick.hide();
+    }
+    let window = app
+        .get_webview_window("ball")
+        .ok_or_else(|| "找不到灵动岛窗口".to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+    wait_for_frontend(&FRONTEND_READY);
+    window
+        .emit("expand-main-window", ())
+        .map_err(|error| error.to_string())?;
+    window
+        .emit("shortcut-translate", text)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -604,14 +789,7 @@ pub fn translate_clipboard_from_ball(app: tauri::AppHandle) -> Result<(), String
         return Err("剪贴板里没有可翻译的文本".into());
     }
     let cleaned = cleanup_clipboard_text(text)?;
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "找不到主窗口".to_string())?;
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())?;
-    window
-        .emit("clipboard-watch-translate", cleaned)
-        .map_err(|e| e.to_string())
+    show_quick_translation(&app, cleaned)
 }
 
 #[tauri::command]
@@ -621,23 +799,15 @@ pub fn start_screenshot_from_ball(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub fn toggle_ball_show_main(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("main") {
-        if w.is_visible().unwrap_or(false) {
-            let _ = w.hide();
-        } else {
-            // Record show timestamp so focus-loss handler won't immediately re-hide
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64;
-            app.state::<crate::AppState>()
-                .last_show_at
-                .store(now, std::sync::atomic::Ordering::Relaxed);
-            let _ = w.show();
-            let _ = w.set_focus();
-        }
-    }
-    Ok(())
+    let window = app
+        .get_webview_window("ball")
+        .ok_or_else(|| "找不到灵动岛窗口".to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    wait_for_frontend(&FRONTEND_READY);
+    window
+        .emit("toggle-main-window", ())
+        .map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -665,9 +835,7 @@ pub fn save_ball_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), S
                 let my = m.position().y;
                 let mw = m.size().width as i32;
                 let mh = m.size().height as i32;
-                if cx >= mx - 8 && cx < mx + mw - 44
-                    && cy >= my - 8 && cy < my + mh - 44
-                {
+                if cx >= mx - 8 && cx < mx + mw - 50 && cy >= my - 8 && cy < my + mh - 30 {
                     valid = true;
                     break;
                 }
@@ -678,7 +846,10 @@ pub fn save_ball_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), S
                 cy = 100;
             }
         }
-        let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: cx, y: cy }));
+        let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: cx,
+            y: cy,
+        }));
         (cx, cy)
     } else {
         (x, y)

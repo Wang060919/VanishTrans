@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -8,7 +8,6 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 use crate::clipboard::ClipboardGuard;
-use crate::commands::FRONTEND_READY;
 use crate::keyboard;
 use crate::translate::{self, ApiConfig};
 use crate::AppState;
@@ -17,6 +16,15 @@ use crate::AppState;
 /// Each entry is (Shortcut, action_name).
 static REGISTERED_SHORTCUTS: std::sync::OnceLock<Mutex<Vec<(Shortcut, String)>>> =
     std::sync::OnceLock::new();
+static ALT_Q_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+struct AltQActiveGuard;
+
+impl Drop for AltQActiveGuard {
+    fn drop(&mut self) {
+        ALT_Q_ACTIVE.store(false, Ordering::Release);
+    }
+}
 
 fn get_shortcuts() -> &'static Mutex<Vec<(Shortcut, String)>> {
     REGISTERED_SHORTCUTS.get_or_init(|| Mutex::new(Vec::new()))
@@ -117,6 +125,14 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
     let hotkeys = api_config.hotkeys.lock().unwrap().clone();
     let shortcut_plugin = app.global_shortcut();
     let validated = validate_shortcuts(&hotkeys)?;
+    log::info!(
+        "[sync_shortcuts] input hotkeys: {:?}, validated: {:?}",
+        hotkeys,
+        validated
+            .iter()
+            .map(|(s, a)| format!("{:?}→{}", s, a))
+            .collect::<Vec<_>>()
+    );
 
     // Validate the complete replacement set before touching active bindings.
     let previous = {
@@ -171,8 +187,7 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                 if *sc == esc {
                     if let Some(w) = app.get_webview_window("screenshot") {
                         if w.is_visible().unwrap_or(false) {
-                            let _ = w.hide();
-                            let _ = w.emit("screenshot-escape", ());
+                            crate::commands::dismiss_screenshot(app);
                         }
                     }
                     return;
@@ -189,6 +204,14 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                 // Look up the action for this shortcut
                 let action = {
                     let registered = get_shortcuts().lock().unwrap();
+                    log::info!(
+                        "[shortcut] fired: {:?}, registered: {:?}",
+                        sc,
+                        registered
+                            .iter()
+                            .map(|(s, a)| format!("{:?}→{}", s, a))
+                            .collect::<Vec<_>>()
+                    );
                     registered
                         .iter()
                         .find(|(s, _)| *s == *sc)
@@ -196,10 +219,21 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                 };
 
                 match action.as_deref() {
-                    Some("translate") => handle_alt_q(app),
-                    Some("replace") => handle_alt_r(app.clone()),
-                    Some("screenshot") => start_screenshot(app.clone()),
-                    _ => {}
+                    Some("translate") => {
+                        log::info!("[shortcut] → handle_alt_q");
+                        handle_alt_q(app);
+                    }
+                    Some("replace") => {
+                        log::info!("[shortcut] → handle_alt_r");
+                        handle_alt_r(app.clone());
+                    }
+                    Some("screenshot") => {
+                        log::info!("[shortcut] → start_screenshot");
+                        start_screenshot(app.clone());
+                    }
+                    other => {
+                        log::warn!("[shortcut] no match for {:?}, action={:?}", sc, other);
+                    }
                 }
             })
             .build(),
@@ -217,48 +251,81 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-/// Alt+Q: Copy selected text, show popup, translate.
+/// Alt+Q: Copy selected text and translate it in the compact result window.
+/// Uses WM_COPY (hook-safe) with SendInput(Ctrl+C) fallback.
+/// Clipboard is backed up before and restored after the copy.
 fn handle_alt_q(app: &tauri::AppHandle) {
-    keyboard::simulate_copy();
-    thread::sleep(Duration::from_millis(80));
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.set_focus();
-        // Wait for frontend to signal readiness (max 500ms)
-        let mut waited = 0u32;
-        while !FRONTEND_READY.load(Ordering::SeqCst) && waited < 500 {
-            thread::sleep(Duration::from_millis(10));
-            waited += 10;
-        }
-        let _ = w.emit("shortcut-translate", ());
+    if ALT_Q_ACTIVE
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        log::info!("[alt-q] Ignoring duplicate trigger while selection capture is active");
+        return;
+    }
+
+    let app = app.clone();
+    let spawn_result = thread::Builder::new()
+        .name("alt-q-selection".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || run_alt_q(app));
+
+    if let Err(error) = spawn_result {
+        ALT_Q_ACTIVE.store(false, Ordering::Release);
+        log::error!("[alt-q] Failed to start selection worker: {}", error);
     }
 }
 
+fn run_alt_q(app: tauri::AppHandle) {
+    let _active_guard = AltQActiveGuard;
+    log::info!("[alt-q] === start ===");
+
+    // Copy selected text (WM_COPY first, SendInput fallback)
+    //    Internally handles clipboard backup/restore.
+    let text = keyboard::copy_selection(&app);
+    log::info!(
+        "[alt-q] captured {} chars",
+        text.as_ref().map_or(0, String::len)
+    );
+
+    let result = if let Some(cleaned) = text {
+        log::info!(
+            "[alt-q] opening quick translation with {} chars",
+            cleaned.len()
+        );
+        crate::commands::show_quick_translation(&app, cleaned)
+    } else {
+        log::info!("[alt-q] no text captured");
+        crate::commands::show_quick_error(&app, "未读取到选中文字")
+    };
+    if let Err(error) = result {
+        log::error!("[alt-q] Failed to show quick window: {}", error);
+    }
+    log::info!("[alt-q] === end ===");
+}
+
 /// Alt+R: Copy → translate → paste replacement.
+/// Uses WM_COPY (hook-safe) for the copy step.
 fn handle_alt_r(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let app_state = app.state::<AppState>();
         let _lock = match app_state.alt_r_lock.try_lock() {
             Ok(g) => g,
             Err(_) => {
-                if let Some(w) = app.get_webview_window("main") {
+                if let Some(w) = app.get_webview_window("ball") {
                     let _ = w.show();
                     let _ = w.set_focus();
+                    let _ = w.emit("expand-main-window", ());
                 }
                 return;
             }
         };
-        keyboard::simulate_copy();
-        thread::sleep(Duration::from_millis(80));
-        let guard = app.state::<ClipboardGuard>();
-        let text = match app.clipboard().read_text() {
-            Ok(t) if !t.trim().is_empty() => t,
-            _ => return,
+
+        // 1. Copy selected text (WM_COPY first, SendInput fallback)
+        let text = match keyboard::copy_selection(&app) {
+            Some(t) => t,
+            None => return,
         };
-        if guard.is_own_content(&text) {
-            guard.clear_dirty();
-            return;
-        }
+
         let cleaned = text
             .replace("\r\n", "\n")
             .replace("-\n", "")
@@ -287,13 +354,16 @@ fn handle_alt_r(app: tauri::AppHandle) {
                     t
                 }
                 Err(e) => {
-                    if let Some(w) = app.get_webview_window("main") {
+                    if let Some(w) = app.get_webview_window("ball") {
                         let _ = w.show();
+                        let _ = w.emit("expand-main-window", ());
                         let _ = w.emit("ocr-translate", format!("❌ Alt+R 失败: {}", e));
                     }
                     return;
                 }
             };
+
+        // 2. Write translation to clipboard (guarded so clipboard watch ignores it)
         {
             let g = app.state::<ClipboardGuard>();
             g.mark_written(&translated);
@@ -306,15 +376,21 @@ fn handle_alt_r(app: tauri::AppHandle) {
 
 /// Alt+W: Screenshot OCR.
 pub(crate) fn start_screenshot(app: tauri::AppHandle) {
+    log::info!("[start_screenshot] === called ===");
     std::thread::spawn(move || {
-        if let Some(w) = app.get_webview_window("main") {
+        if let Some(w) = app.get_webview_window("ball") {
             let _ = w.emit("screenshot-start", ());
         }
-        let (data_uri, raw_image) = match crate::ocr::capture_screenshot_as_data_uri() {
+        let Some(session_id) = crate::commands::prepare_screenshot(&app) else {
+            log::info!("[screenshot] A capture session is already active");
+            return;
+        };
+        let (payload, raw_image) = match crate::ocr::capture_screenshot() {
             Some(d) => d,
             None => {
                 log::error!("[screenshot] Capture failed");
-                if let Some(w) = app.get_webview_window("main") {
+                crate::commands::dismiss_screenshot(&app);
+                if let Some(w) = app.get_webview_window("ball") {
                     let _ = w.emit("screenshot-error", "截图失败，请检查屏幕录制权限");
                 }
                 return;
@@ -322,28 +398,68 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
         };
         {
             let sb = app.state::<crate::ocr::ScreenshotBuffer>();
-            *sb.data_uri.lock().unwrap() = Some(data_uri.clone());
-            *sb.image.lock().unwrap() = Some(raw_image);
+            if !sb.store(session_id, payload.clone(), raw_image) {
+                log::info!("[screenshot] Capture was cancelled before it became ready");
+                return;
+            }
         }
         if let Some(w) = app.get_webview_window("screenshot") {
-            let _ = w.emit("screenshot-ready", data_uri);
-            let _ = w.show();
-            let _ = w.set_focus();
+            let _ = w.set_fullscreen(false);
+            let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                x: payload.monitor_x,
+                y: payload.monitor_y,
+            }));
+            let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                width: payload.monitor_width,
+                height: payload.monitor_height,
+            }));
+            let _ = w.emit("screenshot-ready", payload);
+            if let Err(error) = w.show().and_then(|_| w.set_focus()) {
+                log::error!("[screenshot] Failed to show overlay: {}", error);
+                crate::commands::dismiss_screenshot(&app);
+            }
         } else {
-            let _ = tauri::WebviewWindowBuilder::new(
+            let window = tauri::WebviewWindowBuilder::new(
                 &app,
                 "screenshot",
                 tauri::WebviewUrl::App("index.html".into()),
             )
             .title("VanishTrans Screenshot")
             .inner_size(1.0, 1.0)
-            .fullscreen(true)
             .always_on_top(true)
             .decorations(false)
             .resizable(false)
-            .visible(true)
+            .visible(false)
             .skip_taskbar(true)
             .build();
+
+            match window {
+                Ok(w) => {
+                    let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                        x: payload.monitor_x,
+                        y: payload.monitor_y,
+                    }));
+                    let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                        width: payload.monitor_width,
+                        height: payload.monitor_height,
+                    }));
+                    let _ = w.emit("screenshot-ready", payload);
+                    if let Err(error) = w.show().and_then(|_| w.set_focus()) {
+                        log::error!("[screenshot] Failed to show overlay: {}", error);
+                        crate::commands::dismiss_screenshot(&app);
+                        if let Some(ball) = app.get_webview_window("ball") {
+                            let _ = ball.emit("screenshot-error", "无法打开截图窗口");
+                        }
+                    }
+                }
+                Err(error) => {
+                    log::error!("[screenshot] Failed to create overlay: {}", error);
+                    crate::commands::dismiss_screenshot(&app);
+                    if let Some(ball) = app.get_webview_window("ball") {
+                        let _ = ball.emit("screenshot-error", "无法打开截图窗口");
+                    }
+                }
+            }
         }
     });
 }

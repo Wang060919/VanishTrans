@@ -28,7 +28,7 @@ pub fn setup_clipboard_watch(app: &tauri::App) {
 
             // Adaptive interval: fast when focused, slow when unfocused
             let focused = watch_handle
-                .get_webview_window("main")
+                .get_webview_window("ball")
                 .map(|w| w.is_focused().unwrap_or(false))
                 .unwrap_or(false);
 
@@ -56,7 +56,7 @@ pub fn setup_clipboard_watch(app: &tauri::App) {
                 .replace("-\n", "")
                 .trim()
                 .to_string();
-            if let Some(w) = watch_handle.get_webview_window("main") {
+            if let Some(w) = watch_handle.get_webview_window("ball") {
                 let _ = w.emit("clipboard-watch-translate", cleaned);
             }
         }

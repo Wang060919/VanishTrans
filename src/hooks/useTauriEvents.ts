@@ -47,17 +47,10 @@ export function useTauriEvents({
     };
 
     const setup = async () => {
-      const u1 = await listen("shortcut-translate", async () => {
-        try {
-          const text = await invoke<string>("read_clipboard_safe").catch((e) => {
-            if (e === "SKIP_OWN_CONTENT") return null;
-            throw e;
-          });
-          if (!text || text.trim().length === 0) return;
-          callbacksRef.current.onClipboardTranslate(text);
-        } catch (e: any) {
-          callbacksRef.current.onClipboardTranslate(`ERROR:${e}`);
-        }
+      const u1 = await listen<string>("shortcut-translate", (event) => {
+        const text = event.payload;
+        if (!text || text.trim().length === 0) return;
+        callbacksRef.current.onClipboardTranslate(text);
       });
       if (cancelled) { u1(); return; }
       addCleanup(u1);

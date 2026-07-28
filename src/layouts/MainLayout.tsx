@@ -1,6 +1,6 @@
-﻿import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { History, Maximize2, Minus, Pin, Settings, Square, X } from "lucide-react";
+import { History, Minimize2, Minus, Pin, Settings, Square, X } from "lucide-react";
 import React, { useCallback, useRef, useState } from "react";
 import IconButton from "../components/IconButton";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -15,6 +15,9 @@ import type { LangDirection } from "../hooks/useTranslation";
 import type { TranslationRecord } from "../types";
 
 interface MainLayoutProps {
+  embedded?: boolean;
+  onCollapse?: () => void | Promise<void>;
+  onWindowMoved?: () => void | Promise<void>;
   inputText: string;
   onInputChange: (v: string) => void;
   outputText: string;
@@ -49,6 +52,9 @@ interface MainLayoutProps {
 type ActivePanel = "settings" | "history" | null;
 
 export default function MainLayout({
+  embedded = false,
+  onCollapse,
+  onWindowMoved,
   inputText, onInputChange,
   outputText, loading,
   pinned, onPin,
@@ -68,7 +74,7 @@ export default function MainLayout({
   const [historyRecords, setHistoryRecords] = useState<TranslationRecord[]>([]);
   const [historySearch, setHistorySearch] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { theme, setTheme } = useTheme();
+  useTheme();
 
   const loadHistory = useCallback(async (query?: string) => {
     const records = await invoke<TranslationRecord[]>("get_history", { query: query || null });
@@ -95,8 +101,12 @@ export default function MainLayout({
   }, [loadHistory]);
 
   const handleMinimize = useCallback(async () => {
+    if (embedded) {
+      await onCollapse?.();
+      return;
+    }
     try { await getCurrentWindow().minimize(); } catch (e) { console.error("minimize failed", e); }
-  }, []);
+  }, [embedded, onCollapse]);
   const handleMaximize = useCallback(async () => {
     try { await getCurrentWindow().toggleMaximize(); } catch (e) { console.error("maximize failed", e); }
   }, []);
@@ -107,11 +117,14 @@ export default function MainLayout({
   // Drag: use startDragging() with permission, fallback to data-tauri-drag-region
   const handleHeaderMouseDown = useCallback(async (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button, .window-controls, select, input, a")) return;
-    try { await getCurrentWindow().startDragging(); } catch (_) {}
-  }, []);
+    try {
+      await getCurrentWindow().startDragging();
+      await onWindowMoved?.();
+    } catch (_) {}
+  }, [onWindowMoved]);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${embedded ? "app-shell--island" : ""}`}>
       <header className="app-header" onMouseDown={handleHeaderMouseDown}>
         <div className="app-brand"><VanishMark /></div>
         <div className="app-header-actions">
@@ -119,8 +132,10 @@ export default function MainLayout({
           <IconButton icon={<History size={15} />} label="打开历史记录" active={activePanel === "history"} onClick={openHistory} />
           <IconButton icon={<Settings size={15} />} label="打开设置" active={activePanel === "settings"} onClick={openSettings} title="API 设置" />
           <div className="window-controls">
-            <button className="window-controls__btn" onClick={handleMinimize} title="最小化"><Minus size={14} /></button>
-            <button className="window-controls__btn" onClick={handleMaximize} title="最大化"><Square size={11} /></button>
+            <button className="window-controls__btn" onClick={handleMinimize} title={embedded ? "收起为灵动岛" : "最小化"}>
+              {embedded ? <Minimize2 size={13} /> : <Minus size={14} />}
+            </button>
+            {!embedded && <button className="window-controls__btn" onClick={handleMaximize} title="最大化"><Square size={11} /></button>}
             <button className="window-controls__btn window-controls__btn--close" onClick={handleClose} title="关闭"><X size={14} /></button>
           </div>
         </div>
@@ -179,8 +194,6 @@ export default function MainLayout({
           hotkeys={hotkeys}
           hotkeyLabels={hotkeyLabels}
           onHotkeysChange={onHotkeysChange}
-          theme={theme}
-          onThemeChange={setTheme}
         />
       </OverlayDrawer>
     </div>

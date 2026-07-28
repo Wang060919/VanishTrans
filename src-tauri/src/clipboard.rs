@@ -2,6 +2,207 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
+
+use tauri::Manager;
+use tauri_plugin_clipboard_manager::ClipboardExt;
+
+#[cfg(target_os = "windows")]
+struct ClipboardFormatSnapshot {
+    format: u32,
+    bytes: Vec<u8>,
+}
+
+/// Snapshot of the clipboard before a simulated Ctrl+C.
+/// Preserves the user's original clipboard content across our copy+translate cycle.
+pub struct ClipboardBackup {
+    text: Option<String>,
+    was_empty: bool,
+    #[cfg(target_os = "windows")]
+    formats: Vec<ClipboardFormatSnapshot>,
+}
+
+/// Back up the current clipboard text before overwriting it with a simulated Ctrl+C.
+pub fn backup_clipboard(app: &tauri::AppHandle) -> ClipboardBackup {
+    let text = app.clipboard().read_text().ok();
+    #[cfg(target_os = "windows")]
+    let formats = backup_native_clipboard();
+    ClipboardBackup {
+        was_empty: text.is_none() && clipboard_is_empty(),
+        text,
+        #[cfg(target_os = "windows")]
+        formats,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_clipboard_with_retry(owner: windows::Win32::Foundation::HWND) -> bool {
+    use windows::Win32::System::DataExchange::OpenClipboard;
+
+    for attempt in 0..8 {
+        if unsafe { OpenClipboard(owner).is_ok() } {
+            return true;
+        }
+        if attempt < 7 {
+            thread::sleep(Duration::from_millis(8));
+        }
+    }
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn is_copyable_global_format(format: u32) -> bool {
+    const HANDLE_FORMATS: [u32; 8] = [2, 3, 9, 14, 128, 130, 131, 142];
+    !HANDLE_FORMATS.contains(&format) && !(0x0200..=0x03ff).contains(&format)
+}
+
+#[cfg(target_os = "windows")]
+fn backup_native_clipboard() -> Vec<ClipboardFormatSnapshot> {
+    use windows::Win32::Foundation::{HGLOBAL, HWND};
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EnumClipboardFormats, GetClipboardData,
+    };
+    use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    const MAX_FORMAT_BYTES: usize = 64 * 1024 * 1024;
+    const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;
+
+    if !open_clipboard_with_retry(HWND::default()) {
+        return Vec::new();
+    }
+
+    let mut snapshots = Vec::new();
+    let mut total_bytes = 0usize;
+    let mut format = 0u32;
+    unsafe {
+        loop {
+            format = EnumClipboardFormats(format);
+            if format == 0 {
+                break;
+            }
+            if !is_copyable_global_format(format) {
+                continue;
+            }
+
+            let Ok(handle) = GetClipboardData(format) else {
+                continue;
+            };
+            let global = HGLOBAL(handle.0);
+            let size = GlobalSize(global);
+            if size == 0
+                || size > MAX_FORMAT_BYTES
+                || total_bytes.saturating_add(size) > MAX_TOTAL_BYTES
+            {
+                continue;
+            }
+
+            let pointer = GlobalLock(global);
+            if pointer.is_null() {
+                continue;
+            }
+            let bytes = std::slice::from_raw_parts(pointer.cast::<u8>(), size).to_vec();
+            let _ = GlobalUnlock(global);
+            total_bytes += bytes.len();
+            snapshots.push(ClipboardFormatSnapshot { format, bytes });
+        }
+        let _ = CloseClipboard();
+    }
+    snapshots
+}
+
+#[cfg(target_os = "windows")]
+fn clipboard_is_empty() -> bool {
+    use windows::Win32::System::DataExchange::CountClipboardFormats;
+    unsafe { CountClipboardFormats() == 0 }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn clipboard_is_empty() -> bool {
+    true
+}
+
+/// Restore a previously backed-up clipboard content.
+/// An originally empty clipboard is restored to empty instead of leaving the
+/// temporary selection text behind.
+pub fn restore_clipboard(app: &tauri::AppHandle, mut backup: ClipboardBackup) {
+    #[cfg(target_os = "windows")]
+    if restore_native_clipboard(app, std::mem::take(&mut backup.formats)) {
+        return;
+    }
+
+    if backup.text.is_none() && !backup.was_empty {
+        return;
+    }
+    for attempt in 0..5 {
+        let result = match backup.text.as_ref() {
+            Some(text) => app.clipboard().write_text(text.clone()),
+            None => app.clipboard().clear(),
+        };
+        if result.is_ok() {
+            return;
+        }
+        if attempt < 4 {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    log::warn!("[clipboard] Failed to restore clipboard after selection capture");
+}
+
+#[cfg(target_os = "windows")]
+fn restore_native_clipboard(
+    app: &tauri::AppHandle,
+    snapshots: Vec<ClipboardFormatSnapshot>,
+) -> bool {
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HWND};
+    use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
+    use windows::Win32::System::Memory::{
+        GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE, GMEM_ZEROINIT,
+    };
+
+    let owner = ["quick", "ball"].iter().find_map(|label| {
+        app.get_webview_window(label)
+            .and_then(|window| window.hwnd().ok())
+            .map(|handle| HWND(handle.0 as _))
+    });
+    let Some(owner) = owner else {
+        return false;
+    };
+    if snapshots.is_empty() || !open_clipboard_with_retry(owner) {
+        return false;
+    }
+
+    let mut restored_count = 0usize;
+    unsafe {
+        if EmptyClipboard().is_ok() {
+            for snapshot in snapshots {
+                let Ok(global) = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, snapshot.bytes.len())
+                else {
+                    continue;
+                };
+                let pointer = GlobalLock(global);
+                if pointer.is_null() {
+                    let _ = GlobalFree(global);
+                    continue;
+                }
+                std::ptr::copy_nonoverlapping(
+                    snapshot.bytes.as_ptr(),
+                    pointer.cast::<u8>(),
+                    snapshot.bytes.len(),
+                );
+                let _ = GlobalUnlock(global);
+
+                if SetClipboardData(snapshot.format, HANDLE(global.0)).is_ok() {
+                    restored_count += 1;
+                } else {
+                    let _ = GlobalFree(global);
+                }
+            }
+        }
+        let _ = CloseClipboard();
+    }
+    restored_count > 0
+}
 
 pub struct ClipboardGuard {
     pub dirty: AtomicBool,
@@ -129,5 +330,17 @@ mod tests {
         assert!(guard.should_translate_for_watch("hello"));
         assert!(!guard.should_translate_for_watch("hello"));
         assert!(guard.should_translate_for_watch("world"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn rich_clipboard_snapshot_skips_non_global_handle_formats() {
+        assert!(!is_copyable_global_format(2));
+        assert!(!is_copyable_global_format(14));
+        assert!(!is_copyable_global_format(0x0200));
+        assert!(!is_copyable_global_format(0x0300));
+        assert!(is_copyable_global_format(13));
+        assert!(is_copyable_global_format(15));
+        assert!(is_copyable_global_format(0xc001));
     }
 }

@@ -23,6 +23,12 @@ export type LangDirection = "auto" | "auto2zh" | "auto2en" | "zh2en" | "en2zh";
 /** Monotonically increasing id so Typewriter re-mounts on new translations. */
 let translationIdCounter = 0;
 
+type TranslationActivityState = "working" | "done" | "error" | "idle";
+
+function broadcastTranslationActivity(state: TranslationActivityState) {
+  void emit("translation-state", { state }).catch(() => {});
+}
+
 export function useTranslation() {
   const [inputText, setInputText] = useState("");
   const [outputText, setOutputText] = useState("");
@@ -76,6 +82,7 @@ export function useTranslation() {
   const doTranslateStream = useCallback(async (text: string) => {
     if (!text.trim()) return;
     const reqId = ++requestIdRef.current;
+    broadcastTranslationActivity("working");
     try {
       const cleaned = await invoke<string>("cleanup_clipboard_text", { text });
       if (reqId !== requestIdRef.current) return;
@@ -83,7 +90,6 @@ export function useTranslation() {
       setOutputText("");
       setLoading(true);
       setStreaming(true);
-      void emit("translation-state", true).catch(() => {});
       await invoke<string>("translate_stream", {
         text: cleaned,
         direction: directionRef.current,
@@ -94,14 +100,14 @@ export function useTranslation() {
         setStreaming(false);
         setTranslationKey(++translationIdCounter);
         setGlowActive(true);
-        void emit("translation-state", false).catch(() => {});
+        broadcastTranslationActivity("done");
       }
     } catch (e: any) {
       if (e === "CANCELLED" || e?.toString?.() === "CANCELLED") {
         if (reqId === requestIdRef.current) {
           setLoading(false);
           setStreaming(false);
-          void emit("translation-state", false).catch(() => {});
+          broadcastTranslationActivity("idle");
         }
         return;
       }
@@ -110,11 +116,10 @@ export function useTranslation() {
           ? `❌ ${e}\n\n已接收的部分译文：\n${previous}`
           : `❌ ${e}`);
         setStreaming(false);
+        broadcastTranslationActivity("error");
       }
-    }
-    if (reqId === requestIdRef.current) {
-      setLoading(false);
-      void emit("translation-state", false).catch(() => {});
+    } finally {
+      if (reqId === requestIdRef.current) setLoading(false);
     }
   }, []);
 

@@ -115,89 +115,91 @@ export default function TranslatePanel({
 
       {fileStatus && <div className="file-status" role="status">{fileStatus}</div>}
 
-      <section className="translation-section translation-section--source" aria-labelledby="source-title">
-        <div className="section-toolbar">
-          <div className="section-heading">
-            <span id="source-title">原文</span>
-            {inputText && <span className="section-meta">{inputText.length.toLocaleString()} 字</span>}
-          </div>
-          <div className="section-actions">
-            {inputText && (
-              <button type="button" className="text-action" onClick={() => onInputChange("")} aria-label="清除原文">
-                <Eraser size={14} aria-hidden="true" />清除
-              </button>
-            )}
-            <button type="button" className="text-action" onClick={handlePaste} aria-label="粘贴文本">
-              <ClipboardPaste size={14} aria-hidden="true" />粘贴
-            </button>
-          </div>
-        </div>
-        <div className="editor-frame">
-          <textarea
-            ref={inputRef}
-            value={inputText}
-            maxLength={MAX_INPUT_CHARS}
-            onChange={(event) => onInputChange(event.target.value)}
-            placeholder="输入、粘贴或拖入文件"
-            spellCheck={false}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                onTranslate();
-              }
-            }}
-          />
-          <div className="editor-footer">
-            <CharCounter current={inputText.length} max={MAX_INPUT_CHARS} compact />
-            <button type="button" className="translate-action" aria-label="翻译文本" disabled={!inputText.trim() || loading} onClick={onTranslate}>
-              <Sparkles size={14} aria-hidden="true" />
-              <span>{loading ? "翻译中" : "Enter 翻译"}</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <div className={`signal-divider ${loading ? "signal-divider--active" : ""} ${glowActive ? "signal-divider--complete" : ""}`} aria-hidden="true">
-        <span /><i />
-      </div>
-
-      <section className="translation-section translation-section--result" aria-labelledby="result-title">
-        <div className="section-toolbar">
-          <div className="section-heading">
-            <span id="result-title">译文</span>
-            {isStreamingActive && <span className="section-meta section-meta--active">流式生成中</span>}
-            {!loading && outputText && !isError && <span className="section-meta section-meta--success">已完成</span>}
-          </div>
-          <div className="section-actions">
-            {outputText && !isError && (
-              <SignalBurst active={copied}>
-                <button type="button" className="text-action" onClick={handleCopyOutput} aria-label="复制译文">
-                  {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-                  {copied ? "已复制" : "复制"}
-                </button>
-              </SignalBurst>
-            )}
-            {isError && (
-              <button type="button" className="text-action text-action--danger" onClick={onTranslate} aria-label="重试翻译">
-                <RefreshCw size={14} aria-hidden="true" />重试
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="result-frame" role="status" aria-live="polite">
-          {loading && !outputText ? (
-            <LoadingState />
-          ) : outputText ? (
-            <AnimatedContent key={translationKey} preset="slide-up"><p className={`translation-copy ${isError ? "translation-copy--error" : ""}`}>{isError ? outputText.replace(/^❌\s*/, "") : outputText}</p></AnimatedContent>
-          ) : (
-            <div className="empty-translation">
-              <VanishMark compact animated={false} decorative />
-              <strong>等待一次语言转换</strong>
-              <span>输入文本，或使用 Alt+Q 翻译已选内容</span>
+      <div className="acrylic-panel">
+        <section className="translation-section translation-section--source" aria-labelledby="source-title">
+          <div className="section-toolbar">
+            <div className="section-heading">
+              <span id="source-title">原文</span>
+              {inputText && <span className="section-meta">{inputText.length.toLocaleString()} 字</span>}
             </div>
-          )}
+            <div className="section-actions">
+              {inputText && (
+                <button type="button" className="text-action" onClick={() => onInputChange("")} aria-label="清除原文">
+                  <Eraser size={14} aria-hidden="true" />清除
+                </button>
+              )}
+              <button type="button" className="text-action" onClick={handlePaste} aria-label="粘贴文本">
+                <ClipboardPaste size={14} aria-hidden="true" />粘贴
+              </button>
+            </div>
+          </div>
+          <div className="editor-frame">
+            <textarea
+              ref={inputRef}
+              value={inputText}
+              maxLength={MAX_INPUT_CHARS}
+              onChange={(event) => onInputChange(event.target.value)}
+              placeholder="输入、粘贴或拖入文件"
+              spellCheck={false}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  onTranslate();
+                }
+              }}
+            />
+            <div className="editor-footer">
+              <CharCounter current={inputText.length} max={MAX_INPUT_CHARS} compact />
+              <button type="button" className="translate-action" aria-label="翻译文本" disabled={!inputText.trim() || loading} onClick={onTranslate}>
+                <Sparkles size={14} aria-hidden="true" />
+                <span>{loading ? "翻译中" : "Enter 翻译"}</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div className={`signal-divider ${loading ? "signal-divider--active" : ""} ${glowActive ? "signal-divider--complete" : ""}`} aria-hidden="true">
+          <span /><i />
         </div>
-      </section>
+
+        <section className="translation-section translation-section--result group" aria-labelledby="result-title">
+          <div className="section-toolbar">
+            <div className="section-heading">
+              <span id="result-title">译文</span>
+              {isStreamingActive && <span className="section-meta section-meta--active">流式生成中</span>}
+              {!loading && outputText && !isError && <span className="section-meta section-meta--success">已完成</span>}
+            </div>
+            <div className="section-actions opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              {outputText && !isError && (
+                <SignalBurst active={copied}>
+                  <button type="button" className="text-action text-action--hover" onClick={handleCopyOutput} aria-label="复制译文">
+                    {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                    {copied ? "已复制" : "复制"}
+                  </button>
+                </SignalBurst>
+              )}
+              {isError && (
+                <button type="button" className="text-action text-action--danger text-action--hover" onClick={onTranslate} aria-label="重试翻译">
+                  <RefreshCw size={14} aria-hidden="true" />重试
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="result-frame" role="status" aria-live="polite">
+            {loading && !outputText ? (
+              <LoadingState />
+            ) : outputText ? (
+              <AnimatedContent key={translationKey} preset="slide-up"><p className={`translation-copy ${isError ? "translation-copy--error" : ""}`}>{isError ? outputText.replace(/^❌\s*/, "") : outputText}</p></AnimatedContent>
+            ) : (
+              <div className="empty-translation">
+                <VanishMark compact animated={false} decorative />
+                <strong>等待一次语言转换</strong>
+                <span>输入文本，或使用 Alt+Q 翻译已选内容</span>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

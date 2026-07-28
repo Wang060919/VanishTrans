@@ -1,9 +1,8 @@
-﻿import { Check, Database, KeyRound, Moon, Plus, Server, Sun, Trash2 } from "lucide-react";
+import { Check, Database, KeyRound, Plus, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import HotkeyEditor from "../components/HotkeyEditor";
 import SettingInput from "../components/SettingInput";
 import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
-import type { ThemeMode } from "../hooks/useTheme";
 import TmPanel from "./TmPanel";
 
 interface SettingsPanelProps {
@@ -20,18 +19,15 @@ interface SettingsPanelProps {
   hotkeys: HotkeyEntry[];
   hotkeyLabels: Record<string, string>;
   onHotkeysChange: (entries: HotkeyEntry[]) => Promise<void>;
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
 }
 
-type SettingsTab = "api" | "hotkeys" | "glossary" | "tm" | "appearance";
+type SettingsTab = "api" | "hotkeys" | "glossary" | "tm";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "api", label: "API" },
   { id: "hotkeys", label: "快捷键" },
   { id: "glossary", label: "术语表" },
   { id: "tm", label: "翻译记忆" },
-  { id: "appearance", label: "外观" },
 ];
 
 export default function SettingsPanel({
@@ -40,7 +36,6 @@ export default function SettingsPanel({
   hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSave,
   glossary, onGlossaryChange,
   hotkeys, hotkeyLabels, onHotkeysChange,
-  theme, onThemeChange,
 }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("api");
   const [draftGlossary, setDraftGlossary] = useState(glossary);
@@ -199,20 +194,6 @@ export default function SettingsPanel({
           </section>
         )}
 
-        {activeTab === "appearance" && (
-          <section className="settings-section" aria-labelledby="appearance-settings-title">
-            <div className="settings-section-heading"><Sun size={17} /><div><h3 id="appearance-settings-title">界面主题</h3><p>默认跟随 Windows 外观设置。</p></div></div>
-            <div className="theme-options" role="radiogroup" aria-label="界面主题">
-              {(["system", "light", "dark"] as ThemeMode[]).map((option) => (
-                <button key={option} type="button" role="radio" aria-checked={theme === option} onClick={() => onThemeChange(option)}>
-                  {option === "dark" ? <Moon size={16} /> : <Sun size={16} />}
-                  <span>{option === "system" ? "跟随系统" : option === "light" ? "浅色" : "深色"}</span>
-                  {theme === option && <Check size={14} className="theme-check" />}
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
       </div>
     </div>
   );
