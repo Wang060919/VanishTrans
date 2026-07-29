@@ -11,6 +11,8 @@ interface MainWindowAppProps {
   embedded?: boolean;
   onCollapse?: () => void | Promise<void>;
   onRequestExpand?: () => void | Promise<void>;
+  onWindowDragStart?: () => boolean | void;
+  onWindowDragEnd?: () => void;
   onWindowMoved?: () => void | Promise<void>;
   onPinChange?: (pinned: boolean) => void;
 }
@@ -19,6 +21,8 @@ export default function MainWindowApp({
   embedded = false,
   onCollapse,
   onRequestExpand,
+  onWindowDragStart,
+  onWindowDragEnd,
   onWindowMoved,
   onPinChange,
 }: MainWindowAppProps) {
@@ -108,6 +112,8 @@ export default function MainWindowApp({
     <MainLayout
       embedded={embedded}
       onCollapse={onCollapse}
+      onWindowDragStart={onWindowDragStart}
+      onWindowDragEnd={onWindowDragEnd}
       onWindowMoved={onWindowMoved}
       inputText={translation.inputText}
       onInputChange={translation.setInputText}

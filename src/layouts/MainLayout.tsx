@@ -17,6 +17,8 @@ import type { TranslationRecord } from "../types";
 interface MainLayoutProps {
   embedded?: boolean;
   onCollapse?: () => void | Promise<void>;
+  onWindowDragStart?: () => boolean | void;
+  onWindowDragEnd?: () => void;
   onWindowMoved?: () => void | Promise<void>;
   inputText: string;
   onInputChange: (v: string) => void;
@@ -54,6 +56,8 @@ type ActivePanel = "settings" | "history" | null;
 export default function MainLayout({
   embedded = false,
   onCollapse,
+  onWindowDragStart,
+  onWindowDragEnd,
   onWindowMoved,
   inputText, onInputChange,
   outputText, loading,
@@ -116,12 +120,18 @@ export default function MainLayout({
 
   // Drag: use startDragging() with permission, fallback to data-tauri-drag-region
   const handleHeaderMouseDown = useCallback(async (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("button, .window-controls, select, input, a")) return;
+    if (e.button !== 0
+      || (e.target as HTMLElement).closest("button, .window-controls, select, input, a")) return;
+    if (onWindowDragStart?.() === false) return;
     try {
       await getCurrentWindow().startDragging();
       await onWindowMoved?.();
-    } catch (_) {}
-  }, [onWindowMoved]);
+    } catch (_) {
+      // Native dragging can be unavailable in a browser-only preview.
+    } finally {
+      onWindowDragEnd?.();
+    }
+  }, [onWindowDragEnd, onWindowDragStart, onWindowMoved]);
 
   return (
     <div className={`app-shell ${embedded ? "app-shell--island" : ""}`}>

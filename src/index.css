@@ -565,10 +565,14 @@ body.ball-window-body #root {
 
 .translation-island {
   --island-accent: 141, 156, 255;
+  --island-shell: #08090b;
+  --island-edge: rgba(255, 255, 255, 0.09);
+  --island-highlight: rgba(255, 255, 255, 0.045);
+  --island-depth: rgba(0, 0, 0, 0.48);
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
   padding: 0;
   overflow: hidden;
@@ -581,6 +585,10 @@ body.ball-window-body #root {
 
 .translation-island--right {
   justify-content: flex-start;
+}
+
+.translation-island--center {
+  justify-content: center;
 }
 
 .translation-island--status.translation-island--done {
@@ -598,38 +606,65 @@ body.ball-window-body #root {
   flex: none;
   display: flex;
   align-items: stretch;
+  justify-content: center;
   overflow: hidden;
   box-sizing: border-box;
   border: 0;
   border-radius: 999px;
-  background: #000;
-  box-shadow: none;
+  background: var(--island-shell);
+  box-shadow: inset 0 -10px 20px rgba(0, 0, 0, 0.22);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   isolation: isolate;
   will-change: transform;
 }
 
-.translation-island--idle .translation-island__surface {
-  width: 58px;
-  height: 38px;
+.translation-island__surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px var(--island-edge),
+    inset 0 1px 0 var(--island-highlight),
+    inset 0 -1px 0 var(--island-depth);
+  pointer-events: none;
 }
 
+.translation-island--idle .translation-island__surface {
+  width: 116px;
+  height: 42px;
+}
+
+.translation-island--peek .translation-island__surface,
 .translation-island--actions .translation-island__surface {
-  width: 278px;
-  height: 58px;
+  width: 296px;
+  height: 60px;
 }
 
 .translation-island--status .translation-island__surface {
-  width: 232px;
-  height: 48px;
+  width: 264px;
+  height: 52px;
 }
 
 .translation-island--full .translation-island__surface {
   width: 420px;
   height: 520px;
-  border-radius: 0;
-  background: transparent;
+  border-radius: 16px;
+  background: var(--island-shell);
+}
+
+.translation-island--peek .translation-island__surface,
+.translation-island--actions .translation-island__surface,
+.translation-island--status .translation-island__surface {
+  cursor: grab;
+}
+
+.translation-island--peek .translation-island__surface:active,
+.translation-island--actions .translation-island__surface:active,
+.translation-island--status .translation-island__surface:active {
+  cursor: grabbing;
 }
 
 .translation-island__full {
@@ -639,8 +674,9 @@ body.ball-window-body #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  border-radius: inherit;
   pointer-events: none;
-  transform-origin: center;
+  transform-origin: 50% 0%;
 }
 
 .translation-island--full .translation-island__full {
@@ -650,10 +686,33 @@ body.ball-window-body #root {
 .translation-island__full .app-shell {
   width: 100%;
   height: 100%;
+  min-height: 0;
+  border-radius: inherit !important;
+  box-shadow: none !important;
 }
 
 .app-shell--island {
   animation: none;
+}
+
+.app-shell--island .app-header {
+  cursor: grab;
+}
+
+.app-shell--island .app-header:active {
+  cursor: grabbing;
+}
+
+.app-shell--island .app-header button,
+.app-shell--island .app-header a,
+.app-shell--island .app-header input,
+.app-shell--island .app-header select {
+  cursor: pointer;
+}
+
+.app-shell--island .app-footer {
+  min-height: 31px;
+  box-sizing: border-box;
 }
 
 .translation-island--right .translation-island__surface {
@@ -663,17 +722,18 @@ body.ball-window-body #root {
 .translation-island__content {
   min-width: 0;
   height: 100%;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   overflow: hidden;
 }
 
 .translation-island__content--actions {
-  width: 100%;
+  width: 0;
   height: 100%;
 }
 
 .translation-island__actions {
-  width: 100%;
+  width: 238px;
+  min-width: 238px;
   height: 100%;
   display: flex;
   align-items: stretch;
@@ -682,7 +742,8 @@ body.ball-window-body #root {
   box-sizing: border-box;
 }
 
-.translation-island--left .translation-island__actions {
+.translation-island--left .translation-island__actions,
+.translation-island--center .translation-island__actions {
   flex-direction: row-reverse;
 }
 
@@ -694,7 +755,7 @@ body.ball-window-body #root {
 .translation-island__actions button {
   position: relative;
   min-width: 0;
-  height: 46px;
+  height: 48px;
   flex: 1 1 0;
   display: flex;
   align-items: center;
@@ -729,13 +790,13 @@ body.ball-window-body #root {
 }
 
 .translation-island__actions button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.075);
-  color: rgba(255, 255, 255, 0.94);
-  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .translation-island__actions button:active:not(:disabled) {
-  transform: translateY(1px) scale(0.98);
+  background: rgba(255, 255, 255, 0.075);
+  transform: scale(0.97);
 }
 
 .translation-island__actions button:disabled {
@@ -753,9 +814,9 @@ body.ball-window-body #root {
 }
 
 .translation-island__notice {
-  width: 100%;
+  width: 238px;
+  min-width: 238px;
   height: 100%;
-  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -918,12 +979,16 @@ body.ball-window-body #root {
   cursor: grab;
 }
 
-.translation-island__core:hover {
+.translation-island__core:hover:not(:disabled) {
   color: rgba(255, 255, 255, 0.96);
 }
 
-.translation-island__core:hover::before {
-  background: rgba(255, 255, 255, 0.06);
+.translation-island__core:hover:not(:disabled)::before {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.translation-island__core:disabled {
+  cursor: default;
 }
 
 .translation-island--idle .translation-island__core:active {
@@ -950,8 +1015,19 @@ body.ball-window-body #root {
   transition: transform 150ms var(--ease-standard);
 }
 
+.translation-island--idle .translation-island__core::before {
+  width: calc(100% - 10px);
+  height: 32px;
+}
+
+.translation-island--idle .translation-island__core .brand-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  letter-spacing: 0;
+}
+
 .translation-island__core:active .brand-lockup {
-  transform: translateY(-0.5px) scale(0.94);
+  transform: translateY(-0.5px) scale(0.96);
 }
 
 .translation-island__core .brand-mark {
@@ -1334,6 +1410,55 @@ body {
   border-top-color: rgba(255, 255, 255, 0.06);
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.012));
   color: rgba(210, 213, 224, 0.27);
+}
+
+.app-shell--island .acrylic-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.app-shell--island .translation-section {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+.app-shell--island .signal-divider {
+  width: 22px;
+  height: 100%;
+  margin: 0;
+  flex-direction: column;
+}
+
+.app-shell--island .signal-divider::before,
+.app-shell--island .signal-divider::after {
+  width: 1px;
+  height: calc(50% - 11px);
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.085));
+}
+
+.app-shell--island .signal-divider::after {
+  transform: scaleY(-1);
+}
+
+.app-shell--island .signal-divider > span {
+  margin: 7px 0;
+}
+
+.app-shell--island .signal-divider > i {
+  width: 2px;
+  height: 18px;
+}
+
+.app-shell--island .signal-divider--active > i {
+  animation-name: islandSignalFlowVertical;
+}
+
+@keyframes islandSignalFlowVertical {
+  from { opacity: 0; transform: translateY(-18px); }
+  35% { opacity: 1; }
+  to { opacity: 0; transform: translateY(18px); }
 }
 
 .footer-shortcuts kbd {

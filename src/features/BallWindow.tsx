@@ -1,45 +1,35 @@
 import { invoke } from "@tauri-apps/api/core";
-import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
-import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  Check,
-  Clipboard,
-  LoaderCircle,
-  PanelTopOpen,
-  ScanLine,
-  TriangleAlert,
-} from "lucide-react";
+import { currentMonitor, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
+import { useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
-import VanishMark from "../components/brand/VanishMark";
+import { flushSync } from "react-dom";
 import { useThemeSync } from "../hooks/useTheme";
 import MainWindowApp from "./MainWindowApp";
+import TranslationIslandView, {
+  type BallAction,
+  type DockSide,
+  type IslandMode,
+  type IslandPhase,
+} from "./TranslationIslandView";
 
-const IDLE_WIDTH = 58;
-const IDLE_HEIGHT = 38;
-const ACTION_WIDTH = 278;
-const ACTION_HEIGHT = 58;
-const STATUS_WIDTH = 232;
-const STATUS_HEIGHT = 48;
+const IDLE_WIDTH = 116;
+const IDLE_HEIGHT = 42;
+const ACTION_WIDTH = 296;
+const ACTION_HEIGHT = 60;
+const STATUS_WIDTH = 264;
+const STATUS_HEIGHT = 52;
 const FULL_WIDTH = 420;
 const FULL_HEIGHT = 520;
-const SCREEN_GUTTER = 8;
-const MORPH_SETTLE_MS = 240;
+const EDGE_GUTTER = 8;
+const TOP_GUTTER = 0;
+const TOP_SNAP_DISTANCE = 32;
+const MORPH_SETTLE_MS = 340;
 
-const ISLAND_SPRING = {
-  type: "spring" as const,
-  stiffness: 420,
-  damping: 34,
-  mass: 0.72,
-};
-
-const CONTENT_EASE = [0.22, 1, 0.36, 1] as const;
-
-type DockSide = "left" | "right";
-type BallAction = "clipboard" | "screenshot" | "main";
-type IslandMode = "idle" | "actions" | "status" | "full";
-type IslandPhase = "working" | "done" | "error";
+interface QueuedTransition {
+  target: IslandMode;
+}
 
 interface TranslationActivity {
   state?: string;
@@ -62,87 +52,171 @@ function wait(milliseconds: number) {
 
 function getIslandDimensions(mode: IslandMode) {
   if (mode === "full") return { width: FULL_WIDTH, height: FULL_HEIGHT };
-  if (mode === "actions") return { width: ACTION_WIDTH, height: ACTION_HEIGHT };
+  if (mode === "peek" || mode === "actions") return { width: ACTION_WIDTH, height: ACTION_HEIGHT };
   if (mode === "status") return { width: STATUS_WIDTH, height: STATUS_HEIGHT };
   return { width: IDLE_WIDTH, height: IDLE_HEIGHT };
+}
+
+function getExpandedX(
+  side: DockSide,
+  anchorX: number,
+  idleOuterWidth: number,
+  expandedOuterWidth: number,
+) {
+  if (side === "center") {
+    return Math.round(anchorX + (idleOuterWidth - expandedOuterWidth) / 2);
+  }
+  return side === "left"
+    ? anchorX + idleOuterWidth - expandedOuterWidth
+    : anchorX;
+}
+
+function getIdleAnchorX(
+  side: DockSide,
+  expandedX: number,
+  expandedOuterWidth: number,
+  idleOuterWidth: number,
+) {
+  if (side === "center") {
+    return Math.round(expandedX + (expandedOuterWidth - idleOuterWidth) / 2);
+  }
+  return side === "left"
+    ? expandedX + expandedOuterWidth - idleOuterWidth
+    : expandedX;
+}
+
+function chooseDockSide(
+  anchorX: number,
+  idleOuterWidth: number,
+  preferredOuterWidth: number,
+  monitorLeft: number,
+  monitorRight: number,
+  gutter: number,
+): DockSide {
+  const minX = monitorLeft + gutter;
+  const maxRight = monitorRight - gutter;
+  const centeredX = getExpandedX("center", anchorX, idleOuterWidth, preferredOuterWidth);
+  if (centeredX >= minX && centeredX + preferredOuterWidth <= maxRight) {
+    return "center";
+  }
+
+  const leftX = getExpandedX("left", anchorX, idleOuterWidth, preferredOuterWidth);
+  const canExpandLeft = leftX >= minX;
+  const canExpandRight = anchorX + preferredOuterWidth <= maxRight;
+  if (canExpandLeft || !canExpandRight) return "left";
+  return "right";
+}
+
+async function setBallWindowBounds(bounds: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}, durationMs = 0) {
+  await invoke("set_ball_window_bounds", durationMs > 0
+    ? { ...bounds, durationMs }
+    : bounds);
+}
+
+async function saveBallPosition(
+  position: { x: number; y: number },
+  reposition = true,
+) {
+  const saved = await invoke<[number, number] | undefined>("save_ball_position", {
+    ...position,
+    reposition,
+  });
+  return Array.isArray(saved) && saved.length === 2
+    ? { x: saved[0], y: saved[1] }
+    : position;
 }
 
 export default function BallWindow() {
   const [mode, setMode] = useState<IslandMode>("idle");
   const [phase, setPhase] = useState<IslandPhase>("working");
-  const [dockSide, setDockSide] = useState<DockSide>("left");
+  const [dockSide, setDockSide] = useState<DockSide>("center");
   const [busyAction, setBusyAction] = useState<BallAction | null>(null);
   const [notice, setNotice] = useState("");
   const shouldReduceMotion = useReducedMotion();
 
   const modeRef = useRef<IslandMode>("idle");
-  const dockSideRef = useRef<DockSide>("left");
+  const dockSideRef = useRef<DockSide>("center");
   const pointerOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const pointerCaptureTargetRef = useRef<Element | null>(null);
   const draggingRef = useRef(false);
   const geometryTransitionRef = useRef(false);
-  const queuedModeRef = useRef<IslandMode | null>(null);
+  const transitionTargetRef = useRef<IslandMode | null>(null);
+  const queuedTransitionRef = useRef<QueuedTransition | null>(null);
   const lastDragEndedAtRef = useRef(Number.NEGATIVE_INFINITY);
   const anchorPositionRef = useRef<{ x: number; y: number } | null>(null);
   const idleOuterSizeRef = useRef<{ width: number; height: number } | null>(null);
   const expectingTranslationRef = useRef(false);
+  const busyActionRef = useRef<BallAction | null>(null);
+  const noticeRef = useRef("");
   const expectedActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fullPinnedRef = useRef(false);
-
-  const showNotice = useCallback((message: string) => {
-    setNotice(message);
-    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = setTimeout(() => setNotice(""), 2200);
-  }, []);
+  const phaseRef = useRef<IslandPhase>("working");
 
   const transitionMode: (target: IslandMode) => Promise<void> = useCallback(async (target) => {
+    if (target === "full" && statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
+
+    if (draggingRef.current) {
+      queuedTransitionRef.current = { target };
+      return;
+    }
+
     if (geometryTransitionRef.current) {
-      queuedModeRef.current = target;
+      queuedTransitionRef.current = { target };
       return;
     }
     if (modeRef.current === target) return;
 
     geometryTransitionRef.current = true;
+    transitionTargetRef.current = target;
     const win = getCurrentWindow();
     const previousMode = modeRef.current;
     try {
       const scale = await win.scaleFactor();
       const idleWidthPixels = Math.round(IDLE_WIDTH * scale);
       const idleHeightPixels = Math.round(IDLE_HEIGHT * scale);
+      const previousDimensions = getIslandDimensions(previousMode);
+      const targetDimensions = getIslandDimensions(target);
+
+      if (previousDimensions.width === targetDimensions.width
+        && previousDimensions.height === targetDimensions.height
+        && previousMode !== "full"
+        && target !== "full") {
+        modeRef.current = target;
+        setMode(target);
+        if (target === "actions") await win.setFocus();
+        return;
+      }
 
       if (previousMode === "full" && target !== "full") {
         await invoke("set_ball_window_material", { enabled: false });
       }
 
       if (target === "idle") {
-        const previousAnchor = anchorPositionRef.current;
-        const previousIdleOuterSize = idleOuterSizeRef.current;
-        const anchoredX = previousAnchor
-          ? dockSideRef.current === "left"
-            ? previousAnchor.x + (previousIdleOuterSize?.width ?? idleWidthPixels)
-            : previousAnchor.x
-          : null;
-        const anchoredCenterY = previousAnchor
-          ? previousAnchor.y + Math.round((previousIdleOuterSize?.height ?? idleHeightPixels) / 2)
-          : null;
+        const nextAnchor = anchorPositionRef.current;
         modeRef.current = "idle";
+        noticeRef.current = "";
         setNotice("");
         setMode("idle");
         await wait(shouldReduceMotion ? 0 : MORPH_SETTLE_MS);
-        await win.setSize(new PhysicalSize(idleWidthPixels, idleHeightPixels));
-        const collapsedOuterSize = await win.outerSize();
-        idleOuterSizeRef.current = collapsedOuterSize;
-        if (anchoredX !== null && anchoredCenterY !== null) {
-          const nextAnchor = {
-            x: dockSideRef.current === "left"
-              ? anchoredX - collapsedOuterSize.width
-              : anchoredX,
-            y: anchoredCenterY - Math.round(collapsedOuterSize.height / 2),
-          };
-          anchorPositionRef.current = nextAnchor;
-          await win.setPosition(new PhysicalPosition(nextAnchor.x, nextAnchor.y));
-          await invoke("save_ball_position", nextAnchor);
+        if (nextAnchor) {
+          await setBallWindowBounds({
+            x: nextAnchor.x,
+            y: nextAnchor.y,
+            width: idleWidthPixels,
+            height: idleHeightPixels,
+          });
+          idleOuterSizeRef.current = await win.outerSize();
+          anchorPositionRef.current = await saveBallPosition(nextAnchor, false);
         }
         return;
       }
@@ -161,12 +235,13 @@ export default function BallWindow() {
       const anchor = anchorPositionRef.current ?? { x: currentPosition.x, y: currentPosition.y };
       const idleOuterSize = idleOuterSizeRef.current;
       const idleOuterWidth = idleOuterSize?.width ?? idleWidthPixels + chromeWidth;
-      const idleOuterHeight = idleOuterSize?.height ?? idleHeightPixels + chromeHeight;
-      const { width: targetWidth, height: targetHeight } = getIslandDimensions(target);
+      const { width: targetWidth, height: targetHeight } = targetDimensions;
       const targetWidthPixels = Math.round(targetWidth * scale);
       const targetHeightPixels = Math.round(targetHeight * scale);
       const estimatedOuterWidth = targetWidthPixels + chromeWidth;
-      const gutterPixels = Math.round(SCREEN_GUTTER * scale);
+      const estimatedOuterHeight = targetHeightPixels + chromeHeight;
+      const edgeGutterPixels = Math.round(EDGE_GUTTER * scale);
+      const topGutterPixels = Math.round(TOP_GUTTER * scale);
       const monitorLeft = monitor?.position.x ?? 0;
       const monitorTop = monitor?.position.y ?? 0;
       const monitorRight = monitor
@@ -174,29 +249,32 @@ export default function BallWindow() {
         : anchor.x + estimatedOuterWidth;
       const monitorBottom = monitor
         ? monitor.position.y + monitor.size.height
-        : anchor.y + targetHeightPixels;
-      const coreLeft = dockSideRef.current === "left"
-        ? anchor.x + idleOuterWidth - idleWidthPixels
-        : anchor.x;
-      const coreRight = coreLeft + idleWidthPixels;
+        : anchor.y + estimatedOuterHeight;
       let side = dockSideRef.current;
       if (previousMode === "idle") {
-        const canExpandLeft = coreRight - estimatedOuterWidth >= monitorLeft + gutterPixels;
-        const canExpandRight = coreLeft + estimatedOuterWidth <= monitorRight - gutterPixels;
-        side = canExpandLeft || !canExpandRight ? "left" : "right";
+        const preferredOuterWidth = Math.max(
+          estimatedOuterWidth,
+          Math.round(FULL_WIDTH * scale) + chromeWidth,
+        );
+        side = chooseDockSide(
+          anchor.x,
+          idleOuterWidth,
+          preferredOuterWidth,
+          monitorLeft,
+          monitorRight,
+          edgeGutterPixels,
+        );
       }
 
       dockSideRef.current = side;
-      setDockSide(side);
-      anchorPositionRef.current = {
-        x: side === "left" ? coreRight - idleOuterWidth : coreLeft,
-        y: anchor.y,
-      };
+      // The resized transparent HWND can paint immediately, so its CSS anchor
+      // must be committed before the native bounds change becomes visible.
+      flushSync(() => setDockSide(side));
 
-      const previousDimensions = getIslandDimensions(previousMode);
       const shrinksExistingIsland = previousMode !== "idle"
         && targetWidth <= previousDimensions.width
-        && targetHeight <= previousDimensions.height;
+        && targetHeight <= previousDimensions.height
+        && (targetWidth < previousDimensions.width || targetHeight < previousDimensions.height);
 
       if (shrinksExistingIsland) {
         modeRef.current = target;
@@ -204,24 +282,33 @@ export default function BallWindow() {
         await wait(shouldReduceMotion ? 0 : MORPH_SETTLE_MS);
       }
 
-      await win.setSize(new PhysicalSize(targetWidthPixels, targetHeightPixels));
-      const expandedOuterSize = await win.outerSize();
-      const rawExpandedX = side === "left"
-        ? coreRight - expandedOuterSize.width
-        : coreLeft;
+      const rawExpandedX = getExpandedX(
+        side,
+        anchor.x,
+        idleOuterWidth,
+        estimatedOuterWidth,
+      );
       const maxX = Math.max(
-        monitorLeft + gutterPixels,
-        monitorRight - expandedOuterSize.width - gutterPixels,
+        monitorLeft + edgeGutterPixels,
+        monitorRight - estimatedOuterWidth - edgeGutterPixels,
       );
-      const expandedX = Math.min(Math.max(rawExpandedX, monitorLeft + gutterPixels), maxX);
-      const centeredY = anchor.y + Math.round((idleOuterHeight - expandedOuterSize.height) / 2);
+      const expandedX = Math.min(Math.max(rawExpandedX, monitorLeft + edgeGutterPixels), maxX);
       const maxY = Math.max(
-        monitorTop + gutterPixels,
-        monitorBottom - expandedOuterSize.height - gutterPixels,
+        monitorTop + topGutterPixels,
+        monitorBottom - estimatedOuterHeight - edgeGutterPixels,
       );
-      const expandedY = Math.min(Math.max(centeredY, monitorTop + gutterPixels), maxY);
+      const expandedY = Math.min(Math.max(anchor.y, monitorTop + topGutterPixels), maxY);
 
-      await win.setPosition(new PhysicalPosition(expandedX, expandedY));
+      await setBallWindowBounds({
+        x: expandedX,
+        y: expandedY,
+        width: targetWidthPixels,
+        height: targetHeightPixels,
+      });
+      anchorPositionRef.current = {
+        x: getIdleAnchorX(side, expandedX, estimatedOuterWidth, idleOuterWidth),
+        y: expandedY,
+      };
       if (!shrinksExistingIsland) {
         modeRef.current = target;
         setMode(target);
@@ -240,32 +327,62 @@ export default function BallWindow() {
       setMode("idle");
       try {
         const scale = await win.scaleFactor();
-        await win.setSize(new PhysicalSize(
-          Math.round(IDLE_WIDTH * scale),
-          Math.round(IDLE_HEIGHT * scale),
-        ));
         const anchor = anchorPositionRef.current;
-        if (anchor) await win.setPosition(new PhysicalPosition(anchor.x, anchor.y));
+        if (anchor) {
+          await setBallWindowBounds({
+            x: anchor.x,
+            y: anchor.y,
+            width: Math.round(IDLE_WIDTH * scale),
+            height: Math.round(IDLE_HEIGHT * scale),
+          });
+        }
       } catch (rollbackError) {
         console.error("rollback translation island failed", rollbackError);
       }
     } finally {
       geometryTransitionRef.current = false;
-      const queued = queuedModeRef.current;
-      queuedModeRef.current = null;
-      if (queued && queued !== modeRef.current) {
-        window.setTimeout(() => void transitionMode(queued), 0);
+      transitionTargetRef.current = null;
+      const queued = queuedTransitionRef.current;
+      queuedTransitionRef.current = null;
+      if (queued && queued.target !== modeRef.current) {
+        void transitionMode(queued.target);
       }
     }
   }, [shouldReduceMotion]);
 
+  const scheduleStatusCollapse = useCallback((statusPhase: IslandPhase) => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = null;
+    if (statusPhase === "working") return;
+    statusTimerRef.current = setTimeout(() => {
+      statusTimerRef.current = null;
+      const effectiveMode = queuedTransitionRef.current?.target
+        ?? transitionTargetRef.current
+        ?? modeRef.current;
+      if (effectiveMode === "status") void transitionMode("idle");
+    }, statusPhase === "done" ? 1250 : 1900);
+  }, [transitionMode]);
+
+  const handleIslandBlur = useCallback((event: React.FocusEvent<HTMLElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    if (modeRef.current === "actions"
+      && !geometryTransitionRef.current
+      && !draggingRef.current
+      && busyActionRef.current === null
+      && !expectingTranslationRef.current
+      && !noticeRef.current) {
+      void transitionMode("idle");
+    }
+  }, [transitionMode]);
+
   const toggleActions = useCallback(async () => {
     if (modeRef.current === "actions") await transitionMode("idle");
+    else if (modeRef.current === "peek") await transitionMode("actions");
     else if (modeRef.current === "idle") await transitionMode("actions");
   }, [transitionMode]);
 
   const handleCoreClick = useCallback(async () => {
-    if (performance.now() - lastDragEndedAtRef.current < 250) return;
+    if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
     if (modeRef.current === "status") {
       if (phase !== "working") await transitionMode("idle");
       return;
@@ -281,12 +398,26 @@ export default function BallWindow() {
     await transitionMode("idle");
   }, [transitionMode]);
 
+  const showNotice = useCallback((message: string) => {
+    noticeRef.current = message;
+    setNotice(message);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => {
+      noticeTimerRef.current = null;
+      noticeRef.current = "";
+      setNotice("");
+    }, 2200);
+  }, []);
+
   const runAction = useCallback(async (action: BallAction, command: string) => {
+    if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
     if (action === "main") {
+      busyActionRef.current = action;
       setBusyAction(action);
       try {
         await expandFull();
       } finally {
+        busyActionRef.current = null;
         setBusyAction(null);
       }
       return;
@@ -297,6 +428,7 @@ export default function BallWindow() {
       expectingTranslationRef.current = true;
       if (expectedActivityTimerRef.current) clearTimeout(expectedActivityTimerRef.current);
     }
+    busyActionRef.current = action;
     setBusyAction(action);
     try {
       await invoke(command);
@@ -305,7 +437,9 @@ export default function BallWindow() {
           expectedActivityTimerRef.current = setTimeout(() => {
             expectingTranslationRef.current = false;
             expectedActivityTimerRef.current = null;
-            void transitionMode("idle");
+            if (modeRef.current === "peek" || modeRef.current === "actions") {
+              void transitionMode("idle");
+            }
           }, 900);
         }
       } else {
@@ -320,22 +454,49 @@ export default function BallWindow() {
       const message = String(error).replace(/^Error:\s*/, "");
       showNotice(message || "操作失败，请重试");
     } finally {
+      busyActionRef.current = null;
       setBusyAction(null);
     }
   }, [expandFull, showNotice, transitionMode]);
 
-  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    if (modeRef.current !== "idle" || geometryTransitionRef.current || event.button !== 0) return;
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const modeIsDraggable = modeRef.current !== "full";
+    if (!modeIsDraggable || geometryTransitionRef.current || event.button !== 0) return;
+    const captureTarget = event.target instanceof Element
+      ? event.target.closest("button") ?? event.currentTarget
+      : event.currentTarget;
+    try {
+      captureTarget.setPointerCapture(event.pointerId);
+      pointerCaptureTargetRef.current = captureTarget;
+    } catch {
+      // Native WebViews can take over pointer capture while starting a window drag.
+      pointerCaptureTargetRef.current = null;
+    }
     pointerOriginRef.current = { x: event.clientX, y: event.clientY };
   }, []);
 
-  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const origin = pointerOriginRef.current;
-    if (!origin || draggingRef.current || modeRef.current !== "idle" || geometryTransitionRef.current) return;
+    const dragMode = modeRef.current;
+    const modeIsDraggable = dragMode !== "full";
+    if (!origin || draggingRef.current || !modeIsDraggable || geometryTransitionRef.current) return;
     if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 6) return;
 
     pointerOriginRef.current = null;
+    const captureTarget = pointerCaptureTargetRef.current;
+    pointerCaptureTargetRef.current = null;
+    try {
+      if (captureTarget?.hasPointerCapture(event.pointerId)) {
+        captureTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // The native drag loop may already have released capture.
+    }
     draggingRef.current = true;
+    if (dragMode === "status" && statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
     lastDragEndedAtRef.current = performance.now();
     void (async () => {
       try {
@@ -343,46 +504,141 @@ export default function BallWindow() {
         await win.startDragging();
         const endPosition = await win.outerPosition();
         const endOuterSize = await win.outerSize();
-        anchorPositionRef.current = { x: endPosition.x, y: endPosition.y };
-        idleOuterSizeRef.current = endOuterSize;
         lastDragEndedAtRef.current = performance.now();
-        await invoke("save_ball_position", { x: endPosition.x, y: endPosition.y });
+
+        if (dragMode === "peek" || dragMode === "actions" || dragMode === "status") {
+          const scale = await win.scaleFactor();
+          const endInnerSize = await win.innerSize();
+          const chromeWidth = endOuterSize.width - endInnerSize.width;
+          const chromeHeight = endOuterSize.height - endInnerSize.height;
+          const idleOuterWidth = Math.round(IDLE_WIDTH * scale) + chromeWidth;
+          idleOuterSizeRef.current = {
+            width: idleOuterWidth,
+            height: Math.round(IDLE_HEIGHT * scale) + chromeHeight,
+          };
+          const anchor = {
+            x: getIdleAnchorX(
+              dockSideRef.current,
+              endPosition.x,
+              endOuterSize.width,
+              idleOuterWidth,
+            ),
+            y: endPosition.y,
+          };
+          anchorPositionRef.current = await saveBallPosition(anchor, false);
+        } else {
+          const anchor = { x: endPosition.x, y: endPosition.y };
+          anchorPositionRef.current = anchor;
+          idleOuterSizeRef.current = endOuterSize;
+          anchorPositionRef.current = await saveBallPosition(anchor);
+        }
       } catch (error) {
         console.error("drag translation island failed", error);
       } finally {
         draggingRef.current = false;
+        const queued = queuedTransitionRef.current;
+        queuedTransitionRef.current = null;
+        if (queued && queued.target !== modeRef.current) {
+          void transitionMode(queued.target);
+        } else if (dragMode === "status" && modeRef.current === "status") {
+          scheduleStatusCollapse(phaseRef.current);
+        }
       }
     })();
-  }, []);
+  }, [scheduleStatusCollapse, transitionMode]);
 
   const clearPointerOrigin = useCallback(() => {
     pointerOriginRef.current = null;
+    pointerCaptureTargetRef.current = null;
+  }, []);
+
+  const handlePointerEnd = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    pointerOriginRef.current = null;
+    const captureTarget = pointerCaptureTargetRef.current;
+    pointerCaptureTargetRef.current = null;
+    try {
+      if (captureTarget?.hasPointerCapture(event.pointerId)) {
+        captureTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Pointer capture is optional in browser-only previews and test environments.
+    }
   }, []);
 
   const handleFullWindowMoved = useCallback(async () => {
     try {
+      if (modeRef.current !== "full") return;
       const win = getCurrentWindow();
-      const scale = await win.scaleFactor();
-      const position = await win.outerPosition();
+      const draggedPosition = await win.outerPosition();
       const outerSize = await win.outerSize();
       const innerSize = await win.innerSize();
-      const idleOuterSize = idleOuterSizeRef.current;
-      const idleOuterWidth = idleOuterSize?.width
-        ?? Math.round(IDLE_WIDTH * scale) + outerSize.width - innerSize.width;
-      const idleOuterHeight = idleOuterSize?.height
-        ?? Math.round(IDLE_HEIGHT * scale) + outerSize.height - innerSize.height;
+      const monitor = await monitorFromPoint(
+        draggedPosition.x + outerSize.width / 2,
+        draggedPosition.y + Math.min(24, outerSize.height / 2),
+      ) ?? await currentMonitor();
+      const scale = monitor?.scaleFactor ?? await win.scaleFactor();
+      const chromeWidth = outerSize.width - innerSize.width;
+      const chromeHeight = outerSize.height - innerSize.height;
+      const idleOuterWidth = Math.round(IDLE_WIDTH * scale) + chromeWidth;
+      const idleOuterHeight = Math.round(IDLE_HEIGHT * scale) + chromeHeight;
+      idleOuterSizeRef.current = { width: idleOuterWidth, height: idleOuterHeight };
+      const edgeGutterPixels = Math.round(EDGE_GUTTER * scale);
+      const topGutterPixels = Math.round(TOP_GUTTER * scale);
+      const snapDistancePixels = Math.round(TOP_SNAP_DISTANCE * scale);
+      let position = { x: draggedPosition.x, y: draggedPosition.y };
+
+      if (monitor
+        && draggedPosition.y <= monitor.workArea.position.y + snapDistancePixels) {
+        const workLeft = monitor.workArea.position.x;
+        const workRight = workLeft + monitor.workArea.size.width;
+        const centeredAnchorX = workLeft
+          + Math.round((monitor.workArea.size.width - idleOuterWidth) / 2);
+        const rawSnappedX = getExpandedX(
+          dockSideRef.current,
+          centeredAnchorX,
+          idleOuterWidth,
+          outerSize.width,
+        );
+        const minX = workLeft + edgeGutterPixels;
+        const maxX = Math.max(minX, workRight - outerSize.width - edgeGutterPixels);
+        position = {
+          x: Math.min(Math.max(rawSnappedX, minX), maxX),
+          y: monitor.workArea.position.y + topGutterPixels,
+        };
+        await win.setPosition(new PhysicalPosition(position.x, position.y));
+      }
+
       const anchor = {
-        x: dockSideRef.current === "left"
-          ? position.x + outerSize.width - idleOuterWidth
-          : position.x,
-        y: position.y + Math.round((outerSize.height - idleOuterHeight) / 2),
+        x: getIdleAnchorX(
+          dockSideRef.current,
+          position.x,
+          outerSize.width,
+          idleOuterWidth,
+        ),
+        y: position.y,
       };
-      anchorPositionRef.current = anchor;
-      await invoke("save_ball_position", anchor);
+      anchorPositionRef.current = await saveBallPosition(anchor, false);
     } catch (error) {
       console.error("save expanded translation island position failed", error);
     }
   }, []);
+
+  const handleFullDragStart = useCallback(() => {
+    if (modeRef.current !== "full" || geometryTransitionRef.current || draggingRef.current) {
+      return false;
+    }
+    draggingRef.current = true;
+    return true;
+  }, []);
+
+  const handleFullDragEnd = useCallback(() => {
+    draggingRef.current = false;
+    const queued = queuedTransitionRef.current;
+    queuedTransitionRef.current = null;
+    if (queued && queued.target !== modeRef.current) {
+      void transitionMode(queued.target);
+    }
+  }, [transitionMode]);
 
   const handlePinChange = useCallback((pinned: boolean) => {
     fullPinnedRef.current = pinned;
@@ -411,6 +667,17 @@ export default function BallWindow() {
   }, [mode]);
 
   useEffect(() => {
+    if (mode !== "status" || phase === "working" || draggingRef.current) return;
+    scheduleStatusCollapse(phase);
+
+    return () => {
+      if (!statusTimerRef.current) return;
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    };
+  }, [mode, phase, scheduleStatusCollapse]);
+
+  useEffect(() => {
     const translationListener = listen<unknown>("translation-state", (event) => {
       const activity = normalizeTranslationActivity(event.payload);
       if (!activity) return;
@@ -419,10 +686,19 @@ export default function BallWindow() {
         clearTimeout(expectedActivityTimerRef.current);
         expectedActivityTimerRef.current = null;
       }
-      if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      if (statusTimerRef.current) {
+        clearTimeout(statusTimerRef.current);
+        statusTimerRef.current = null;
+      }
 
-      if (modeRef.current === "full") {
-        if (activity !== "idle") setPhase(activity);
+      const fullIsActiveOrPending = modeRef.current === "full"
+        || transitionTargetRef.current === "full"
+        || queuedTransitionRef.current?.target === "full";
+      if (fullIsActiveOrPending) {
+        if (activity !== "idle") {
+          phaseRef.current = activity;
+          setPhase(activity);
+        }
         return;
       }
 
@@ -431,23 +707,19 @@ export default function BallWindow() {
         return;
       }
 
+      phaseRef.current = activity;
       setPhase(activity);
       void transitionMode("status");
-      if (activity !== "working") {
-        statusTimerRef.current = setTimeout(
-          () => void transitionMode("idle"),
-          activity === "done" ? 1250 : 1900,
-        );
-      }
     });
     const focusListener = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      const shouldCollapseActions = modeRef.current === "actions"
+      const effectiveMode = queuedTransitionRef.current?.target
+        ?? transitionTargetRef.current
+        ?? modeRef.current;
+      const shouldCollapseActions = (effectiveMode === "peek" || effectiveMode === "actions")
         && !expectingTranslationRef.current;
-      const shouldCollapseFull = modeRef.current === "full"
+      const shouldCollapseFull = effectiveMode === "full"
         && !fullPinnedRef.current;
-      if (!focused
-        && (shouldCollapseActions || shouldCollapseFull)
-        && !geometryTransitionRef.current) {
+      if (!focused && (shouldCollapseActions || shouldCollapseFull)) {
         void transitionMode("idle");
       }
     });
@@ -455,224 +727,64 @@ export default function BallWindow() {
       void transitionMode("full");
     });
     const toggleMainListener = listen("toggle-main-window", () => {
-      void transitionMode(modeRef.current === "full" ? "idle" : "full");
+      const effectiveMode = queuedTransitionRef.current?.target
+        ?? transitionTargetRef.current
+        ?? modeRef.current;
+      void transitionMode(effectiveMode === "full" ? "idle" : "full");
     });
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (document.querySelector('[role="dialog"]')) return;
-      if (modeRef.current === "actions" || modeRef.current === "full") {
+      if (modeRef.current === "peek" || modeRef.current === "actions" || modeRef.current === "full") {
         void transitionMode("idle");
       }
     };
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("pointerup", clearPointerOrigin);
+    window.addEventListener("pointercancel", clearPointerOrigin);
+    window.addEventListener("blur", clearPointerOrigin);
 
     return () => {
-      translationListener.then((unlisten) => unlisten());
-      focusListener.then((unlisten) => unlisten());
-      expandListener.then((unlisten) => unlisten());
-      toggleMainListener.then((unlisten) => unlisten());
+      void translationListener.then((unlisten) => unlisten()).catch(() => {});
+      void focusListener.then((unlisten) => unlisten()).catch(() => {});
+      void expandListener.then((unlisten) => unlisten()).catch(() => {});
+      void toggleMainListener.then((unlisten) => unlisten()).catch(() => {});
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("pointerup", clearPointerOrigin);
+      window.removeEventListener("pointercancel", clearPointerOrigin);
+      window.removeEventListener("blur", clearPointerOrigin);
       if (expectedActivityTimerRef.current) clearTimeout(expectedActivityTimerRef.current);
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     };
-  }, [transitionMode]);
-
-  const statusTitle = phase === "working"
-    ? "正在翻译"
-    : phase === "done"
-      ? "翻译完成"
-      : "翻译未完成";
-  const statusDetail = phase === "working"
-    ? "正在生成结果"
-    : phase === "done"
-      ? "结果已就绪"
-      : "请检查连接";
-  const contentOffset = dockSide === "left" ? 7 : -7;
-  const layoutTransition = shouldReduceMotion ? { duration: 0 } : ISLAND_SPRING;
-  const contentAnimate = shouldReduceMotion
-    ? { opacity: 1, x: 0, scale: 1 }
-    : {
-        opacity: 1,
-        x: 0,
-        scale: 1,
-        transition: { duration: 0.18, delay: 0.055, ease: CONTENT_EASE },
-      };
-  const contentExit = shouldReduceMotion
-    ? { opacity: 0 }
-    : {
-        opacity: 0,
-        x: contentOffset * 0.65,
-        scale: 0.99,
-        transition: { duration: 0.11, ease: CONTENT_EASE },
-      };
+  }, [clearPointerOrigin, transitionMode]);
 
   return (
-    <aside
-      className={`translation-island translation-island--${mode} translation-island--${dockSide} translation-island--${phase}`}
-      aria-label="VanishTrans 快速工具"
-    >
-      <motion.div
-        layout
-        layoutDependency={mode}
-        className="translation-island__surface"
-        data-mode={mode}
-        style={{ transformOrigin: dockSide === "left" ? "100% 50%" : "0% 50%" }}
-        transition={{ layout: layoutTransition }}
-      >
-        <motion.div
-          className="translation-island__full"
-          aria-hidden={mode !== "full"}
-          initial={false}
-          animate={mode === "full"
-            ? { opacity: 1, scale: 1, visibility: "visible" }
-            : { opacity: 0, scale: 0.985, visibility: "hidden" }}
-          transition={shouldReduceMotion
-            ? { duration: 0 }
-            : { duration: mode === "full" ? 0.22 : 0.12, delay: mode === "full" ? 0.06 : 0, ease: CONTENT_EASE }}
-        >
-          <MainWindowApp
-            embedded
-            onCollapse={collapseFull}
-            onRequestExpand={expandFull}
-            onWindowMoved={handleFullWindowMoved}
-            onPinChange={handlePinChange}
-          />
-        </motion.div>
-
-        <AnimatePresence initial={false} mode="popLayout">
-          {mode === "actions" && (
-            <motion.div
-              layout="position"
-              key="actions"
-              className="translation-island__content translation-island__content--actions"
-              initial={shouldReduceMotion ? false : { opacity: 0, x: contentOffset, scale: 0.985 }}
-              animate={contentAnimate}
-              exit={contentExit}
-            >
-              <AnimatePresence initial={false} mode="wait">
-                {notice ? (
-                  <motion.div
-                    key="notice"
-                    className="translation-island__notice"
-                    role="status"
-                    aria-live="polite"
-                    initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -2 }}
-                    transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.14, ease: CONTENT_EASE }}
-                  >
-                    <span className="translation-island__notice-icon" aria-hidden="true">
-                      <TriangleAlert size={15} />
-                    </span>
-                    <span className="translation-island__notice-copy">
-                      <strong>操作失败</strong>
-                      <small>{notice}</small>
-                    </span>
-                  </motion.div>
-                ) : (
-                  <motion.nav
-                    key="actions"
-                    className="translation-island__actions"
-                    aria-label="快速翻译操作"
-                    initial={false}
-                  >
-                    <motion.button
-                      type="button"
-                      disabled={busyAction !== null}
-                      data-busy={busyAction === "clipboard" || undefined}
-                      onClick={() => runAction("clipboard", "translate_clipboard_from_ball")}
-                      title="翻译剪贴板"
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.14, delay: 0.075, ease: CONTENT_EASE }}
-                    >
-                      {busyAction === "clipboard" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <Clipboard size={15} aria-hidden="true" />}
-                      <span>剪贴板</span>
-                    </motion.button>
-                    <motion.button
-                      type="button"
-                      disabled={busyAction !== null}
-                      data-busy={busyAction === "screenshot" || undefined}
-                      onClick={() => runAction("screenshot", "start_screenshot_from_ball")}
-                      title="截图翻译"
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.14, delay: 0.1, ease: CONTENT_EASE }}
-                    >
-                      {busyAction === "screenshot" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <ScanLine size={15} aria-hidden="true" />}
-                      <span>截图</span>
-                    </motion.button>
-                    <motion.button
-                      type="button"
-                      disabled={busyAction !== null}
-                      data-busy={busyAction === "main" || undefined}
-                      onClick={() => runAction("main", "")}
-                      title="打开主窗口"
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 2 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.14, delay: 0.125, ease: CONTENT_EASE }}
-                    >
-                      {busyAction === "main" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <PanelTopOpen size={15} aria-hidden="true" />}
-                      <span>主界面</span>
-                    </motion.button>
-                  </motion.nav>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-
-          {mode === "status" && (
-            <motion.div
-              layout="position"
-              key={`status-${phase}`}
-              className="translation-island__content translation-island__content--status"
-              role="status"
-              aria-live="polite"
-              initial={shouldReduceMotion ? false : { opacity: 0, x: contentOffset, scale: 0.985 }}
-              animate={contentAnimate}
-              exit={contentExit}
-            >
-              <span className="translation-island__state-icon" aria-hidden="true">
-                {phase === "working" ? (
-                  <span className="translation-island__activity">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                ) : phase === "done" ? (
-                  <Check size={16} />
-                ) : (
-                  <TriangleAlert size={15} />
-                )}
-              </span>
-              <span className="translation-island__state-copy">
-                <strong>{statusTitle}</strong>
-                <small>{statusDetail}</small>
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {mode !== "full" && (
-          <motion.button
-            layout="position"
-            transition={{ layout: layoutTransition }}
-            type="button"
-            className="translation-island__core"
-            aria-expanded={mode === "actions"}
-            aria-label={mode === "actions" ? "收起快速工具" : mode === "status" ? statusTitle : "展开快速工具"}
-            title={mode === "idle" ? "快速工具" : mode === "actions" ? "收起" : statusTitle}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={clearPointerOrigin}
-            onPointerCancel={clearPointerOrigin}
-            onClick={handleCoreClick}
-          >
-            <VanishMark compact animated={false} decorative />
-          </motion.button>
-        )}
-      </motion.div>
-    </aside>
+    <TranslationIslandView
+      mode={mode}
+      phase={phase}
+      dockSide={dockSide}
+      busyAction={busyAction}
+      notice={notice}
+      shouldReduceMotion={shouldReduceMotion ?? false}
+      fullContent={(
+        <MainWindowApp
+          embedded
+          onCollapse={collapseFull}
+          onRequestExpand={expandFull}
+          onWindowDragStart={handleFullDragStart}
+          onWindowDragEnd={handleFullDragEnd}
+          onWindowMoved={handleFullWindowMoved}
+          onPinChange={handlePinChange}
+        />
+      )}
+      onRunAction={(action, command) => void runAction(action, command)}
+      onCoreClick={() => void handleCoreClick()}
+      onCorePointerDown={handlePointerDown}
+      onCorePointerMove={handlePointerMove}
+      onCorePointerUp={handlePointerEnd}
+      onCorePointerCancel={handlePointerEnd}
+      onIslandBlur={handleIslandBlur}
+    />
   );
 }

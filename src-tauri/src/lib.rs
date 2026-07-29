@@ -20,6 +20,178 @@ use crate::history::HistoryStore;
 use crate::ocr::ScreenshotBuffer;
 use crate::translate::ApiConfig;
 
+pub(crate) const BALL_IDLE_WIDTH: f64 = 116.0;
+pub(crate) const BALL_IDLE_HEIGHT: f64 = 42.0;
+const BALL_POSITION_TOLERANCE: f64 = 8.0;
+const BALL_TOP_GUTTER: f64 = 0.0;
+
+fn default_ball_position_on_monitor(
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: i32,
+    scale_factor: f64,
+) -> (i32, i32) {
+    let width = (BALL_IDLE_WIDTH * scale_factor).round() as i32;
+    let gutter = (BALL_TOP_GUTTER * scale_factor).round() as i32;
+    (
+        monitor_x + (monitor_width - width).max(0) / 2,
+        monitor_y + gutter,
+    )
+}
+
+fn ball_position_bounds(
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: i32,
+    monitor_height: i32,
+    scale_factor: f64,
+) -> (i32, i32, i32, i32) {
+    let tolerance = (BALL_POSITION_TOLERANCE * scale_factor).round() as i32;
+    let width = (BALL_IDLE_WIDTH * scale_factor).round() as i32;
+    let height = (BALL_IDLE_HEIGHT * scale_factor).round() as i32;
+    let min_x = monitor_x - tolerance;
+    let min_y = monitor_y - tolerance;
+    let max_x_exclusive = (monitor_x + monitor_width - (width - tolerance)).max(min_x + 1);
+    let max_y_exclusive = (monitor_y + monitor_height - (height - tolerance)).max(min_y + 1);
+
+    (min_x, max_x_exclusive, min_y, max_y_exclusive)
+}
+
+pub(crate) fn ball_position_is_visible(
+    x: i32,
+    y: i32,
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: i32,
+    monitor_height: i32,
+    scale_factor: f64,
+) -> bool {
+    let (min_x, max_x_exclusive, min_y, max_y_exclusive) = ball_position_bounds(
+        monitor_x,
+        monitor_y,
+        monitor_width,
+        monitor_height,
+        scale_factor,
+    );
+
+    x >= min_x && x < max_x_exclusive && y >= min_y && y < max_y_exclusive
+}
+
+pub(crate) fn clamp_ball_position_to_monitor(
+    x: i32,
+    y: i32,
+    monitor_x: i32,
+    monitor_y: i32,
+    monitor_width: i32,
+    monitor_height: i32,
+    scale_factor: f64,
+) -> Option<(i32, i32)> {
+    let tolerance = (BALL_POSITION_TOLERANCE * scale_factor).round() as i32;
+    if ball_position_is_visible(
+        x,
+        y,
+        monitor_x,
+        monitor_y,
+        monitor_width,
+        monitor_height,
+        scale_factor,
+    ) {
+        let snapped_y = if y <= monitor_y + tolerance {
+            monitor_y
+        } else {
+            y
+        };
+        return Some((x, snapped_y));
+    }
+
+    let monitor_right = monitor_x + monitor_width;
+    let monitor_bottom = monitor_y + monitor_height;
+    if x < monitor_x - tolerance
+        || x >= monitor_right
+        || y < monitor_y - tolerance
+        || y >= monitor_bottom
+    {
+        return None;
+    }
+
+    let (min_x, max_x_exclusive, min_y, max_y_exclusive) = ball_position_bounds(
+        monitor_x,
+        monitor_y,
+        monitor_width,
+        monitor_height,
+        scale_factor,
+    );
+    Some((
+        x.clamp(min_x, max_x_exclusive - 1),
+        y.clamp(min_y, max_y_exclusive - 1),
+    ))
+}
+
+#[cfg(test)]
+mod ball_position_tests {
+    use super::{
+        ball_position_is_visible, clamp_ball_position_to_monitor, default_ball_position_on_monitor,
+    };
+
+    #[test]
+    fn defaults_to_the_top_center_of_the_monitor() {
+        assert_eq!(default_ball_position_on_monitor(0, 0, 1920, 1.0), (902, 0));
+        assert_eq!(
+            default_ball_position_on_monitor(-2560, -200, 2560, 1.5),
+            (-1367, -200)
+        );
+    }
+
+    #[test]
+    fn migrates_the_previous_top_gutter_to_the_monitor_edge() {
+        assert_eq!(
+            clamp_ball_position_to_monitor(902, 8, 0, 0, 1920, 1080, 1.0),
+            Some((902, 0))
+        );
+        assert_eq!(
+            clamp_ball_position_to_monitor(-1367, -188, -2560, -200, 2560, 1440, 1.5),
+            Some((-1367, -200))
+        );
+    }
+
+    #[test]
+    fn keeps_an_already_visible_position() {
+        assert_eq!(
+            clamp_ball_position_to_monitor(100, 100, 0, 0, 1920, 1080, 1.0),
+            Some((100, 100))
+        );
+    }
+
+    #[test]
+    fn migrates_a_legacy_right_edge_position() {
+        let legacy_x = 1920 - 58;
+        assert!(!ball_position_is_visible(
+            legacy_x, 100, 0, 0, 1920, 1080, 1.0
+        ));
+        assert_eq!(
+            clamp_ball_position_to_monitor(legacy_x, 100, 0, 0, 1920, 1080, 1.0),
+            Some((1811, 100))
+        );
+    }
+
+    #[test]
+    fn migrates_a_scaled_legacy_right_edge_position() {
+        let legacy_x = 2560 - (58.0_f64 * 1.5).round() as i32;
+        assert_eq!(
+            clamp_ball_position_to_monitor(legacy_x, 150, 0, 0, 2560, 1440, 1.5),
+            Some((2397, 150))
+        );
+    }
+
+    #[test]
+    fn rejects_a_position_outside_the_monitor() {
+        assert_eq!(
+            clamp_ball_position_to_monitor(3000, 100, 0, 0, 1920, 1080, 1.0),
+            None
+        );
+    }
+}
+
 // -----------------------------------------------------------
 // Global state
 // -----------------------------------------------------------
@@ -134,56 +306,79 @@ pub fn run() {
             if let Some(ball_w) = app.get_webview_window("ball") {
                 let scale = ball_w.scale_factor().unwrap_or(1.0);
                 let _ = ball_w.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                    width: (58.0 * scale).round() as u32,
-                    height: (38.0 * scale).round() as u32,
+                    width: (BALL_IDLE_WIDTH * scale).round() as u32,
+                    height: (BALL_IDLE_HEIGHT * scale).round() as u32,
                 }));
                 let config_dir = app
                     .path()
                     .app_data_dir()
                     .unwrap_or_else(|_| PathBuf::from("."));
                 let config_path = config_dir.join("config.json");
-                if let Ok(cfg_str) = std::fs::read_to_string(&config_path) {
-                    if let Ok(cfg) = serde_json::from_str::<serde_json::Value>(&cfg_str) {
-                        let mut x = cfg["ball_x"].as_i64().unwrap_or(100) as i32;
-                        let mut y = cfg["ball_y"].as_i64().unwrap_or(100) as i32;
-                        log::info!("[ball] restoring saved position: ({}, {})", x, y);
+                let saved_position = std::fs::read_to_string(&config_path)
+                    .ok()
+                    .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
+                    .and_then(|config| {
+                        Some((
+                            config.get("ball_x")?.as_i64()? as i32,
+                            config.get("ball_y")?.as_i64()? as i32,
+                        ))
+                    });
+                let monitors = ball_w.available_monitors().unwrap_or_default();
+                let default_position = ball_w
+                    .primary_monitor()
+                    .ok()
+                    .flatten()
+                    .or_else(|| ball_w.current_monitor().ok().flatten())
+                    .map(|monitor| {
+                        default_ball_position_on_monitor(
+                            monitor.work_area().position.x,
+                            monitor.work_area().position.y,
+                            monitor.work_area().size.width as i32,
+                            monitor.scale_factor(),
+                        )
+                    })
+                    .or_else(|| {
+                        monitors.first().map(|monitor| {
+                            default_ball_position_on_monitor(
+                                monitor.work_area().position.x,
+                                monitor.work_area().position.y,
+                                monitor.work_area().size.width as i32,
+                                monitor.scale_factor(),
+                            )
+                        })
+                    })
+                    .unwrap_or((100, 0));
 
-                        // Validate position: must be within any connected monitor's bounds
-                        if let Ok(monitors) = ball_w.available_monitors() {
-                            log::info!("[ball] found {} monitors", monitors.len());
-                            let mut valid = false;
-                            for m in &monitors {
-                                let mx = m.position().x;
-                                let my = m.position().y;
-                                let mw = m.size().width as i32;
-                                let mh = m.size().height as i32;
-                                log::info!(
-                                    "[ball] monitor: pos=({}, {}), size={}x{}",
-                                    mx, my, mw, mh
-                                );
-                                // Ball top-left must be inside monitor (with 8px tolerance for edge snapping)
-                                if x >= mx - 8 && x < mx + mw - 50
-                                    && y >= my - 8 && y < my + mh - 30
-                                {
-                                    valid = true;
-                                    break;
-                                }
-                            }
-                            if !valid {
-                                log::warn!(
-                                    "[ball] saved position ({}, {}) is outside all monitors, resetting",
-                                    x, y
-                                );
-                                x = 100;
-                                y = 100;
-                            }
-                        }
-
-                        let _ = ball_w.set_position(tauri::Position::Physical(
-                            tauri::PhysicalPosition { x, y },
-                        ));
+                let restored_position = saved_position.and_then(|(x, y)| {
+                    log::info!("[ball] restoring saved position: ({}, {})", x, y);
+                    if monitors.is_empty() {
+                        return Some((x, y));
                     }
-                }
+                    monitors.iter().find_map(|monitor| {
+                        clamp_ball_position_to_monitor(
+                            x,
+                            y,
+                            monitor.position().x,
+                            monitor.position().y,
+                            monitor.size().width as i32,
+                            monitor.size().height as i32,
+                            monitor.scale_factor(),
+                        )
+                    })
+                });
+                let (x, y) = restored_position.unwrap_or_else(|| {
+                    if let Some((saved_x, saved_y)) = saved_position {
+                        log::warn!(
+                            "[ball] saved position ({}, {}) is outside all monitors, using top center",
+                            saved_x,
+                            saved_y
+                        );
+                    }
+                    default_position
+                });
+                let _ = ball_w.set_position(tauri::Position::Physical(
+                    tauri::PhysicalPosition { x, y },
+                ));
                 if let Err(error) = ball_w.show() {
                     log::error!("[ball] failed to show window on startup: {error}");
                 }
@@ -236,6 +431,7 @@ pub fn run() {
             commands::hide_window,
             commands::toggle_pin,
             commands::get_pin_state,
+            commands::set_ball_window_bounds,
             commands::set_ball_window_material,
             commands::get_api_config,
             commands::set_api_config,

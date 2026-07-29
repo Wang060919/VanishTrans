@@ -105,6 +105,166 @@ pub fn get_pin_state(state: tauri::State<'_, crate::AppState>) -> bool {
     state.pinned.load(std::sync::atomic::Ordering::SeqCst)
 }
 
+#[cfg(target_os = "windows")]
+fn island_morph_ease(progress: f64) -> f64 {
+    fn sample_curve(first: f64, second: f64, time: f64) -> f64 {
+        let inverse = 1.0 - time;
+        3.0 * inverse * inverse * time * first
+            + 3.0 * inverse * time * time * second
+            + time * time * time
+    }
+
+    fn sample_derivative(first: f64, second: f64, time: f64) -> f64 {
+        let inverse = 1.0 - time;
+        3.0 * inverse * inverse * first
+            + 6.0 * inverse * time * (second - first)
+            + 3.0 * time * time * (1.0 - second)
+    }
+
+    let progress = progress.clamp(0.0, 1.0);
+    let mut curve_time = progress;
+    for _ in 0..8 {
+        let error = sample_curve(0.25, 0.5, curve_time) - progress;
+        let derivative = sample_derivative(0.25, 0.5, curve_time);
+        if derivative.abs() < 1e-7 {
+            break;
+        }
+        curve_time = (curve_time - error / derivative).clamp(0.0, 1.0);
+    }
+    sample_curve(1.0, 1.0, curve_time)
+}
+
+#[cfg(target_os = "windows")]
+fn interpolate_window_value(start: i32, end: i32, progress: f64) -> i32 {
+    f64::from(start)
+        .mul_add(1.0 - progress, f64::from(end) * progress)
+        .round() as i32
+}
+
+#[tauri::command]
+pub async fn set_ball_window_bounds(
+    window: tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    duration_ms: Option<u64>,
+) -> Result<(), String> {
+    if window.label() != "ball" {
+        return Err("窗口边界只能应用到灵动岛".into());
+    }
+    if width == 0 || height == 0 {
+        return Err("灵动岛窗口尺寸必须大于零".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::{HWND, RECT};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetClientRect, GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOCOPYBITS,
+            SWP_NOOWNERZORDER, SWP_NOZORDER,
+        };
+
+        let tauri_hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        let hwnd = HWND(tauri_hwnd.0 as _);
+        let mut window_rect = RECT::default();
+        let mut client_rect = RECT::default();
+        unsafe {
+            GetWindowRect(hwnd, &mut window_rect).map_err(|error| error.to_string())?;
+            GetClientRect(hwnd, &mut client_rect).map_err(|error| error.to_string())?;
+        }
+
+        let current_outer_width = i64::from(window_rect.right) - i64::from(window_rect.left);
+        let current_outer_height = i64::from(window_rect.bottom) - i64::from(window_rect.top);
+        let current_inner_width = i64::from(client_rect.right) - i64::from(client_rect.left);
+        let current_inner_height = i64::from(client_rect.bottom) - i64::from(client_rect.top);
+        let nonclient_width = (current_outer_width - current_inner_width).max(0);
+        let nonclient_height = (current_outer_height - current_inner_height).max(0);
+        let outer_width = i32::try_from(i64::from(width) + nonclient_width)
+            .map_err(|_| "灵动岛窗口宽度超出系统限制".to_string())?;
+        let outer_height = i32::try_from(i64::from(height) + nonclient_height)
+            .map_err(|_| "灵动岛窗口高度超出系统限制".to_string())?;
+        let is_shrinking = i64::from(outer_width) < current_outer_width
+            || i64::from(outer_height) < current_outer_height;
+        let animation_duration = duration_ms.unwrap_or_default();
+        if is_shrinking && animation_duration > 0 {
+            let raw_hwnd = hwnd.0 as isize;
+            let start_x = window_rect.left;
+            let start_y = window_rect.top;
+            tokio::task::spawn_blocking(move || {
+                use std::time::{Duration, Instant};
+                use windows::Win32::Foundation::HWND;
+                use windows::Win32::UI::WindowsAndMessaging::{
+                    SetWindowPos, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOOWNERZORDER, SWP_NOZORDER,
+                };
+
+                let hwnd = HWND(raw_hwnd as _);
+                let duration = Duration::from_millis(animation_duration);
+                let started_at = Instant::now();
+                let frame_interval = Duration::from_millis(8);
+                loop {
+                    let elapsed = started_at.elapsed();
+                    let linear_progress = (elapsed.as_secs_f64() / duration.as_secs_f64()).min(1.0);
+                    let eased_progress = island_morph_ease(linear_progress);
+                    let next_x = interpolate_window_value(start_x, x, eased_progress);
+                    let next_y = interpolate_window_value(start_y, y, eased_progress);
+                    let next_width = interpolate_window_value(
+                        current_outer_width as i32,
+                        outer_width,
+                        eased_progress,
+                    );
+                    let next_height = interpolate_window_value(
+                        current_outer_height as i32,
+                        outer_height,
+                        eased_progress,
+                    );
+
+                    unsafe {
+                        SetWindowPos(
+                            hwnd,
+                            None,
+                            next_x,
+                            next_y,
+                            next_width,
+                            next_height,
+                            SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOZORDER,
+                        )
+                        .map_err(|error| error.to_string())?;
+                    }
+                    if linear_progress >= 1.0 {
+                        break;
+                    }
+                    std::thread::sleep(
+                        frame_interval.saturating_sub(started_at.elapsed() - elapsed),
+                    );
+                }
+                Ok::<(), String>(())
+            })
+            .await
+            .map_err(|error| error.to_string())??;
+        } else {
+            // WebView2 otherwise copies the old transparent client bitmap into the
+            // resized HWND for one frame, briefly drawing the capsule out of place.
+            let position_flags = SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER | SWP_NOZORDER;
+            unsafe {
+                SetWindowPos(hwnd, None, x, y, outer_width, outer_height, position_flags)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        window
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }))
+            .map_err(|error| error.to_string())?;
+        window
+            .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
+            .map_err(|error| error.to_string())
+    }
+}
+
 #[tauri::command]
 pub fn set_ball_window_material(window: tauri::WebviewWindow, enabled: bool) -> Result<(), String> {
     if window.label() != "ball" {
@@ -113,28 +273,23 @@ pub fn set_ball_window_material(window: tauri::WebviewWindow, enabled: bool) -> 
 
     #[cfg(target_os = "windows")]
     {
-        if enabled {
-            let _ = window_vibrancy::apply_mica(&window, Some(true));
-            let _ = window_vibrancy::apply_acrylic(&window, None);
-        } else {
-            let _ = window_vibrancy::clear_acrylic(&window);
-            let _ = window_vibrancy::clear_mica(&window);
-        }
+        // Native shadow changes the client rect, while DWM rounding competes
+        // with the shared CSS shell. Keep the HWND neutral so desktop mode
+        // preserves the preview's exact 420x520 surface and 16px corners.
+        let _ = enabled;
+        let _ = window_vibrancy::clear_acrylic(&window);
+        let _ = window_vibrancy::clear_mica(&window);
 
         if let Ok(tauri_hwnd) = window.hwnd() {
             use windows::Win32::Foundation::HWND;
             use windows::Win32::Graphics::Dwm::{
                 DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
-                DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+                DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
             };
 
             let hwnd = HWND(tauri_hwnd.0 as _);
             let border_color = DWMWA_COLOR_NONE;
-            let corner_preference = if enabled {
-                DWMWCP_ROUND
-            } else {
-                DWMWCP_DONOTROUND
-            };
+            let corner_preference = DWMWCP_DONOTROUND;
             unsafe {
                 let _ = DwmSetWindowAttribute(
                     hwnd,
@@ -152,9 +307,7 @@ pub fn set_ball_window_material(window: tauri::WebviewWindow, enabled: bool) -> 
         }
     }
 
-    window
-        .set_shadow(enabled)
-        .map_err(|error| error.to_string())
+    window.set_shadow(false).map_err(|error| error.to_string())
 }
 
 // -----------------------------------------------------------
@@ -823,33 +976,58 @@ pub fn toggle_ball(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_ball_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), String> {
+pub fn save_ball_position(
+    app: tauri::AppHandle,
+    x: i32,
+    y: i32,
+    reposition: Option<bool>,
+) -> Result<(i32, i32), String> {
     let (x, y) = if let Some(w) = app.get_webview_window("ball") {
         // Validate position: must be within any connected monitor's bounds
         let mut cx = x;
         let mut cy = y;
         if let Ok(monitors) = w.available_monitors() {
-            let mut valid = false;
+            let mut adjusted_position = None;
             for m in &monitors {
                 let mx = m.position().x;
                 let my = m.position().y;
                 let mw = m.size().width as i32;
                 let mh = m.size().height as i32;
-                if cx >= mx - 8 && cx < mx + mw - 50 && cy >= my - 8 && cy < my + mh - 30 {
-                    valid = true;
+                if let Some(position) =
+                    crate::clamp_ball_position_to_monitor(cx, cy, mx, my, mw, mh, m.scale_factor())
+                {
+                    adjusted_position = Some(position);
                     break;
                 }
             }
-            if !valid {
-                // Reset to safe default instead of saving an off-screen position
-                cx = 100;
-                cy = 100;
+            if let Some((adjusted_x, adjusted_y)) = adjusted_position {
+                cx = adjusted_x;
+                cy = adjusted_y;
+            } else {
+                let fallback_monitor = w
+                    .primary_monitor()
+                    .ok()
+                    .flatten()
+                    .or_else(|| w.current_monitor().ok().flatten())
+                    .or_else(|| monitors.first().cloned());
+                (cx, cy) = fallback_monitor
+                    .map(|monitor| {
+                        crate::default_ball_position_on_monitor(
+                            monitor.work_area().position.x,
+                            monitor.work_area().position.y,
+                            monitor.work_area().size.width as i32,
+                            monitor.scale_factor(),
+                        )
+                    })
+                    .unwrap_or((100, 0));
             }
         }
-        let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-            x: cx,
-            y: cy,
-        }));
+        if reposition.unwrap_or(true) {
+            let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                x: cx,
+                y: cy,
+            }));
+        }
         (cx, cy)
     } else {
         (x, y)
@@ -874,7 +1052,7 @@ pub fn save_ball_position(app: tauri::AppHandle, x: i32, y: i32) -> Result<(), S
         &config_path,
         serde_json::to_string_pretty(&cfg).unwrap_or_default(),
     );
-    Ok(())
+    Ok((x, y))
 }
 
 #[tauri::command]
@@ -888,14 +1066,39 @@ pub fn get_ball_position(app: tauri::AppHandle) -> Result<(i32, i32), String> {
         .ok()
         .and_then(|d| serde_json::from_str(&d).ok())
         .unwrap_or(serde_json::json!({}));
-    let x = cfg["ball_x"].as_i64().unwrap_or(100) as i32;
-    let y = cfg["ball_y"].as_i64().unwrap_or(100) as i32;
-    Ok((x, y))
+    if let (Some(x), Some(y)) = (cfg["ball_x"].as_i64(), cfg["ball_y"].as_i64()) {
+        return Ok((x as i32, y as i32));
+    }
+    if let Some(window) = app.get_webview_window("ball") {
+        if let Ok(position) = window.outer_position() {
+            return Ok((position.x, position.y));
+        }
+    }
+    Ok((100, 0))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn island_morph_easing_preserves_endpoints_and_moves_forward() {
+        assert_eq!(island_morph_ease(0.0), 0.0);
+        assert_eq!(island_morph_ease(1.0), 1.0);
+        let samples = [0.1, 0.25, 0.5, 0.75, 0.9].map(island_morph_ease);
+        assert!(samples.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(samples.iter().all(|sample| (0.0..=1.0).contains(sample)));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn window_interpolation_keeps_the_center_stable() {
+        let progress = island_morph_ease(0.5);
+        let x = interpolate_window_value(812, 902, progress);
+        let width = interpolate_window_value(296, 116, progress);
+        assert!((x * 2 + width - 1920).abs() <= 1);
+    }
 
     #[test]
     fn cleanup_replaces_crlf_with_lf() {

@@ -14,15 +14,15 @@
       {
         "label": "ball",
         "title": "",
-        "width": 58,
-        "height": 38,
+        "width": 116,
+        "height": 42,
         "resizable": false,
         "decorations": false,
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
-        "visible": true,
+        "visible": false,
         "x": 100,
         "y": 100
       },

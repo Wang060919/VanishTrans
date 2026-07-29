@@ -5,6 +5,10 @@ node_modules/
 dist/
 src-tauri/target/
 
+# Local browser QA artifacts
+.playwright-cli/
+output/playwright/
+
 # IDE / OS
 .DS_Store
 Thumbs.db
