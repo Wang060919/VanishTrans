@@ -35,23 +35,36 @@ export default function MainWindowApp({
     void onRequestExpand?.();
   }, [onRequestExpand]);
 
+  const doTranslateStreamRef = useRef(translation.doTranslateStream);
+  const setOutputTextRef = useRef(translation.setOutputText);
+  const setInputTextRef = useRef(translation.setInputText);
+  const setLoadingRef = useRef(translation.setLoading);
+
+  // Keep refs in sync
+  useEffect(() => {
+    doTranslateStreamRef.current = translation.doTranslateStream;
+    setOutputTextRef.current = translation.setOutputText;
+    setInputTextRef.current = translation.setInputText;
+    setLoadingRef.current = translation.setLoading;
+  }, [translation.doTranslateStream, translation.setOutputText, translation.setInputText, translation.setLoading]);
+
   useTauriEvents({
     onClipboardTranslate: useCallback((text: string) => {
       requestExpand();
       if (text.startsWith("ERROR:")) {
-        translation.setOutputText(`❌ ${text.slice(6)}`);
-        translation.setLoading(false);
+        setOutputTextRef.current(`❌ ${text.slice(6)}`);
+        setLoadingRef.current(false);
         return;
       }
-      translation.doTranslateStream(text);
-    }, [requestExpand, translation.doTranslateStream]),
+      doTranslateStreamRef.current(text);
+    }, [requestExpand]),
 
     onOcrTranslate: useCallback((text: string) => {
       requestExpand();
-      translation.setOutputText("");
-      translation.setInputText("");
-      translation.doTranslateStream(text);
-    }, [requestExpand, translation.doTranslateStream]),
+      setOutputTextRef.current("");
+      setInputTextRef.current("");
+      doTranslateStreamRef.current(text);
+    }, [requestExpand]),
 
     onScreenshotStart: useCallback(() => {
       translation.setOutputText("");
@@ -90,7 +103,7 @@ export default function MainWindowApp({
       onPinChange?.(event.payload);
     });
     return () => {
-      listener.then((unlisten) => unlisten());
+      listener.then((unlisten) => unlisten()).catch(() => {});
     };
   }, [onPinChange]);
 

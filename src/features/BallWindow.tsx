@@ -7,28 +7,45 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useThemeSync } from "../hooks/useTheme";
 import MainWindowApp from "./MainWindowApp";
-import TranslationIslandView, {
+import TranslationIslandView from "./TranslationIslandView";
+import {
+  chooseDockSide,
+  getExpandedX,
+  getIdleAnchorX,
+  getIslandGeometry,
+  hasSameGeometry,
+  ISLAND_GEOMETRY,
+  ISLAND_TIMING,
+  ISLAND_WINDOW_POLICY,
+  shrinksIsland,
   type BallAction,
   type DockSide,
   type IslandMode,
+  type IslandMotion,
   type IslandPhase,
-} from "./TranslationIslandView";
+  type IslandPresentation,
+} from "./islandModel";
+import {
+  IslandTransitionCoordinator,
+  isIslandTransitionAborted,
+  waitForIslandPaint,
+  waitForIslandTransition,
+  type IslandTransitionContext,
+  type IslandTransitionReason,
+  type IslandTransitionRequest,
+} from "./islandTransitionCoordinator";
 
-const IDLE_WIDTH = 116;
-const IDLE_HEIGHT = 42;
-const ACTION_WIDTH = 296;
-const ACTION_HEIGHT = 60;
-const STATUS_WIDTH = 264;
-const STATUS_HEIGHT = 52;
-const FULL_WIDTH = 420;
-const FULL_HEIGHT = 520;
-const EDGE_GUTTER = 8;
-const TOP_GUTTER = 0;
-const TOP_SNAP_DISTANCE = 32;
-const MORPH_SETTLE_MS = 340;
+const IDLE_WIDTH = ISLAND_GEOMETRY.idle.width;
+const IDLE_HEIGHT = ISLAND_GEOMETRY.idle.height;
+const FULL_WIDTH = ISLAND_GEOMETRY.full.width;
+// REMOVED: Fixed actions surface causes title bar issues due to SetWindowRgn
+// RustyIsland (same Tauri v2 stack) doesn't use SetWindowRgn and has no title bar issues
+// See: https://github.com/hasnain7abbas/RustyIsland
+const USES_FIXED_ACTIONS_SURFACE = false;
 
-interface QueuedTransition {
-  target: IslandMode;
+interface TransitionOptions {
+  motion?: IslandMotion;
+  reason?: IslandTransitionReason;
 }
 
 interface TranslationActivity {
@@ -46,76 +63,13 @@ export function normalizeTranslationActivity(payload: unknown): IslandPhase | "i
   return null;
 }
 
-function wait(milliseconds: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
-}
-
-function getIslandDimensions(mode: IslandMode) {
-  if (mode === "full") return { width: FULL_WIDTH, height: FULL_HEIGHT };
-  if (mode === "peek" || mode === "actions") return { width: ACTION_WIDTH, height: ACTION_HEIGHT };
-  if (mode === "status") return { width: STATUS_WIDTH, height: STATUS_HEIGHT };
-  return { width: IDLE_WIDTH, height: IDLE_HEIGHT };
-}
-
-function getExpandedX(
-  side: DockSide,
-  anchorX: number,
-  idleOuterWidth: number,
-  expandedOuterWidth: number,
-) {
-  if (side === "center") {
-    return Math.round(anchorX + (idleOuterWidth - expandedOuterWidth) / 2);
-  }
-  return side === "left"
-    ? anchorX + idleOuterWidth - expandedOuterWidth
-    : anchorX;
-}
-
-function getIdleAnchorX(
-  side: DockSide,
-  expandedX: number,
-  expandedOuterWidth: number,
-  idleOuterWidth: number,
-) {
-  if (side === "center") {
-    return Math.round(expandedX + (expandedOuterWidth - idleOuterWidth) / 2);
-  }
-  return side === "left"
-    ? expandedX + expandedOuterWidth - idleOuterWidth
-    : expandedX;
-}
-
-function chooseDockSide(
-  anchorX: number,
-  idleOuterWidth: number,
-  preferredOuterWidth: number,
-  monitorLeft: number,
-  monitorRight: number,
-  gutter: number,
-): DockSide {
-  const minX = monitorLeft + gutter;
-  const maxRight = monitorRight - gutter;
-  const centeredX = getExpandedX("center", anchorX, idleOuterWidth, preferredOuterWidth);
-  if (centeredX >= minX && centeredX + preferredOuterWidth <= maxRight) {
-    return "center";
-  }
-
-  const leftX = getExpandedX("left", anchorX, idleOuterWidth, preferredOuterWidth);
-  const canExpandLeft = leftX >= minX;
-  const canExpandRight = anchorX + preferredOuterWidth <= maxRight;
-  if (canExpandLeft || !canExpandRight) return "left";
-  return "right";
-}
-
 async function setBallWindowBounds(bounds: {
   x: number;
   y: number;
   width: number;
   height: number;
-}, durationMs = 0) {
-  await invoke("set_ball_window_bounds", durationMs > 0
-    ? { ...bounds, durationMs }
-    : bounds);
+}) {
+  await invoke("set_ball_window_bounds", bounds);
 }
 
 async function saveBallPosition(
@@ -132,21 +86,34 @@ async function saveBallPosition(
 }
 
 export default function BallWindow() {
-  const [mode, setMode] = useState<IslandMode>("idle");
+  const initialPresentation: IslandPresentation = {
+    mode: "idle",
+    motion: "instant",
+    phase: "stable",
+    generation: 0,
+  };
+  const [presentation, setPresentation] = useState<IslandPresentation>(initialPresentation);
   const [phase, setPhase] = useState<IslandPhase>("working");
   const [dockSide, setDockSide] = useState<DockSide>("center");
   const [busyAction, setBusyAction] = useState<BallAction | null>(null);
   const [notice, setNotice] = useState("");
   const shouldReduceMotion = useReducedMotion();
+  const mode = presentation.mode;
 
   const modeRef = useRef<IslandMode>("idle");
+  const nativeModeRef = useRef<IslandMode>(USES_FIXED_ACTIONS_SURFACE ? "actions" : "idle");
+  const nativeTargetModeRef = useRef<IslandMode>(USES_FIXED_ACTIONS_SURFACE ? "actions" : "idle");
+  const presentationRef = useRef<IslandPresentation>(initialPresentation);
   const dockSideRef = useRef<DockSide>("center");
   const pointerOriginRef = useRef<{ x: number; y: number } | null>(null);
   const pointerCaptureTargetRef = useRef<Element | null>(null);
   const draggingRef = useRef(false);
-  const geometryTransitionRef = useRef(false);
-  const transitionTargetRef = useRef<IslandMode | null>(null);
-  const queuedTransitionRef = useRef<QueuedTransition | null>(null);
+  const transitionCoordinatorRef = useRef<IslandTransitionCoordinator | null>(null);
+  if (!transitionCoordinatorRef.current) {
+    transitionCoordinatorRef.current = new IslandTransitionCoordinator();
+  }
+  const transitionCoordinator = transitionCoordinatorRef.current;
+  const coordinatorLifetimeRef = useRef(0);
   const lastDragEndedAtRef = useRef(Number.NEGATIVE_INFINITY);
   const anchorPositionRef = useRef<{ x: number; y: number } | null>(null);
   const idleOuterSizeRef = useRef<{ width: number; height: number } | null>(null);
@@ -159,65 +126,130 @@ export default function BallWindow() {
   const fullPinnedRef = useRef(false);
   const phaseRef = useRef<IslandPhase>("working");
 
-  const transitionMode: (target: IslandMode) => Promise<void> = useCallback(async (target) => {
-    if (target === "full" && statusTimerRef.current) {
-      clearTimeout(statusTimerRef.current);
-      statusTimerRef.current = null;
-    }
+  const commitPresentation = useCallback((next: IslandPresentation) => {
+    presentationRef.current = next;
+    flushSync(() => setPresentation(next));
+  }, []);
 
-    if (draggingRef.current) {
-      queuedTransitionRef.current = { target };
-      return;
-    }
-
-    if (geometryTransitionRef.current) {
-      queuedTransitionRef.current = { target };
-      return;
-    }
-    if (modeRef.current === target) return;
-
-    geometryTransitionRef.current = true;
-    transitionTargetRef.current = target;
+  const runTransition = useCallback(async (
+    request: IslandTransitionRequest,
+    context: IslandTransitionContext,
+  ) => {
+    const { target, motion } = request;
     const win = getCurrentWindow();
     const previousMode = modeRef.current;
     try {
-      const scale = await win.scaleFactor();
-      const idleWidthPixels = Math.round(IDLE_WIDTH * scale);
-      const idleHeightPixels = Math.round(IDLE_HEIGHT * scale);
-      const previousDimensions = getIslandDimensions(previousMode);
-      const targetDimensions = getIslandDimensions(target);
-
-      if (previousDimensions.width === targetDimensions.width
-        && previousDimensions.height === targetDimensions.height
-        && previousMode !== "full"
-        && target !== "full") {
-        modeRef.current = target;
-        setMode(target);
+      if (previousMode === target
+        && hasSameGeometry(nativeModeRef.current, target)
+        && hasSameGeometry(nativeTargetModeRef.current, target)) {
+        if (presentationRef.current.phase !== "stable"
+          || presentationRef.current.motion !== motion) {
+          commitPresentation({
+            mode: target,
+            motion,
+            phase: "stable",
+            generation: context.generation,
+          });
+        }
         if (target === "actions") await win.setFocus();
         return;
       }
 
-      if (previousMode === "full" && target !== "full") {
-        await invoke("set_ball_window_material", { enabled: false });
+      const scale = await win.scaleFactor();
+      if (!context.isCurrent()) return;
+      const idleWidthPixels = Math.round(IDLE_WIDTH * scale);
+      const idleHeightPixels = Math.round(IDLE_HEIGHT * scale);
+      const targetDimensions = getIslandGeometry(target);
+
+      if (previousMode !== target
+        && hasSameGeometry(previousMode, target)
+        && hasSameGeometry(nativeModeRef.current, target)
+        && hasSameGeometry(nativeTargetModeRef.current, target)
+        && previousMode !== "full"
+        && target !== "full") {
+        modeRef.current = target;
+        commitPresentation({
+          mode: target,
+          motion,
+          phase: "stable",
+          generation: context.generation,
+        });
+        if (target === "actions") await win.setFocus();
+        return;
       }
 
       if (target === "idle") {
-        const nextAnchor = anchorPositionRef.current;
+        const currentPos = await win.outerPosition();
+        const currentSize = await win.outerSize();
+        if (!context.isCurrent()) return;
+
+        if (previousMode === "full" && motion === "animated") {
+          commitPresentation({
+            mode: "full",
+            motion,
+            phase: "full-exit",
+            generation: context.generation,
+          });
+          await waitForIslandTransition(ISLAND_TIMING.fullContentExitMs, context.signal);
+        }
+
+        const side = dockSideRef.current;
+        let idleX = currentPos.x;
+        if (side === "center") {
+          idleX = currentPos.x + Math.round((currentSize.width - idleWidthPixels) / 2);
+        } else if (side === "left") {
+          idleX = currentPos.x + currentSize.width - idleWidthPixels;
+        }
+        const idleBounds = {
+          x: idleX,
+          y: currentPos.y,
+          width: idleWidthPixels,
+          height: idleHeightPixels,
+        };
+
         modeRef.current = "idle";
         noticeRef.current = "";
         setNotice("");
-        setMode("idle");
-        await wait(shouldReduceMotion ? 0 : MORPH_SETTLE_MS);
-        if (nextAnchor) {
-          await setBallWindowBounds({
-            x: nextAnchor.x,
-            y: nextAnchor.y,
+        commitPresentation({
+          mode: "idle",
+          motion,
+          phase: "stable",
+          generation: context.generation,
+        });
+
+        if (motion === "animated") {
+          await waitForIslandTransition(ISLAND_TIMING.surfaceMs, context.signal);
+        }
+        if (!context.isCurrent()) return;
+
+        const keepsActionsSurface = request.reason === "focus-loss"
+          && (nativeModeRef.current === "peek" || nativeModeRef.current === "actions");
+        if (keepsActionsSurface) {
+          await waitForIslandPaint(context.signal);
+          if (!context.isCurrent()) return;
+          await setBallWindowRegion({
+            left: idleBounds.x - currentPos.x,
+            top: idleBounds.y - currentPos.y,
+            width: idleBounds.width,
+            height: idleBounds.height,
+          });
+          if (!context.isCurrent()) return;
+
+          idleOuterSizeRef.current = {
             width: idleWidthPixels,
             height: idleHeightPixels,
-          });
-          idleOuterSizeRef.current = await win.outerSize();
-          anchorPositionRef.current = await saveBallPosition(nextAnchor, false);
+          };
+          anchorPositionRef.current = await saveBallPosition({ x: idleX, y: currentPos.y }, false);
+          return;
         }
+        nativeTargetModeRef.current = "idle";
+        await setBallWindowBounds(idleBounds);
+        nativeModeRef.current = "idle";
+        if (!context.isCurrent()) return;
+
+        idleOuterSizeRef.current = await win.outerSize();
+        if (!context.isCurrent()) return;
+        anchorPositionRef.current = await saveBallPosition({ x: idleX, y: currentPos.y }, false);
         return;
       }
 
@@ -225,12 +257,31 @@ export default function BallWindow() {
       const currentOuterSize = await win.outerSize();
       const currentInnerSize = await win.innerSize();
       const monitor = await currentMonitor();
+      if (!context.isCurrent()) return;
       const chromeWidth = currentOuterSize.width - currentInnerSize.width;
       const chromeHeight = currentOuterSize.height - currentInnerSize.height;
 
       if (previousMode === "idle" || !anchorPositionRef.current) {
-        anchorPositionRef.current = { x: currentPosition.x, y: currentPosition.y };
-        idleOuterSizeRef.current = currentOuterSize;
+        if (previousMode === "idle" && !hasSameGeometry(nativeModeRef.current, "idle")) {
+          const idleOuterWidth = idleWidthPixels + chromeWidth;
+          const idleOuterHeight = idleHeightPixels + chromeHeight;
+          anchorPositionRef.current = {
+            x: getIdleAnchorX(
+              dockSideRef.current,
+              currentPosition.x,
+              currentOuterSize.width,
+              idleOuterWidth,
+            ),
+            y: currentPosition.y,
+          };
+          idleOuterSizeRef.current = {
+            width: idleOuterWidth,
+            height: idleOuterHeight,
+          };
+        } else {
+          anchorPositionRef.current = { x: currentPosition.x, y: currentPosition.y };
+          idleOuterSizeRef.current = currentOuterSize;
+        }
       }
       const anchor = anchorPositionRef.current ?? { x: currentPosition.x, y: currentPosition.y };
       const idleOuterSize = idleOuterSizeRef.current;
@@ -240,8 +291,8 @@ export default function BallWindow() {
       const targetHeightPixels = Math.round(targetHeight * scale);
       const estimatedOuterWidth = targetWidthPixels + chromeWidth;
       const estimatedOuterHeight = targetHeightPixels + chromeHeight;
-      const edgeGutterPixels = Math.round(EDGE_GUTTER * scale);
-      const topGutterPixels = Math.round(TOP_GUTTER * scale);
+      const edgeGutterPixels = Math.round(ISLAND_WINDOW_POLICY.edgeGutter * scale);
+      const topGutterPixels = Math.round(ISLAND_WINDOW_POLICY.topGutter * scale);
       const monitorLeft = monitor?.position.x ?? 0;
       const monitorTop = monitor?.position.y ?? 0;
       const monitorRight = monitor
@@ -267,19 +318,22 @@ export default function BallWindow() {
       }
 
       dockSideRef.current = side;
-      // The resized transparent HWND can paint immediately, so its CSS anchor
-      // must be committed before the native bounds change becomes visible.
       flushSync(() => setDockSide(side));
 
-      const shrinksExistingIsland = previousMode !== "idle"
-        && targetWidth <= previousDimensions.width
-        && targetHeight <= previousDimensions.height
-        && (targetWidth < previousDimensions.width || targetHeight < previousDimensions.height);
+      const shrinksExistingIsland = previousMode !== "idle" && shrinksIsland(previousMode, target);
 
       if (shrinksExistingIsland) {
         modeRef.current = target;
-        setMode(target);
-        await wait(shouldReduceMotion ? 0 : MORPH_SETTLE_MS);
+        commitPresentation({
+          mode: target,
+          motion,
+          phase: "stable",
+          generation: context.generation,
+        });
+        if (motion === "animated") {
+          await waitForIslandTransition(ISLAND_TIMING.surfaceMs, context.signal);
+        }
+        if (!context.isCurrent()) return;
       }
 
       const rawExpandedX = getExpandedX(
@@ -299,56 +353,96 @@ export default function BallWindow() {
       );
       const expandedY = Math.min(Math.max(anchor.y, monitorTop + topGutterPixels), maxY);
 
+      const revealsExistingActionsSurface = previousMode === "idle"
+        && (target === "peek" || target === "actions")
+        && hasSameGeometry(nativeModeRef.current, target)
+        && currentPosition.x === expandedX
+        && currentPosition.y === expandedY
+        && currentOuterSize.width === estimatedOuterWidth
+        && currentOuterSize.height === estimatedOuterHeight;
+
+      if (revealsExistingActionsSurface) {
+        modeRef.current = target;
+        commitPresentation({
+          mode: target,
+          motion,
+          phase: "stable",
+          generation: context.generation,
+        });
+        await waitForIslandPaint(context.signal);
+        if (!context.isCurrent()) return;
+      }
+
+      nativeTargetModeRef.current = target;
       await setBallWindowBounds({
         x: expandedX,
         y: expandedY,
         width: targetWidthPixels,
         height: targetHeightPixels,
       });
+      nativeModeRef.current = target;
+      if (!context.isCurrent()) return;
       anchorPositionRef.current = {
         x: getIdleAnchorX(side, expandedX, estimatedOuterWidth, idleOuterWidth),
         y: expandedY,
       };
-      if (!shrinksExistingIsland) {
+      if (!shrinksExistingIsland && !revealsExistingActionsSurface) {
         modeRef.current = target;
-        setMode(target);
+        commitPresentation({
+          mode: target,
+          motion,
+          phase: "stable",
+          generation: context.generation,
+        });
       }
       if (target === "actions" || target === "full") await win.setFocus();
-      if (target === "full") {
-        await wait(shouldReduceMotion ? 0 : MORPH_SETTLE_MS);
-        await invoke("set_ball_window_material", { enabled: true });
+      if (target === "full" && motion === "animated") {
+        await waitForIslandTransition(ISLAND_TIMING.surfaceMs, context.signal);
       }
     } catch (error) {
+      if (context.signal.aborted || isIslandTransitionAborted(error)) return;
       console.error("transition translation island failed", error);
-      if (previousMode === "full" || target === "full") {
-        await invoke("set_ball_window_material", { enabled: false }).catch(() => {});
-      }
       modeRef.current = "idle";
-      setMode("idle");
+      commitPresentation({
+        mode: "idle",
+        motion: "instant",
+        phase: "stable",
+        generation: context.generation,
+      });
       try {
         const scale = await win.scaleFactor();
         const anchor = anchorPositionRef.current;
         if (anchor) {
+          nativeTargetModeRef.current = "idle";
           await setBallWindowBounds({
             x: anchor.x,
             y: anchor.y,
             width: Math.round(IDLE_WIDTH * scale),
             height: Math.round(IDLE_HEIGHT * scale),
           });
+          nativeModeRef.current = "idle";
         }
       } catch (rollbackError) {
         console.error("rollback translation island failed", rollbackError);
       }
-    } finally {
-      geometryTransitionRef.current = false;
-      transitionTargetRef.current = null;
-      const queued = queuedTransitionRef.current;
-      queuedTransitionRef.current = null;
-      if (queued && queued.target !== modeRef.current) {
-        void transitionMode(queued.target);
-      }
     }
-  }, [shouldReduceMotion]);
+  }, [commitPresentation]);
+
+  const transitionMode = useCallback((
+    target: IslandMode,
+    options: TransitionOptions = {},
+  ) => {
+    if (target === "full" && statusTimerRef.current) {
+      clearTimeout(statusTimerRef.current);
+      statusTimerRef.current = null;
+    }
+    const request: IslandTransitionRequest = {
+      target,
+      motion: shouldReduceMotion ? "instant" : options.motion ?? "animated",
+      reason: options.reason ?? "user",
+    };
+    return transitionCoordinator.request(request, runTransition);
+  }, [runTransition, shouldReduceMotion, transitionCoordinator]);
 
   const scheduleStatusCollapse = useCallback((statusPhase: IslandPhase) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
@@ -356,24 +450,24 @@ export default function BallWindow() {
     if (statusPhase === "working") return;
     statusTimerRef.current = setTimeout(() => {
       statusTimerRef.current = null;
-      const effectiveMode = queuedTransitionRef.current?.target
-        ?? transitionTargetRef.current
-        ?? modeRef.current;
-      if (effectiveMode === "status") void transitionMode("idle");
+      const effectiveMode = transitionCoordinator.requestedTarget ?? modeRef.current;
+      if (effectiveMode === "status") {
+        void transitionMode("idle", { reason: "business" });
+      }
     }, statusPhase === "done" ? 1250 : 1900);
-  }, [transitionMode]);
+  }, [transitionCoordinator, transitionMode]);
 
   const handleIslandBlur = useCallback((event: React.FocusEvent<HTMLElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
     if (modeRef.current === "actions"
-      && !geometryTransitionRef.current
+      && !transitionCoordinator.isTransitioning
       && !draggingRef.current
       && busyActionRef.current === null
       && !expectingTranslationRef.current
       && !noticeRef.current) {
-      void transitionMode("idle");
+      void transitionMode("idle", { motion: "instant", reason: "focus-loss" });
     }
-  }, [transitionMode]);
+  }, [transitionCoordinator, transitionMode]);
 
   const toggleActions = useCallback(async () => {
     if (modeRef.current === "actions") await transitionMode("idle");
@@ -461,7 +555,7 @@ export default function BallWindow() {
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const modeIsDraggable = modeRef.current !== "full";
-    if (!modeIsDraggable || geometryTransitionRef.current || event.button !== 0) return;
+    if (!modeIsDraggable || transitionCoordinator.isTransitioning || event.button !== 0) return;
     const captureTarget = event.target instanceof Element
       ? event.target.closest("button") ?? event.currentTarget
       : event.currentTarget;
@@ -473,13 +567,15 @@ export default function BallWindow() {
       pointerCaptureTargetRef.current = null;
     }
     pointerOriginRef.current = { x: event.clientX, y: event.clientY };
-  }, []);
+  }, [transitionCoordinator]);
 
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const origin = pointerOriginRef.current;
     const dragMode = modeRef.current;
     const modeIsDraggable = dragMode !== "full";
-    if (!origin || draggingRef.current || !modeIsDraggable || geometryTransitionRef.current) return;
+    if (!origin || draggingRef.current || !modeIsDraggable || transitionCoordinator.isTransitioning) {
+      return;
+    }
     if (Math.hypot(event.clientX - origin.x, event.clientY - origin.y) < 6) return;
 
     pointerOriginRef.current = null;
@@ -493,6 +589,7 @@ export default function BallWindow() {
       // The native drag loop may already have released capture.
     }
     draggingRef.current = true;
+    transitionCoordinator.setPaused(true);
     if (dragMode === "status" && statusTimerRef.current) {
       clearTimeout(statusTimerRef.current);
       statusTimerRef.current = null;
@@ -506,7 +603,10 @@ export default function BallWindow() {
         const endOuterSize = await win.outerSize();
         lastDragEndedAtRef.current = performance.now();
 
-        if (dragMode === "peek" || dragMode === "actions" || dragMode === "status") {
+        if (dragMode === "peek"
+          || dragMode === "actions"
+          || dragMode === "status"
+          || (dragMode === "idle" && !hasSameGeometry(nativeModeRef.current, "idle"))) {
           const scale = await win.scaleFactor();
           const endInnerSize = await win.innerSize();
           const chromeWidth = endOuterSize.width - endInnerSize.width;
@@ -536,16 +636,15 @@ export default function BallWindow() {
         console.error("drag translation island failed", error);
       } finally {
         draggingRef.current = false;
-        const queued = queuedTransitionRef.current;
-        queuedTransitionRef.current = null;
-        if (queued && queued.target !== modeRef.current) {
-          void transitionMode(queued.target);
-        } else if (dragMode === "status" && modeRef.current === "status") {
+        transitionCoordinator.setPaused(false);
+        if (dragMode === "status"
+          && modeRef.current === "status"
+          && transitionCoordinator.requestedTarget === null) {
           scheduleStatusCollapse(phaseRef.current);
         }
       }
     })();
-  }, [scheduleStatusCollapse, transitionMode]);
+  }, [scheduleStatusCollapse, transitionCoordinator]);
 
   const clearPointerOrigin = useCallback(() => {
     pointerOriginRef.current = null;
@@ -582,9 +681,9 @@ export default function BallWindow() {
       const idleOuterWidth = Math.round(IDLE_WIDTH * scale) + chromeWidth;
       const idleOuterHeight = Math.round(IDLE_HEIGHT * scale) + chromeHeight;
       idleOuterSizeRef.current = { width: idleOuterWidth, height: idleOuterHeight };
-      const edgeGutterPixels = Math.round(EDGE_GUTTER * scale);
-      const topGutterPixels = Math.round(TOP_GUTTER * scale);
-      const snapDistancePixels = Math.round(TOP_SNAP_DISTANCE * scale);
+      const edgeGutterPixels = Math.round(ISLAND_WINDOW_POLICY.edgeGutter * scale);
+      const topGutterPixels = Math.round(ISLAND_WINDOW_POLICY.topGutter * scale);
+      const snapDistancePixels = Math.round(ISLAND_WINDOW_POLICY.topSnapDistance * scale);
       let position = { x: draggedPosition.x, y: draggedPosition.y };
 
       if (monitor
@@ -624,21 +723,20 @@ export default function BallWindow() {
   }, []);
 
   const handleFullDragStart = useCallback(() => {
-    if (modeRef.current !== "full" || geometryTransitionRef.current || draggingRef.current) {
+    if (modeRef.current !== "full"
+      || transitionCoordinator.isTransitioning
+      || draggingRef.current) {
       return false;
     }
     draggingRef.current = true;
+    transitionCoordinator.setPaused(true);
     return true;
-  }, []);
+  }, [transitionCoordinator]);
 
   const handleFullDragEnd = useCallback(() => {
     draggingRef.current = false;
-    const queued = queuedTransitionRef.current;
-    queuedTransitionRef.current = null;
-    if (queued && queued.target !== modeRef.current) {
-      void transitionMode(queued.target);
-    }
-  }, [transitionMode]);
+    transitionCoordinator.setPaused(false);
+  }, [transitionCoordinator]);
 
   const handlePinChange = useCallback((pinned: boolean) => {
     fullPinnedRef.current = pinned;
@@ -692,51 +790,46 @@ export default function BallWindow() {
       }
 
       const fullIsActiveOrPending = modeRef.current === "full"
-        || transitionTargetRef.current === "full"
-        || queuedTransitionRef.current?.target === "full";
+        || transitionCoordinator.requestedTarget === "full";
       if (fullIsActiveOrPending) {
-        if (activity !== "idle") {
-          phaseRef.current = activity;
-          setPhase(activity);
-        }
+        phaseRef.current = activity;
+        setPhase(activity);
         return;
       }
 
       if (activity === "idle") {
-        void transitionMode("idle");
+        void transitionMode("idle", { reason: "business" });
         return;
       }
 
       phaseRef.current = activity;
       setPhase(activity);
-      void transitionMode("status");
+      void transitionMode("status", { reason: "business" });
     });
     const focusListener = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      const effectiveMode = queuedTransitionRef.current?.target
-        ?? transitionTargetRef.current
-        ?? modeRef.current;
+      const effectiveMode = transitionCoordinator.requestedTarget ?? modeRef.current;
       const shouldCollapseActions = (effectiveMode === "peek" || effectiveMode === "actions")
         && !expectingTranslationRef.current;
       const shouldCollapseFull = effectiveMode === "full"
         && !fullPinnedRef.current;
-      if (!focused && (shouldCollapseActions || shouldCollapseFull)) {
-        void transitionMode("idle");
+      if (!focused && shouldCollapseActions) {
+        void transitionMode("idle", { motion: "instant", reason: "focus-loss" });
+      } else if (!focused && shouldCollapseFull) {
+        void transitionMode("idle", { reason: "focus-loss" });
       }
     });
     const expandListener = listen("expand-main-window", () => {
-      void transitionMode("full");
+      void transitionMode("full", { reason: "user" });
     });
     const toggleMainListener = listen("toggle-main-window", () => {
-      const effectiveMode = queuedTransitionRef.current?.target
-        ?? transitionTargetRef.current
-        ?? modeRef.current;
-      void transitionMode(effectiveMode === "full" ? "idle" : "full");
+      const effectiveMode = transitionCoordinator.requestedTarget ?? modeRef.current;
+      void transitionMode(effectiveMode === "full" ? "idle" : "full", { reason: "user" });
     });
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (document.querySelector('[role="dialog"]')) return;
       if (modeRef.current === "peek" || modeRef.current === "actions" || modeRef.current === "full") {
-        void transitionMode("idle");
+        void transitionMode("idle", { reason: "keyboard" });
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -757,11 +850,22 @@ export default function BallWindow() {
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
       if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     };
-  }, [clearPointerOrigin, transitionMode]);
+  }, [clearPointerOrigin, transitionCoordinator, transitionMode]);
+
+  useEffect(() => {
+    const lifetime = ++coordinatorLifetimeRef.current;
+    return () => {
+      queueMicrotask(() => {
+        if (coordinatorLifetimeRef.current === lifetime) {
+          transitionCoordinator.dispose();
+        }
+      });
+    };
+  }, [transitionCoordinator]);
 
   return (
     <TranslationIslandView
-      mode={mode}
+      presentation={presentation}
       phase={phase}
       dockSide={dockSide}
       busyAction={busyAction}

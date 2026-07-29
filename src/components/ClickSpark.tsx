@@ -16,6 +16,8 @@ export default function ClickSpark({ children, color = "var(--color-primary)", c
     return () => {
       timersRef.current.forEach(clearTimeout);
       particlesRef.current.forEach((p) => p.remove());
+      timersRef.current = [];
+      particlesRef.current = [];
     };
   }, []);
 

@@ -1,4 +1,4 @@
-import { Children, ReactNode, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, ReactNode, useEffect, useRef, useState } from "react";
 
 interface AnimatedListProps {
   children: ReactNode;
@@ -11,11 +11,14 @@ export default function AnimatedList({ children, stagger = 40, className }: Anim
 
   return (
     <div className={className}>
-      {items.map((child, i) => (
-        <AnimatedItem key={(child as any)?.key ?? i} index={i} stagger={stagger}>
-          {child}
-        </AnimatedItem>
-      ))}
+      {items.map((child, i) => {
+        const key = isValidElement(child) && child.key != null ? child.key : i;
+        return (
+          <AnimatedItem key={key} index={i} stagger={stagger}>
+            {child}
+          </AnimatedItem>
+        );
+      })}
     </div>
   );
 }

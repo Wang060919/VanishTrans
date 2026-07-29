@@ -8,42 +8,40 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import type {
+  CSSProperties,
   FocusEventHandler,
   PointerEventHandler,
   ReactNode,
 } from "react";
 import { useEffect, useState } from "react";
 import VanishMark from "../components/brand/VanishMark";
+import {
+  getIslandGeometry,
+  ISLAND_TIMING,
+  type BallAction,
+  type DockSide,
+  type IslandPhase,
+  type IslandPresentation,
+} from "./islandModel";
 
-export type DockSide = "left" | "center" | "right";
-export type BallAction = "clipboard" | "screenshot" | "main";
-export type IslandMode = "idle" | "peek" | "actions" | "status" | "full";
-export type IslandPhase = "working" | "done" | "error";
-
-export const ISLAND_MORPH = {
-  type: "tween" as const,
-  duration: 0.34,
-  ease: [0.25, 1, 0.5, 1] as const,
-};
+export type {
+  BallAction,
+  DockSide,
+  IslandMode,
+  IslandPhase,
+  IslandPresentation,
+} from "./islandModel";
 
 const CONTENT_EASE = [0.22, 1, 0.36, 1] as const;
 const CORE_WIDTH = 58;
-const MORPH_SETTLE_MS = ISLAND_MORPH.duration * 1000;
-
-const ISLAND_GEOMETRY: Record<IslandMode, {
-  width: number;
-  height: number;
-  borderRadius: number;
-}> = {
-  idle: { width: 116, height: 42, borderRadius: 21 },
-  peek: { width: 296, height: 60, borderRadius: 30 },
-  actions: { width: 296, height: 60, borderRadius: 30 },
-  status: { width: 264, height: 52, borderRadius: 26 },
-  full: { width: 420, height: 520, borderRadius: 16 },
+const CONTENT_MORPH = {
+  type: "tween" as const,
+  duration: ISLAND_TIMING.surfaceMs / 1000,
+  ease: CONTENT_EASE,
 };
 
 interface TranslationIslandViewProps {
-  mode: IslandMode;
+  presentation: IslandPresentation;
   phase: IslandPhase;
   dockSide: DockSide;
   busyAction: BallAction | null;
@@ -60,7 +58,7 @@ interface TranslationIslandViewProps {
 }
 
 export default function TranslationIslandView({
-  mode,
+  presentation,
   phase,
   dockSide,
   busyAction,
@@ -75,6 +73,9 @@ export default function TranslationIslandView({
   onCorePointerCancel,
   onIslandBlur,
 }: TranslationIslandViewProps) {
+  const { mode, motion: motionMode, phase: visualPhase, generation } = presentation;
+  const instant = shouldReduceMotion || motionMode === "instant";
+  const fullVisible = mode === "full" && visualPhase === "stable";
   const [idleWordmarkReady, setIdleWordmarkReady] = useState(mode === "idle");
 
   useEffect(() => {
@@ -82,14 +83,17 @@ export default function TranslationIslandView({
       setIdleWordmarkReady(false);
       return;
     }
-    if (shouldReduceMotion) {
+    if (instant) {
       setIdleWordmarkReady(true);
       return;
     }
 
-    const timer = window.setTimeout(() => setIdleWordmarkReady(true), MORPH_SETTLE_MS);
+    const timer = window.setTimeout(
+      () => setIdleWordmarkReady(true),
+      ISLAND_TIMING.surfaceMs,
+    );
     return () => window.clearTimeout(timer);
-  }, [mode, shouldReduceMotion]);
+  }, [instant, mode]);
 
   const statusTitle = phase === "working"
     ? "正在翻译"
@@ -102,29 +106,41 @@ export default function TranslationIslandView({
       ? "结果已就绪"
       : "请检查连接";
   const showsActions = mode === "peek" || mode === "actions";
-  const geometry = ISLAND_GEOMETRY[mode];
+  const geometry = getIslandGeometry(mode);
   const contentWidth = Math.max(0, geometry.width - CORE_WIDTH);
-  const layoutTransition = shouldReduceMotion ? { duration: 0 } : ISLAND_MORPH;
-  const contentAnimate = shouldReduceMotion
+  const contentAnimate = instant
     ? { opacity: 1, width: contentWidth }
     : {
         opacity: 1,
         width: contentWidth,
         transition: {
-          width: ISLAND_MORPH,
+          width: CONTENT_MORPH,
           opacity: { duration: 0.19, delay: 0.06, ease: CONTENT_EASE },
         },
       };
-  const contentExit = shouldReduceMotion
+  const contentExit = instant
     ? { opacity: 0, width: 0 }
     : {
         opacity: 0,
         width: 0,
         transition: {
-          width: ISLAND_MORPH,
+          width: CONTENT_MORPH,
           opacity: { duration: 0.08, ease: CONTENT_EASE },
         },
       };
+  const islandStyle = {
+    "--island-width": `${geometry.width}px`,
+    "--island-height": `${geometry.height}px`,
+    "--island-radius": `${geometry.borderRadius}px`,
+  } as CSSProperties;
+  const islandClassName = [
+    "translation-island",
+    `translation-island--${mode}`,
+    `translation-island--${dockSide}`,
+    `translation-island--${phase}`,
+    `translation-island--${visualPhase}`,
+    instant && "translation-island--instant",
+  ].filter(Boolean).join(" ");
 
   const coreLabel = mode === "idle"
     ? "展开快速工具"
@@ -140,7 +156,8 @@ export default function TranslationIslandView({
 
   return (
     <aside
-      className={`translation-island translation-island--${mode} translation-island--${dockSide} translation-island--${phase}`}
+      className={islandClassName}
+      style={islandStyle}
       aria-label="VanishTrans 快速工具"
       onPointerDown={onCorePointerDown}
       onPointerMove={onCorePointerMove}
@@ -149,15 +166,10 @@ export default function TranslationIslandView({
       onLostPointerCapture={onCorePointerCancel}
       onBlurCapture={onIslandBlur}
     >
-      <motion.div
+      <div
         className="translation-island__surface"
         data-mode={mode}
-        initial={false}
-        animate={{
-          width: geometry.width,
-          height: geometry.height,
-          borderRadius: geometry.borderRadius,
-        }}
+        data-transition-generation={generation}
         style={{
           transformOrigin: dockSide === "center"
             ? "50% 0%"
@@ -165,32 +177,24 @@ export default function TranslationIslandView({
               ? "100% 0%"
               : "0% 0%",
         }}
-        transition={layoutTransition}
       >
-        <motion.div
+        <div
           className="translation-island__full"
-          aria-hidden={mode !== "full"}
-          initial={false}
-          animate={mode === "full"
-            ? { opacity: 1, scale: 1, visibility: "visible" }
-            : { opacity: 0, scale: 0.982, visibility: "hidden" }}
-          transition={shouldReduceMotion
-            ? { duration: 0 }
-            : {
-                duration: mode === "full" ? 0.22 : 0.1,
-                delay: mode === "full" ? 0.04 : 0,
-                ease: CONTENT_EASE,
-              }}
+          aria-hidden={!fullVisible}
         >
           {fullContent}
-        </motion.div>
+        </div>
 
-        <AnimatePresence initial={false} mode="popLayout">
+        <AnimatePresence
+          key={instant ? `instant-${generation}` : "animated"}
+          initial={false}
+          mode="popLayout"
+        >
           {showsActions && (
             <motion.div
               key="actions"
               className="translation-island__content translation-island__content--actions"
-              initial={shouldReduceMotion
+              initial={instant
                 ? false
                 : { opacity: 0, width: 0 }}
               animate={contentAnimate}
@@ -203,10 +207,10 @@ export default function TranslationIslandView({
                     className="translation-island__notice"
                     role="status"
                     aria-live="polite"
-                    initial={shouldReduceMotion ? false : { opacity: 0, y: 3, scale: 0.985 }}
+                    initial={instant ? false : { opacity: 0, y: 3, scale: 0.985 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -2, scale: 0.99 }}
-                    transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.16, ease: CONTENT_EASE }}
+                    transition={instant ? { duration: 0 } : { duration: 0.16, ease: CONTENT_EASE }}
                   >
                     <span className="translation-island__notice-icon" aria-hidden="true">
                       <TriangleAlert size={15} />
@@ -228,9 +232,9 @@ export default function TranslationIslandView({
                       disabled={busyAction !== null}
                       data-busy={busyAction === "clipboard" || undefined}
                       onClick={() => onRunAction("clipboard", "translate_clipboard_from_ball")}
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 3 }}
+                      initial={instant ? false : { opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.16, delay: 0.07, ease: CONTENT_EASE }}
+                      transition={instant ? { duration: 0 } : { duration: 0.16, delay: 0.07, ease: CONTENT_EASE }}
                     >
                       {busyAction === "clipboard" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <Clipboard size={15} aria-hidden="true" />}
                       <span>剪贴板</span>
@@ -240,9 +244,9 @@ export default function TranslationIslandView({
                       disabled={busyAction !== null}
                       data-busy={busyAction === "screenshot" || undefined}
                       onClick={() => onRunAction("screenshot", "start_screenshot_from_ball")}
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 3 }}
+                      initial={instant ? false : { opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.16, delay: 0.09, ease: CONTENT_EASE }}
+                      transition={instant ? { duration: 0 } : { duration: 0.16, delay: 0.09, ease: CONTENT_EASE }}
                     >
                       {busyAction === "screenshot" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <ScanLine size={15} aria-hidden="true" />}
                       <span>截图</span>
@@ -252,9 +256,9 @@ export default function TranslationIslandView({
                       disabled={busyAction !== null}
                       data-busy={busyAction === "main" || undefined}
                       onClick={() => onRunAction("main", "")}
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 3 }}
+                      initial={instant ? false : { opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={shouldReduceMotion ? { duration: 0 } : { duration: 0.16, delay: 0.11, ease: CONTENT_EASE }}
+                      transition={instant ? { duration: 0 } : { duration: 0.16, delay: 0.11, ease: CONTENT_EASE }}
                     >
                       {busyAction === "main" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <PanelTopOpen size={15} aria-hidden="true" />}
                       <span>主界面</span>
@@ -271,7 +275,7 @@ export default function TranslationIslandView({
               className="translation-island__content translation-island__content--status"
               role="status"
               aria-live="polite"
-              initial={shouldReduceMotion
+              initial={instant
                 ? false
                 : { opacity: 0, width: 0 }}
               animate={contentAnimate}
@@ -308,13 +312,13 @@ export default function TranslationIslandView({
             onClick={onCoreClick}
           >
             <VanishMark
-              compact={mode !== "idle" || (!shouldReduceMotion && !idleWordmarkReady)}
+              compact={mode !== "idle" || (!instant && !idleWordmarkReady)}
               animated={false}
               decorative
             />
           </motion.button>
         )}
-      </motion.div>
+      </div>
     </aside>
   );
 }

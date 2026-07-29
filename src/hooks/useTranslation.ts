@@ -68,8 +68,8 @@ export function useTranslation() {
           setGlowActive(true);
         }
       }
-    } catch (e: any) {
-      if (e === "CANCELLED" || e?.toString?.() === "CANCELLED") {
+    } catch (e: unknown) {
+      if (e === "CANCELLED" || (e && typeof e === "object" && "toString" in e && e.toString() === "CANCELLED")) {
         if (reqId === requestIdRef.current) setLoading(false);
         return;
       }
@@ -102,8 +102,8 @@ export function useTranslation() {
         setGlowActive(true);
         broadcastTranslationActivity("done");
       }
-    } catch (e: any) {
-      if (e === "CANCELLED" || e?.toString?.() === "CANCELLED") {
+    } catch (e: unknown) {
+      if (e === "CANCELLED" || (e && typeof e === "object" && "toString" in e && e.toString() === "CANCELLED")) {
         if (reqId === requestIdRef.current) {
           setLoading(false);
           setStreaming(false);
@@ -158,6 +158,7 @@ export function useTranslation() {
     }
 
     const reqId = ++requestIdRef.current;
+    const statusTimeoutRef: { current: ReturnType<typeof setTimeout> | null } = { current: null };
 
     // Structured file (.srt / .json): parse → extract → batch translate → reassemble
     setFileStatus(`正在解析 ${filename}...`);
@@ -232,10 +233,10 @@ export function useTranslation() {
         setTranslationKey(++translationIdCounter);
         setGlowActive(true);
         setFileStatus(`${filename} 翻译完成`);
-        setTimeout(() => {
+        statusTimeoutRef.current = setTimeout(() => {
           if (reqId === requestIdRef.current) setFileStatus(null);
         }, 3000);
-      } catch (batchErr: any) {
+      } catch (batchErr: unknown) {
         if (reqId !== requestIdRef.current) return;
         if (batchErr === "SEGMENT_COUNT_MISMATCH") {
           // Model didn't split correctly — show raw result as plain text
@@ -247,7 +248,7 @@ export function useTranslation() {
             setOutputText(rawResult);
             setTranslationKey(++translationIdCounter);
             setFileStatus(`${filename} 结构丢失，已显示纯文本结果`);
-            setTimeout(() => {
+            statusTimeoutRef.current = setTimeout(() => {
               if (reqId === requestIdRef.current) setFileStatus(null);
             }, 3000);
           }
@@ -255,13 +256,19 @@ export function useTranslation() {
           throw batchErr; // Re-throw for outer catch
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (reqId === requestIdRef.current) {
         setOutputText(`❌ 文件翻译失败: ${e}`);
         setFileStatus(null);
       }
+    } finally {
+      if (reqId === requestIdRef.current) setLoading(false);
     }
-    if (reqId === requestIdRef.current) setLoading(false);
+
+    // Cleanup timeout on unmount or when reqId changes
+    return () => {
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+    };
   }, [doTranslateStream]);
 
   return {

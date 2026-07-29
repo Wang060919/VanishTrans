@@ -1,26 +1,21 @@
 import { useRef, useState, type CSSProperties } from "react";
 import type { LangDirection } from "../hooks/useTranslation";
 import MainLayout from "../layouts/MainLayout";
-import TranslationIslandView, {
+import TranslationIslandView from "./TranslationIslandView";
+import {
+  getIslandGeometry,
   type BallAction,
   type DockSide,
   type IslandMode,
   type IslandPhase,
-} from "./TranslationIslandView";
+  type IslandPresentation,
+} from "./islandModel";
 import "./IslandPreview.css";
 
 const MODES: IslandMode[] = ["idle", "peek", "actions", "status", "full"];
 const PHASES: IslandPhase[] = ["working", "done", "error"];
 const BUSY_ACTIONS: BallAction[] = ["clipboard", "screenshot", "main"];
 const DOCK_SIDES: DockSide[] = ["left", "center", "right"];
-
-const DIMENSIONS: Record<IslandMode, { width: number; height: number }> = {
-  idle: { width: 116, height: 42 },
-  peek: { width: 296, height: 60 },
-  actions: { width: 296, height: 60 },
-  status: { width: 264, height: 52 },
-  full: { width: 420, height: 520 },
-};
 
 function readOption<T extends string>(value: string | null, options: readonly T[], fallback: T) {
   return value && options.includes(value as T) ? value as T : fallback;
@@ -47,7 +42,13 @@ export default function IslandPreview() {
   const [outputText, setOutputText] = useState("");
   const [direction, setDirection] = useState<LangDirection>("auto");
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const dimensions = DIMENSIONS[mode];
+  const dimensions = getIslandGeometry(mode);
+  const presentation: IslandPresentation = {
+    mode,
+    motion: interactive ? "animated" : "instant",
+    phase: "stable",
+    generation: 0,
+  };
   const frameStyle = {
     "--island-preview-width": `${dimensions.width}px`,
     "--island-preview-height": `${dimensions.height}px`,
@@ -57,7 +58,7 @@ export default function IslandPreview() {
     <main className="island-preview" data-preview-mode={mode}>
       <div className="island-preview__frame" style={frameStyle}>
         <TranslationIslandView
-          mode={mode}
+          presentation={presentation}
           phase={phase}
           dockSide={dockSide}
           busyAction={busyAction}

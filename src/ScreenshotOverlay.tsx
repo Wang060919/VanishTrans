@@ -87,9 +87,9 @@ export default function ScreenshotOverlay() {
     };
     const p = setup();
     return () => {
-      p.then((fn) => fn());
+      p.then((fn) => fn()).catch(() => {});
     };
-  }, [fetchLatest]);
+  }, [fetchLatest, loadNewImage]);
 
   const handleImgLoad = useCallback(() => {
     const canvas = canvasRef.current;

@@ -55,12 +55,17 @@ export interface JsonSegment {
 /**
  * Parse a JSON value into translatable segments.
  * Each segment has a dot-separated path and the string value.
+ * @throws {Error} If content is not valid JSON
  */
 export function parseJson(content: string): JsonSegment[] {
-  const obj = JSON.parse(content);
-  const segments: JsonSegment[] = [];
-  collectStrings(obj, "", segments);
-  return segments;
+  try {
+    const obj = JSON.parse(content);
+    const segments: JsonSegment[] = [];
+    collectStrings(obj, "", segments);
+    return segments;
+  } catch (error) {
+    throw new Error(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function collectStrings(value: unknown, path: string, out: JsonSegment[]): void {
@@ -83,10 +88,15 @@ function appendJsonPointer(path: string, segment: string | number): string {
 /**
  * Apply translated segments back into the original JSON structure.
  * Takes the original JSON string and a map of path → translated text.
+ * @throws {Error} If original is not valid JSON
  */
 export function rebuildJson(original: string, translations: Map<string, string>): string {
-  const obj = JSON.parse(original);
-  return JSON.stringify(applyTranslations(obj, "", translations), null, 2);
+  try {
+    const obj = JSON.parse(original);
+    return JSON.stringify(applyTranslations(obj, "", translations), null, 2);
+  } catch (error) {
+    throw new Error(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**

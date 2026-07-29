@@ -133,6 +133,26 @@ mod ball_position_tests {
         ball_position_is_visible, clamp_ball_position_to_monitor, default_ball_position_on_monitor,
     };
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn ball_popup_style_removes_every_native_frame_bit() {
+        use super::ball_popup_style;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            WS_CAPTION, WS_CLIPCHILDREN, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+            WS_THICKFRAME, WS_VISIBLE,
+        };
+
+        let frame_bits =
+            WS_CAPTION.0 | WS_MAXIMIZEBOX.0 | WS_MINIMIZEBOX.0 | WS_SYSMENU.0 | WS_THICKFRAME.0;
+        let original = WS_VISIBLE.0 | WS_CLIPCHILDREN.0 | frame_bits;
+        let result = ball_popup_style(original);
+
+        assert_eq!(result & frame_bits, 0);
+        assert_ne!(result & WS_POPUP.0, 0);
+        assert_ne!(result & WS_VISIBLE.0, 0);
+        assert_ne!(result & WS_CLIPCHILDREN.0, 0);
+    }
+
     #[test]
     fn defaults_to_the_top_center_of_the_monitor() {
         assert_eq!(default_ball_position_on_monitor(0, 0, 1920, 1.0), (902, 0));
@@ -305,9 +325,12 @@ pub fn run() {
             // Restore ball window position from config, clamped to visible monitor bounds
             if let Some(ball_w) = app.get_webview_window("ball") {
                 let scale = ball_w.scale_factor().unwrap_or(1.0);
+                let idle_width = (BALL_IDLE_WIDTH * scale).round() as u32;
+                let idle_height = (BALL_IDLE_HEIGHT * scale).round() as u32;
+
                 let _ = ball_w.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                    width: (BALL_IDLE_WIDTH * scale).round() as u32,
-                    height: (BALL_IDLE_HEIGHT * scale).round() as u32,
+                    width: idle_width,
+                    height: idle_height,
                 }));
                 let config_dir = app
                     .path()
@@ -376,9 +399,11 @@ pub fn run() {
                     }
                     default_position
                 });
+
                 let _ = ball_w.set_position(tauri::Position::Physical(
                     tauri::PhysicalPosition { x, y },
                 ));
+
                 if let Err(error) = ball_w.show() {
                     log::error!("[ball] failed to show window on startup: {error}");
                 }
@@ -432,7 +457,6 @@ pub fn run() {
             commands::toggle_pin,
             commands::get_pin_state,
             commands::set_ball_window_bounds,
-            commands::set_ball_window_material,
             commands::get_api_config,
             commands::set_api_config,
             commands::set_hotkeys,

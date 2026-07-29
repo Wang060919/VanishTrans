@@ -87,35 +87,39 @@ export default function QuickTranslateWindow() {
     const cleanups: Array<() => void> = [];
 
     void (async () => {
-      const registered = await Promise.all([
-        listen<string>("quick-translate", (event) => {
-          void translateText(event.payload);
-        }),
-        listen<string>("quick-translate-error", (event) => {
-          requestIdRef.current += 1;
-          sourceRef.current = "";
-          setSource("");
-          setOutput("");
-          setLoading(false);
-          setError(event.payload);
-          broadcastActivity("error");
-        }),
-        listen<StreamChunk>("translate-stream-chunk", (event) => {
-          if (event.payload.requestId !== requestIdRef.current) return;
-          setOutput((current) => current + event.payload.chunk);
-        }),
-        listen<StreamDone>("translate-stream-done", (event) => {
-          if (event.payload.requestId !== requestIdRef.current) return;
-          setOutput(event.payload.fullText);
-          setLoading(false);
-        }),
-      ]);
-      if (cancelled) {
-        registered.forEach((cleanup) => cleanup());
-        return;
+      try {
+        const registered = await Promise.all([
+          listen<string>("quick-translate", (event) => {
+            void translateText(event.payload);
+          }),
+          listen<string>("quick-translate-error", (event) => {
+            requestIdRef.current += 1;
+            sourceRef.current = "";
+            setSource("");
+            setOutput("");
+            setLoading(false);
+            setError(event.payload);
+            broadcastActivity("error");
+          }),
+          listen<StreamChunk>("translate-stream-chunk", (event) => {
+            if (event.payload.requestId !== requestIdRef.current) return;
+            setOutput((current) => current + event.payload.chunk);
+          }),
+          listen<StreamDone>("translate-stream-done", (event) => {
+            if (event.payload.requestId !== requestIdRef.current) return;
+            setOutput(event.payload.fullText);
+            setLoading(false);
+          }),
+        ]);
+        if (cancelled) {
+          registered.forEach((cleanup) => cleanup());
+          return;
+        }
+        cleanups.push(...registered);
+        await invoke("quick_frontend_ready");
+      } catch (error) {
+        console.error("[QuickTranslateWindow] Setup error:", error);
       }
-      cleanups.push(...registered);
-      await invoke("quick_frontend_ready");
     })();
 
     return () => {

@@ -68,7 +68,7 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
       const path = `${dir}/translation_memory.csv`;
       const count = await invoke<number>("tm_export", { path });
       window.alert(`已导出 ${count} 条翻译记忆到:\n${path}`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       window.alert(`导出失败: ${e}`);
     }
   }, []);
@@ -82,17 +82,32 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
         try {
           const file = input.files?.[0];
           if (!file) return;
+
+          // Validate file size (max 10MB)
+          const MAX_FILE_SIZE = 10 * 1024 * 1024;
+          if (file.size > MAX_FILE_SIZE) {
+            window.alert(`文件过大: ${(file.size / 1024 / 1024).toFixed(1)}MB，最大支持 10MB`);
+            return;
+          }
+
           const text = await file.text();
+
+          // Basic CSV validation
+          if (!text.trim()) {
+            window.alert("文件内容为空");
+            return;
+          }
+
           const count = await invoke<number>("tm_import_content", { content: text });
           await loadEntries(searchQuery || undefined);
           await loadStats();
           window.alert(`已导入 ${count} 条翻译记忆`);
-        } catch (e: any) {
+        } catch (e: unknown) {
           window.alert(`导入失败: ${e}`);
         }
       };
       input.click();
-    } catch (e: any) {
+    } catch (e: unknown) {
       window.alert(`导入失败: ${e}`);
     }
   }, [loadEntries, loadStats, searchQuery]);

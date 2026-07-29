@@ -6,6 +6,7 @@ import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
 import TmPanel from "./TmPanel";
 
 interface SettingsPanelProps {
+  initialTab?: SettingsTab;
   baseUrl: string;
   onBaseUrlChange: (v: string) => void;
   model: string;
@@ -21,7 +22,7 @@ interface SettingsPanelProps {
   onHotkeysChange: (entries: HotkeyEntry[]) => Promise<void>;
 }
 
-type SettingsTab = "api" | "hotkeys" | "glossary" | "tm";
+export type SettingsTab = "api" | "hotkeys" | "glossary" | "tm";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "api", label: "API" },
@@ -31,13 +32,14 @@ const TABS: { id: SettingsTab; label: string }[] = [
 ];
 
 export default function SettingsPanel({
+  initialTab = "api",
   baseUrl, onBaseUrlChange,
   model, onModelChange,
   hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSave,
   glossary, onGlossaryChange,
   hotkeys, hotkeyLabels, onHotkeysChange,
 }: SettingsPanelProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("api");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [draftGlossary, setDraftGlossary] = useState(glossary);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -50,6 +52,7 @@ export default function SettingsPanel({
   useEffect(() => {
     if (!userEditedRef.current) setDraftGlossary(glossary);
   }, [glossary]);
+  useEffect(() => setActiveTab(initialTab), [initialTab]);
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (glossaryTimerRef.current) clearTimeout(glossaryTimerRef.current);

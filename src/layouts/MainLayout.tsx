@@ -1,13 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { History, Minimize2, Minus, Pin, Settings, Square, X } from "lucide-react";
-import React, { useCallback, useRef, useState } from "react";
+import { Copy, Database, History, Minimize2, Minus, Pin, ScanLine, Settings, Square, X } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import IconButton from "../components/IconButton";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import OverlayDrawer from "../components/OverlayDrawer";
 import VanishMark from "../components/brand/VanishMark";
 import HistoryPanel from "../features/HistoryPanel";
-import SettingsPanel from "../features/SettingsPanel";
+import SettingsPanel, { type SettingsTab } from "../features/SettingsPanel";
 import TranslatePanel from "../features/TranslatePanel";
 import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
 import { useTheme } from "../hooks/useTheme";
@@ -77,6 +77,7 @@ export default function MainLayout({
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [historyRecords, setHistoryRecords] = useState<TranslationRecord[]>([]);
   const [historySearch, setHistorySearch] = useState("");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("api");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useTheme();
 
@@ -95,7 +96,30 @@ export default function MainLayout({
   }, [activePanel, historySearch, loadHistory]);
 
   const openSettings = useCallback(() => {
+    setSettingsTab("api");
     setActivePanel((current) => current === "settings" ? null : "settings");
+  }, []);
+
+  const openTranslationMemory = useCallback(() => {
+    setSettingsTab("tm");
+    setActivePanel("settings");
+  }, []);
+
+  const copyText = useCallback(async (text: string) => {
+    if (!text) return;
+    try {
+      await invoke("write_clipboard_safe", { text });
+    } catch (error) {
+      console.error("copy translation text failed", error);
+    }
+  }, []);
+
+  const startScreenshot = useCallback(async () => {
+    try {
+      await invoke("start_screenshot_from_ball");
+    } catch (error) {
+      console.error("start screenshot translation failed", error);
+    }
   }, []);
 
   const handleHistorySearch = useCallback((query: string) => {
@@ -103,6 +127,13 @@ export default function MainLayout({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => loadHistory(query || undefined), 200);
   }, [loadHistory]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const handleMinimize = useCallback(async () => {
     if (embedded) {
@@ -169,10 +200,27 @@ export default function MainLayout({
       />
 
       <footer className="app-footer">
-        <div className="footer-shortcuts">
-          <span><kbd>Alt+Q</kbd><b>呼出</b></span>
-          <span><kbd>Alt+W</kbd><b>截图</b></span>
-        </div>
+        {embedded ? (
+          <nav className="workspace-footer-actions" aria-label="翻译操作">
+            <button type="button" disabled={!inputText} onClick={() => void copyText(inputText)}>
+              <Copy size={13} aria-hidden="true" /><span>复制原文</span>
+            </button>
+            <button type="button" disabled={!outputText} onClick={() => void copyText(outputText)}>
+              <Copy size={13} aria-hidden="true" /><span>复制译文</span>
+            </button>
+            <button type="button" onClick={() => void startScreenshot()}>
+              <ScanLine size={13} aria-hidden="true" /><span>智能选读</span>
+            </button>
+            <button type="button" onClick={openTranslationMemory}>
+              <Database size={13} aria-hidden="true" /><span>翻译记忆</span>
+            </button>
+          </nav>
+        ) : (
+          <div className="footer-shortcuts">
+            <span><kbd>Alt+Q</kbd><b>呼出</b></span>
+            <span><kbd>Alt+W</kbd><b>截图</b></span>
+          </div>
+        )}
         <span className={`window-status ${pinned ? "window-status--active" : ""}`}>
           <i />{loading ? "正在翻译" : pinned ? "已置顶" : "自动隐藏"}
         </span>
@@ -191,6 +239,7 @@ export default function MainLayout({
 
       <OverlayDrawer open={activePanel === "settings"} title="设置" onClose={() => setActivePanel(null)}>
         <SettingsPanel
+          initialTab={settingsTab}
           baseUrl={baseUrl}
           onBaseUrlChange={onBaseUrlChange}
           model={model}
