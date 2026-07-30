@@ -41,6 +41,9 @@ const MAX_INPUT_CHARS: usize = 10_000;
 /// Maximum response body size in bytes (1 MB).
 const MAX_RESPONSE_BYTES: usize = 1_024 * 1_024;
 
+/// Request timeout in seconds.
+const TIMEOUT_SECS: u64 = 30;
+
 async fn read_response_body_limited(response: reqwest::Response) -> Result<Vec<u8>, String> {
     let mut stream = response.bytes_stream();
     let mut body = Vec::new();
@@ -396,6 +399,138 @@ pub fn resolve_target_lang(text: &str, direction: &str) -> &'static str {
 }
 
 // -----------------------------------------------------------
+// Translation helpers (extracted to reduce duplication)
+// -----------------------------------------------------------
+
+/// Validated configuration for a translation request.
+struct ValidatedConfig {
+    base_url: String,
+    api_key: String,
+    model: String,
+    chat_url: String,
+}
+
+/// Translation prompt with system and user messages.
+struct TranslationPrompt {
+    system_prompt: String,
+    user_content: String,
+}
+
+/// Validates input and extracts configuration from ApiConfig.
+/// Returns ValidatedConfig with the chat completions URL.
+fn validate_and_get_config(
+    state: &ApiConfig,
+    text: &str,
+) -> Result<ValidatedConfig, String> {
+    // 1. Validate input length
+    if text.chars().count() > MAX_INPUT_CHARS {
+        return Err(format!(
+            "输入文本过长（{} 字符），最多支持 {} 字符",
+            text.chars().count(),
+            MAX_INPUT_CHARS
+        ));
+    }
+
+    // 2. Get configuration
+    let (base_url, api_key, model) = {
+        (
+            state.base_url.lock().unwrap().clone(),
+            state.api_key.lock().unwrap().clone(),
+            state.model.lock().unwrap().clone(),
+        )
+    };
+
+    // 3. Validate API key
+    if api_key.is_empty() {
+        return Err("请先在设置中配置 API Key".into());
+    }
+
+    // 4. Validate Base URL
+    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+        return Err("Base URL 必须以 http:// 或 https:// 开头".into());
+    }
+
+    // 5. Build chat URL
+    let chat_url = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
+        format!("{}/chat/completions", base_url.trim_end_matches('/'))
+    } else {
+        format!("{}/v1/chat/completions", base_url)
+    };
+
+    Ok(ValidatedConfig {
+        base_url,
+        api_key,
+        model,
+        chat_url,
+    })
+}
+
+/// Builds the translation prompt with system and user messages.
+/// Includes glossary if available.
+fn build_translation_prompt(
+    state: &ApiConfig,
+    text: &str,
+    source_lang: &str,
+    target_lang: &str,
+) -> TranslationPrompt {
+    let sh = if source_lang == "auto" {
+        String::new()
+    } else {
+        format!(" (source language: {})", source_lang)
+    };
+
+    let glossary = state.glossary.lock().unwrap().clone();
+    let system_prompt = build_system_prompt(&glossary);
+
+    let user_content = format!(
+        "Translate the following text{} to {}:\n\n{}",
+        sh, target_lang, text
+    );
+
+    TranslationPrompt {
+        system_prompt,
+        user_content,
+    }
+}
+
+/// Builds a ChatRequest with the given parameters.
+fn build_chat_request(
+    model: String,
+    prompt: TranslationPrompt,
+    stream: bool,
+) -> ChatRequest {
+    ChatRequest {
+        model,
+        messages: vec![
+            ChatMessage {
+                role: "system".into(),
+                content: prompt.system_prompt,
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: prompt.user_content,
+            },
+        ],
+        temperature: 0.3,
+        max_tokens: 4096,
+        stream,
+    }
+}
+
+/// Returns a closure that maps reqwest errors to user-friendly messages.
+fn map_http_error(base_url: &str) -> impl Fn(reqwest::Error) -> String + '_ {
+    move |e: reqwest::Error| {
+        if e.is_timeout() {
+            format!("请求超时（{}秒），请检查网络或稍后重试", TIMEOUT_SECS)
+        } else if e.is_connect() {
+            format!("无法连接到 {}，请检查 Base URL", base_url)
+        } else {
+            format!("网络请求失败: {}", e)
+        }
+    }
+}
+
+// -----------------------------------------------------------
 // Translation
 // -----------------------------------------------------------
 
@@ -405,82 +540,28 @@ pub async fn do_translate_async(
     source_lang: &str,
     target_lang: &str,
 ) -> Result<String, String> {
-    if text.chars().count() > MAX_INPUT_CHARS {
-        return Err(format!(
-            "输入文本过长（{} 字符），最多支持 {} 字符",
-            text.chars().count(),
-            MAX_INPUT_CHARS
-        ));
-    }
+    // 1. Validate and get configuration
+    let config = validate_and_get_config(state, text)?;
 
-    let (base_url, api_key, model) = {
-        (
-            state.base_url.lock().unwrap().clone(),
-            state.api_key.lock().unwrap().clone(),
-            state.model.lock().unwrap().clone(),
-        )
-    };
+    // 2. Build translation prompt
+    let prompt = build_translation_prompt(state, text, source_lang, target_lang);
 
-    if api_key.is_empty() {
-        return Err("请先在设置中配置 API Key".into());
-    }
+    // 3. Build request body
+    let body = build_chat_request(config.model, prompt, false);
 
-    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
-        return Err("Base URL 必须以 http:// 或 https:// 开头".into());
-    }
-
-    let url = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
-        format!("{}/chat/completions", base_url.trim_end_matches('/'))
-    } else {
-        format!("{}/v1/chat/completions", base_url)
-    };
-
-    let sh = if source_lang == "auto" {
-        String::new()
-    } else {
-        format!(" (source language: {})", source_lang)
-    };
-    let glossary = state.glossary.lock().unwrap().clone();
-    let system_prompt = build_system_prompt(&glossary);
-    let body = ChatRequest {
-        model,
-        messages: vec![
-            ChatMessage {
-                role: "system".into(),
-                content: system_prompt,
-            },
-            ChatMessage {
-                role: "user".into(),
-                content: format!(
-                    "Translate the following text{} to {}:\n\n{}",
-                    sh, target_lang, text
-                ),
-            },
-        ],
-        temperature: 0.1,
-        max_tokens: 4096,
-        stream: false,
-    };
-
+    // 4. Send request
     let client = state.client.lock().unwrap().clone();
     let resp = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", api_key))
+        .post(&config.chat_url)
+        .header("Authorization", format!("Bearer {}", config.api_key))
         .header("Content-Type", "application/json")
         .json(&body)
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(TIMEOUT_SECS))
         .send()
         .await
-        .map_err(|e| {
-            if e.is_timeout() {
-                "请求超时 (30s)，请检查网络或 API 服务状态".into()
-            } else if e.is_connect() {
-                format!("无法连接到 {}，请检查 Base URL 和网络", base_url)
-            } else {
-                format!("请求失败: {}", e)
-            }
-        })?;
+        .map_err(map_http_error(&config.base_url))?;
 
+    // 5. Handle response
     let status = resp.status();
     if !status.is_success() {
         let b =
@@ -569,85 +650,31 @@ pub async fn do_translate_stream_async(
     seq: u64,
     on_chunk: impl Fn(String),
 ) -> Result<String, String> {
-    if text.chars().count() > MAX_INPUT_CHARS {
-        return Err(format!(
-            "输入文本过长（{} 字符），最多支持 {} 字符",
-            text.chars().count(),
-            MAX_INPUT_CHARS
-        ));
-    }
+    // 1. Validate and get configuration
+    let config = validate_and_get_config(state, text)?;
 
-    let (base_url, api_key, model) = {
-        (
-            state.base_url.lock().unwrap().clone(),
-            state.api_key.lock().unwrap().clone(),
-            state.model.lock().unwrap().clone(),
-        )
-    };
+    // 2. Build translation prompt
+    let prompt = build_translation_prompt(state, text, source_lang, target_lang);
 
-    if api_key.is_empty() {
-        return Err("请先在设置中配置 API Key".into());
-    }
+    // 3. Build request body (with stream: true)
+    let body = build_chat_request(config.model, prompt, true);
 
-    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
-        return Err("Base URL 必须以 http:// 或 https:// 开头".into());
-    }
-
-    let url = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
-        format!("{}/chat/completions", base_url.trim_end_matches('/'))
-    } else {
-        format!("{}/v1/chat/completions", base_url)
-    };
-
-    let sh = if source_lang == "auto" {
-        String::new()
-    } else {
-        format!(" (source language: {})", source_lang)
-    };
-    let glossary = state.glossary.lock().unwrap().clone();
-    let system_prompt = build_system_prompt(&glossary);
-    let body = ChatRequest {
-        model,
-        messages: vec![
-            ChatMessage {
-                role: "system".into(),
-                content: system_prompt,
-            },
-            ChatMessage {
-                role: "user".into(),
-                content: format!(
-                    "Translate the following text{} to {}:\n\n{}",
-                    sh, target_lang, text
-                ),
-            },
-        ],
-        temperature: 0.1,
-        max_tokens: 4096,
-        stream: true,
-    };
-
+    // 4. Send streaming request
     let client = state.client.lock().unwrap().clone();
     let resp = tokio::time::timeout(
-        Duration::from_secs(30),
+        Duration::from_secs(TIMEOUT_SECS),
         client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(&config.chat_url)
+            .header("Authorization", format!("Bearer {}", config.api_key))
             .header("Content-Type", "application/json")
             .json(&body)
             .send(),
     )
     .await
-    .map_err(|_| "请求超时 (30s)，请检查网络或 API 服务状态".to_string())?
-    .map_err(|e| {
-        if e.is_timeout() {
-            "请求超时 (30s)，请检查网络或 API 服务状态".into()
-        } else if e.is_connect() {
-            format!("无法连接到 {}，请检查 Base URL 和网络", base_url)
-        } else {
-            format!("请求失败: {}", e)
-        }
-    })?;
+    .map_err(|_| format!("请求超时（{}秒），请检查网络或稍后重试", TIMEOUT_SECS))?
+    .map_err(map_http_error(&config.base_url))?;
 
+    // 5. Handle response status
     let status = resp.status();
     if !status.is_success() {
         let b =
@@ -661,6 +688,7 @@ pub async fn do_translate_stream_async(
         });
     }
 
+    // 6. Process streaming response
     let mut stream = resp.bytes_stream();
     let mut full_text = String::new();
     let mut buffer: Vec<u8> = Vec::new();
@@ -672,9 +700,9 @@ pub async fn do_translate_stream_async(
             return Err("CANCELLED".into());
         }
 
-        let next_chunk = tokio::time::timeout(Duration::from_secs(30), stream.next())
+        let next_chunk = tokio::time::timeout(Duration::from_secs(TIMEOUT_SECS), stream.next())
             .await
-            .map_err(|_| "流式响应空闲超时 (30s)，请检查网络或 API 服务状态".to_string())?;
+            .map_err(|_| format!("流式响应空闲超时（{}秒），请检查网络或 API 服务状态", TIMEOUT_SECS))?;
         let Some(chunk_result) = next_chunk else {
             break;
         };

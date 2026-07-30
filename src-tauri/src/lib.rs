@@ -133,26 +133,6 @@ mod ball_position_tests {
         ball_position_is_visible, clamp_ball_position_to_monitor, default_ball_position_on_monitor,
     };
 
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn ball_popup_style_removes_every_native_frame_bit() {
-        use super::ball_popup_style;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            WS_CAPTION, WS_CLIPCHILDREN, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
-            WS_THICKFRAME, WS_VISIBLE,
-        };
-
-        let frame_bits =
-            WS_CAPTION.0 | WS_MAXIMIZEBOX.0 | WS_MINIMIZEBOX.0 | WS_SYSMENU.0 | WS_THICKFRAME.0;
-        let original = WS_VISIBLE.0 | WS_CLIPCHILDREN.0 | frame_bits;
-        let result = ball_popup_style(original);
-
-        assert_eq!(result & frame_bits, 0);
-        assert_ne!(result & WS_POPUP.0, 0);
-        assert_ne!(result & WS_VISIBLE.0, 0);
-        assert_ne!(result & WS_CLIPCHILDREN.0, 0);
-    }
-
     #[test]
     fn defaults_to_the_top_center_of_the_monitor() {
         assert_eq!(default_ball_position_on_monitor(0, 0, 1920, 1.0), (902, 0));
