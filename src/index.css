@@ -649,6 +649,13 @@ body.ball-window-body #root {
   transition: none;
 }
 
+.translation-island--idle .translation-island__surface {
+  transition:
+    width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .translation-island--full .translation-island__surface {
   background: var(--island-shell);
 }

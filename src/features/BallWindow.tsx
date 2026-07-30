@@ -795,7 +795,7 @@ export default function BallWindow() {
       const shouldCollapseFull = effectiveMode === "full"
         && !fullPinnedRef.current;
       if (!focused && shouldCollapseActions) {
-        void transitionMode("idle", { motion: "instant", reason: "focus-loss" });
+        void transitionMode("idle", { reason: "focus-loss" });
       } else if (!focused && shouldCollapseFull) {
         void transitionMode("idle", { reason: "focus-loss" });
       }
