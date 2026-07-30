@@ -83,17 +83,9 @@ export default function TranslationIslandView({
       setIdleWordmarkReady(false);
       return;
     }
-    if (instant) {
-      setIdleWordmarkReady(true);
-      return;
-    }
-
-    const timer = window.setTimeout(
-      () => setIdleWordmarkReady(true),
-      ISLAND_TIMING.idleWordmarkDelayMs,
-    );
-    return () => window.clearTimeout(timer);
-  }, [instant, mode]);
+    // 立即显示完整文字，不再延迟
+    setIdleWordmarkReady(true);
+  }, [mode]);
 
   const statusTitle = phase === "working"
     ? "正在翻译"
