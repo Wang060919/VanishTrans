@@ -90,7 +90,7 @@ export default function TranslationIslandView({
 
     const timer = window.setTimeout(
       () => setIdleWordmarkReady(true),
-      ISLAND_TIMING.surfaceMs,
+      ISLAND_TIMING.idleWordmarkDelayMs,
     );
     return () => window.clearTimeout(timer);
   }, [instant, mode]);

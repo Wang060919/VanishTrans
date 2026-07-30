@@ -31,6 +31,7 @@ export const ISLAND_TIMING = {
   fullContentEnterDelayMs: 60,
   fullContentEnterMs: 220,
   fullContentExitMs: 120,
+  idleWordmarkDelayMs: 220,
 } as const;
 
 export const ISLAND_WINDOW_POLICY = {
