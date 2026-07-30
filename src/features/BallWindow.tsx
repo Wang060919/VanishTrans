@@ -222,26 +222,8 @@ export default function BallWindow() {
         }
         if (!context.isCurrent()) return;
 
-        const keepsActionsSurface = request.reason === "focus-loss"
-          && (nativeModeRef.current === "peek" || nativeModeRef.current === "actions");
-        if (keepsActionsSurface) {
-          await waitForIslandPaint(context.signal);
-          if (!context.isCurrent()) return;
-          await setBallWindowRegion({
-            left: idleBounds.x - currentPos.x,
-            top: idleBounds.y - currentPos.y,
-            width: idleBounds.width,
-            height: idleBounds.height,
-          });
-          if (!context.isCurrent()) return;
-
-          idleOuterSizeRef.current = {
-            width: idleWidthPixels,
-            height: idleHeightPixels,
-          };
-          anchorPositionRef.current = await saveBallPosition({ x: idleX, y: currentPos.y }, false);
-          return;
-        }
+        // Fixed surface optimization removed - caused title bar issues
+        // Now always adjust window bounds directly
         nativeTargetModeRef.current = "idle";
         await setBallWindowBounds(idleBounds);
         nativeModeRef.current = "idle";
