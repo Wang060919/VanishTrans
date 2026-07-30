@@ -254,8 +254,8 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
 .language-swap:disabled { color: var(--color-ink-faint); opacity: 0.55; cursor: default; }
 
 .drawer-layer { position: absolute; inset: 44px 0 0; z-index: 30; overflow: hidden; }
-.drawer-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(11, 15, 23, 0.4); animation: fadeIn var(--duration-fast) var(--ease-standard) both; }
-.overlay-drawer { position: absolute; inset: 0 0 0 18px; display: flex; flex-direction: column; background: rgba(11, 15, 23, 0.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-left: 1px solid rgba(255, 255, 255, 0.06); box-shadow: var(--shadow-overlay); animation: drawerIn var(--duration-normal) var(--ease-standard) both; }
+.drawer-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(11, 15, 23, 0.4); animation: fadeIn var(--duration-fast) var(--ease-standard) both; will-change: opacity; }
+.overlay-drawer { position: absolute; inset: 0 0 0 18px; display: flex; flex-direction: column; background: rgba(11, 15, 23, 0.88); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-left: 1px solid rgba(255, 255, 255, 0.06); box-shadow: var(--shadow-overlay); animation: drawerIn var(--duration-normal) var(--ease-standard) both; will-change: transform, opacity; backface-visibility: hidden; }
 .drawer-header { height: 46px; display: flex; align-items: center; justify-content: space-between; flex: none; padding: 0 10px 0 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .drawer-heading, .drawer-actions { display: flex; align-items: center; gap: 8px; }
 .drawer-heading h2 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -0.015em; color: rgba(255, 255, 255, 0.88); }
@@ -524,11 +524,11 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
 /* Settings drawer */
 .settings-tabs { height: 43px; display: grid; grid-template-columns: repeat(4, 1fr); flex: none; padding: 6px 10px 0; border-bottom: 1px solid var(--color-line); }
 .settings-tabs button { position: relative; border: 0; background: transparent; color: var(--color-ink-muted); font-size: 11px; font-weight: 600; cursor: pointer; }
-.settings-tabs button::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -1px; height: 2px; border-radius: 2px; background: var(--color-signal); opacity: 0; transform: scaleX(0.55); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
+.settings-tabs button::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -1px; height: 2px; border-radius: 2px; background: var(--color-signal); opacity: 0; transform: scaleX(0.55); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); will-change: opacity, transform; }
 .settings-tabs button[aria-selected="true"] { color: var(--color-ink); }
 .settings-tabs button[aria-selected="true"]::after { opacity: 1; transform: scaleX(1); }
 .settings-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: 14px 16px 20px; }
-.settings-section { display: flex; flex-direction: column; gap: 13px; animation: fadeSlideUp var(--duration-normal) var(--ease-standard) both; }
+.settings-section { display: flex; flex-direction: column; gap: 13px; animation: fadeSlideUp var(--duration-normal) var(--ease-standard) both; will-change: opacity, transform; backface-visibility: hidden; }
 .settings-section-heading { display: flex; align-items: flex-start; gap: 9px; color: var(--color-signal); }
 .settings-section-heading--action { align-items: center; justify-content: space-between; color: inherit; }
 .settings-section-heading h3 { margin: 0; color: var(--color-ink); font-size: 13px; font-weight: 650; }
@@ -927,6 +927,9 @@ body.ball-window-body #root {
   border-radius: 50%;
   background: rgba(var(--island-accent), 0.1);
   color: rgba(var(--island-accent), 0.9);
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .translation-island__activity {
@@ -945,6 +948,9 @@ body.ball-window-body #root {
   background: currentColor;
   transform: scaleY(0.38);
   animation: islandActivity 820ms ease-in-out infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .translation-island__activity i:nth-child(2) {
@@ -1000,6 +1006,10 @@ body.ball-window-body #root {
   cursor: pointer;
   transition:
     color 160ms var(--ease-standard);
+  /* Performance optimization */
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .translation-island__core::before {
