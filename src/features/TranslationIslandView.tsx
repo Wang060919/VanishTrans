@@ -76,16 +76,6 @@ export default function TranslationIslandView({
   const { mode, motion: motionMode, phase: visualPhase, generation } = presentation;
   const instant = shouldReduceMotion || motionMode === "instant";
   const fullVisible = mode === "full" && visualPhase === "stable";
-  const [idleWordmarkReady, setIdleWordmarkReady] = useState(mode === "idle");
-
-  useEffect(() => {
-    if (mode !== "idle") {
-      setIdleWordmarkReady(false);
-      return;
-    }
-    // 立即显示完整文字，不再延迟
-    setIdleWordmarkReady(true);
-  }, [mode]);
 
   const statusTitle = phase === "working"
     ? "正在翻译"
@@ -304,7 +294,7 @@ export default function TranslationIslandView({
             onClick={onCoreClick}
           >
             <VanishMark
-              compact={mode !== "idle" || (!instant && !idleWordmarkReady)}
+              compact={mode !== "idle"}
               animated={false}
               decorative
             />
