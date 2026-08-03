@@ -237,7 +237,9 @@ describe("BallWindow", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起快速工具" }));
     await advanceTimers(0);
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
-    expect(document.querySelector(".translation-island__core .brand-wordmark")).not.toBeInTheDocument();
+    // The full wordmark returns immediately (2eb538e) so the label fades back
+    // in sync with the surface collapse instead of reappearing after it.
+    expect(document.querySelector(".translation-island__core .brand-wordmark")).toBeInTheDocument();
     expect(setBallWindowBounds).not.toHaveBeenCalled();
 
     await advanceTimers(279);
@@ -281,17 +283,26 @@ describe("BallWindow", () => {
     act(() => focusChangedListener?.({ payload: false }));
     await advanceTimers(0);
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
-    expect(getIsland()).toHaveClass("translation-island--instant");
+    // Window focus loss now plays the animated collapse (f00cb7d) rather than
+    // snapping instantly, and the fixed-region optimization was removed
+    // (b837872), so the native bounds follow after the CSS animation.
+    expect(getIsland()).not.toHaveClass("translation-island--instant");
 
-    await advanceTimers(60);
-    expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_region", {
-      left: 90,
-      top: 0,
+    await advanceTimers(279);
+    expect(setBallWindowBounds).not.toHaveBeenCalledWith(
+      expect.objectContaining({ width: 116, height: 42 }),
+    );
+
+    await advanceTimers(1);
+    expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
+      x: 902,
+      y: 0,
       width: 116,
       height: 42,
     });
-    expect(setBallWindowBounds).not.toHaveBeenCalledWith(
-      expect.objectContaining({ width: 116, height: 42 }),
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      "set_ball_window_region",
+      expect.anything(),
     );
   });
 
