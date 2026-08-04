@@ -1,4 +1,4 @@
-﻿import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
 export type ThemeMode = "system" | "light" | "dark";
@@ -46,7 +46,6 @@ export function useThemeSync() {
     let cancelled = false;
     let cleanup: (() => void) | null = null;
     void (async () => {
-      const { listen } = await import("@tauri-apps/api/event");
       if (cancelled) return;
       const unlisten = await listen<string>("theme-change", (event) => {
         if (!cancelled) {
