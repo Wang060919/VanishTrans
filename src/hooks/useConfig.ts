@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { logError } from "../lib/logger";
 
 export interface GlossaryEntry {
   source: string;
@@ -44,7 +45,7 @@ export function useConfig() {
           setHotkeys(cfg.hotkeys.map(([action, shortcut]) => ({ action, shortcut })));
         }
       })
-      .catch((e) => console.error("[config] Failed to load:", e));
+      .catch((e) => logError("config", "failed to load", e));
   }, []);
 
   const saveConfig = async (forcedApiKey?: string) => {

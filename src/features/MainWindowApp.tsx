@@ -6,6 +6,7 @@ import { useConfig } from "../hooks/useConfig";
 import { useTauriEvents } from "../hooks/useTauriEvents";
 import { useTranslation } from "../hooks/useTranslation";
 import MainLayout from "../layouts/MainLayout";
+import { logError } from "../lib/logger";
 
 interface MainWindowAppProps {
   embedded?: boolean;
@@ -86,7 +87,7 @@ export default function MainWindowApp({
     if (label !== "main" && label !== "ball") return;
 
     invoke("frontend_ready").catch((error) => {
-      console.error("[app] frontend_ready failed:", error);
+      logError("app", "frontend_ready failed", error);
     });
     invoke<boolean>("get_pin_state")
       .then((nextPinned) => {
@@ -94,7 +95,7 @@ export default function MainWindowApp({
         setPinned(nextPinned);
         onPinChange?.(nextPinned);
       })
-      .catch((error) => console.error("[app] get_pin_state failed:", error));
+      .catch((error) => logError("app", "get_pin_state failed", error));
   }, [onPinChange]);
 
   useEffect(() => {
@@ -113,7 +114,7 @@ export default function MainWindowApp({
       setPinned(nextPinned);
       onPinChange?.(nextPinned);
     } catch (error) {
-      console.error("[app] toggle_pin failed:", error);
+      logError("app", "toggle_pin failed", error);
     }
   }, [onPinChange]);
 

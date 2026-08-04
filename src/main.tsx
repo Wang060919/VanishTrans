@@ -2,6 +2,7 @@ import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { logError } from "./lib/logger";
 
 interface EBState {
   error: Error | null;
@@ -15,7 +16,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, EBState> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("[ErrorBoundary]", error, info.componentStack);
+    logError("ErrorBoundary", error.message, info.componentStack ?? error.stack);
   }
 
   render() {

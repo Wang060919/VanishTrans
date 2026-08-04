@@ -6,6 +6,7 @@ import { Check, Copy, Expand, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import VanishMark from "../components/brand/VanishMark";
 import { useThemeSync } from "../hooks/useTheme";
+import { logError } from "../lib/logger";
 
 interface StreamChunk {
   requestId: number;
@@ -118,7 +119,7 @@ export default function QuickTranslateWindow() {
         cleanups.push(...registered);
         await invoke("quick_frontend_ready");
       } catch (error) {
-        console.error("[QuickTranslateWindow] Setup error:", error);
+        logError("quick", "setup error", error);
       }
     })();
 

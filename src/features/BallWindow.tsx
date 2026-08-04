@@ -6,6 +6,7 @@ import { useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useThemeSync } from "../hooks/useTheme";
+import { logError } from "../lib/logger";
 import MainWindowApp from "./MainWindowApp";
 import TranslationIslandView from "./TranslationIslandView";
 import {
@@ -383,7 +384,7 @@ export default function BallWindow() {
       }
     } catch (error) {
       if (context.signal.aborted || isIslandTransitionAborted(error)) return;
-      console.error("transition translation island failed", error);
+      logError("ball.transition", "transition translation island failed", error);
       modeRef.current = "idle";
       commitPresentation({
         mode: "idle",
@@ -405,7 +406,7 @@ export default function BallWindow() {
           nativeModeRef.current = "idle";
         }
       } catch (rollbackError) {
-        console.error("rollback translation island failed", rollbackError);
+        logError("ball.transition", "rollback translation island failed", rollbackError);
       }
     }
   }, [commitPresentation]);
@@ -615,7 +616,7 @@ export default function BallWindow() {
           anchorPositionRef.current = await saveBallPosition(anchor);
         }
       } catch (error) {
-        console.error("drag translation island failed", error);
+      logError("ball.drag", "drag translation island failed", error);
       } finally {
         draggingRef.current = false;
         transitionCoordinator.setPaused(false);
@@ -700,7 +701,7 @@ export default function BallWindow() {
       };
       anchorPositionRef.current = await saveBallPosition(anchor, false);
     } catch (error) {
-      console.error("save expanded translation island position failed", error);
+      logError("ball.drag", "save expanded translation island position failed", error);
     }
   }, []);
 

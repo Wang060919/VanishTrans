@@ -12,6 +12,7 @@ import TranslatePanel from "../features/TranslatePanel";
 import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
 import { useTheme } from "../hooks/useTheme";
 import type { LangDirection } from "../hooks/useTranslation";
+import { logError } from "../lib/logger";
 import type { TranslationRecord } from "../types";
 
 interface MainLayoutProps {
@@ -110,7 +111,7 @@ export default function MainLayout({
     try {
       await invoke("write_clipboard_safe", { text });
     } catch (error) {
-      console.error("copy translation text failed", error);
+      logError("main", "copy translation text failed", error);
     }
   }, []);
 
@@ -118,7 +119,7 @@ export default function MainLayout({
     try {
       await invoke("start_screenshot_from_ball");
     } catch (error) {
-      console.error("start screenshot translation failed", error);
+      logError("main", "start screenshot translation failed", error);
     }
   }, []);
 
@@ -140,13 +141,13 @@ export default function MainLayout({
       await onCollapse?.();
       return;
     }
-    try { await getCurrentWindow().minimize(); } catch (e) { console.error("minimize failed", e); }
+    try { await getCurrentWindow().minimize(); } catch (e) { logError("main.window", "minimize failed", e); }
   }, [embedded, onCollapse]);
   const handleMaximize = useCallback(async () => {
-    try { await getCurrentWindow().toggleMaximize(); } catch (e) { console.error("maximize failed", e); }
+    try { await getCurrentWindow().toggleMaximize(); } catch (e) { logError("main.window", "maximize failed", e); }
   }, []);
   const handleClose = useCallback(async () => {
-    try { await invoke("hide_window"); } catch (e) { console.error("hide failed", e); }
+    try { await invoke("hide_window"); } catch (e) { logError("main.window", "hide failed", e); }
   }, []);
 
   // Drag: use startDragging() with permission, fallback to data-tauri-drag-region

@@ -431,6 +431,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::frontend_ready,
             commands::quick_frontend_ready,
+            commands::log_frontend_message,
             commands::read_clipboard_safe,
             commands::write_clipboard_safe,
             commands::hide_window,

@@ -42,6 +42,22 @@ pub fn quick_frontend_ready() {
 }
 
 // -----------------------------------------------------------
+// Frontend logging
+// -----------------------------------------------------------
+
+/// Forward a frontend operational error into the Rust log so production
+/// issues are not only visible in the browser console.
+#[tauri::command]
+pub fn log_frontend_message(level: String, message: String) {
+    let message = message.chars().take(4096).collect::<String>();
+    match level.as_str() {
+        "error" => log::error!("[frontend] {}", message),
+        "warn" => log::warn!("[frontend] {}", message),
+        _ => log::info!("[frontend] {}", message),
+    }
+}
+
+// -----------------------------------------------------------
 // Clipboard commands
 // -----------------------------------------------------------
 
