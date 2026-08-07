@@ -6,8 +6,31 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build"
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "Wang060919",
+    "category": "Utility",
+    "shortDescription": "轻量级 AI 驱动的 Windows 翻译工具",
+    "longDescription": "基于 Tauri 2 构建的 Windows 翻译工具：划词翻译、原地替换、截图 OCR、翻译记忆与剪贴板监听。",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["SimpChinese", "English"],
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   },
   "app": {
     "windows": [
