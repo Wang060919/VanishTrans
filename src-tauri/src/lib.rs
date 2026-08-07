@@ -1,6 +1,7 @@
 mod clipboard;
 mod commands;
 mod cursor;
+mod error;
 mod history;
 mod keyboard;
 mod logging;
@@ -391,6 +392,8 @@ pub fn run() {
             commands::get_startup_warnings,
             commands::quick_frontend_ready,
             commands::log_frontend_message,
+            commands::set_logging_enabled,
+            commands::get_logging_enabled,
             commands::read_clipboard_safe,
             commands::write_clipboard_safe,
             commands::hide_window,
@@ -402,6 +405,11 @@ pub fn run() {
             commands::set_hotkeys,
             commands::set_glossary,
             commands::set_max_records,
+            commands::list_service_profiles,
+            commands::save_service_profile,
+            commands::delete_service_profile,
+            commands::apply_service_profile,
+            commands::test_connection,
             commands::translate,
             commands::translate_with_direction,
             commands::translate_stream,

@@ -1,6 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -15,13 +16,24 @@ static LOGGER: FileLogger = FileLogger {
     file: Mutex::new(None),
 };
 
+/// Runtime privacy switch — when disabled no log lines are written.
+static LOGGING_ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_logging_enabled(enabled: bool) {
+    LOGGING_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+pub fn logging_enabled() -> bool {
+    LOGGING_ENABLED.load(Ordering::SeqCst)
+}
+
 impl log::Log for FileLogger {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
         metadata.level() <= log::max_level()
     }
 
     fn log(&self, record: &log::Record<'_>) {
-        if !self.enabled(record.metadata()) {
+        if !self.enabled(record.metadata()) || !LOGGING_ENABLED.load(Ordering::SeqCst) {
             return;
         }
 

@@ -203,6 +203,10 @@ pub struct ApiConfig {
     /// increments this. In-flight requests check the value after the HTTP
     /// round-trip and silently discard their result if it no longer matches.
     pub request_seq: AtomicU64,
+    /// Independent cancellation domain for Alt+R replacement. Splitting this
+    /// from `request_seq` keeps a background replacement from cancelling an
+    /// in-flight main-window translation and vice versa.
+    pub replace_request_seq: AtomicU64,
     /// Hotkey bindings stored as (action, shortcut_string).
     /// Actions: "translate", "screenshot", "replace".
     pub hotkeys: Mutex<Vec<(String, String)>>,
@@ -210,6 +214,8 @@ pub struct ApiConfig {
     pub glossary: Mutex<Vec<(String, String)>>,
     /// Maximum history records to keep.
     pub max_records: std::sync::atomic::AtomicUsize,
+    /// Saved service profiles for quick switching between providers/models.
+    pub profiles: Mutex<Vec<ServiceProfile>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -222,6 +228,15 @@ struct PersistedConfig {
     glossary: Vec<(String, String)>,
     #[serde(default = "default_max_records")]
     max_records: usize,
+    #[serde(default)]
+    profiles: Vec<ServiceProfile>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ServiceProfile {
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
 }
 
 fn default_max_records() -> usize {
@@ -231,7 +246,7 @@ fn default_max_records() -> usize {
 impl ApiConfig {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
         let config_path = config_dir.join("config.json");
-        let (base_url, model, hotkeys, glossary, max_records, config_existed) =
+        let (base_url, model, hotkeys, glossary, max_records, profiles, config_existed) =
             std::fs::read_to_string(&config_path)
                 .ok()
                 .and_then(|d| serde_json::from_str::<PersistedConfig>(&d).ok())
@@ -242,6 +257,7 @@ impl ApiConfig {
                         c.hotkeys,
                         c.glossary,
                         c.max_records,
+                        c.profiles,
                         true,
                     )
                 })
@@ -253,6 +269,7 @@ impl ApiConfig {
                         Self::default_hotkeys(),
                         Vec::new(),
                         default_max_records(),
+                        Vec::new(),
                         false,
                     )
                 });
@@ -274,6 +291,7 @@ impl ApiConfig {
             client: Mutex::new(client),
             config_path,
             request_seq: AtomicU64::new(0),
+            replace_request_seq: AtomicU64::new(0),
             hotkeys: Mutex::new(if hotkeys.is_empty() {
                 Self::default_hotkeys()
             } else {
@@ -281,6 +299,7 @@ impl ApiConfig {
             }),
             glossary: Mutex::new(glossary),
             max_records: std::sync::atomic::AtomicUsize::new(max_records),
+            profiles: Mutex::new(profiles),
         };
         // Only persist when the file didn't exist — avoid a sync write on every cold start
         if !config_existed {
@@ -315,6 +334,7 @@ impl ApiConfig {
             hotkeys: self.hotkeys.lock().unwrap().clone(),
             glossary: self.glossary.lock().unwrap().clone(),
             max_records: self.max_records.load(std::sync::atomic::Ordering::Relaxed),
+            profiles: self.profiles.lock().unwrap().clone(),
         };
         if let Some(p) = self.config_path.parent() {
             std::fs::create_dir_all(p).map_err(|e| format!("创建配置目录失败: {}", e))?;
@@ -361,6 +381,53 @@ impl ApiConfig {
     /// superseded by a newer translation).
     pub fn is_current_request(&self, seq: u64) -> bool {
         self.request_seq.load(Ordering::SeqCst) == seq
+    }
+
+    /// Claim a new Alt+R replacement sequence number.
+    pub fn next_replace_request_seq(&self) -> u64 {
+        self.replace_request_seq.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// Returns true if `seq` is still the latest Alt+R replacement request.
+    pub fn is_current_replace_request(&self, seq: u64) -> bool {
+        self.replace_request_seq.load(Ordering::SeqCst) == seq
+    }
+
+    /// Replace the saved profile with the same name, or append it.
+    pub fn upsert_profile(&self, profile: ServiceProfile) -> Result<(), String> {
+        let mut profiles = self.profiles.lock().unwrap();
+        if let Some(existing) = profiles
+            .iter_mut()
+            .find(|existing| existing.name == profile.name)
+        {
+            *existing = profile;
+        } else {
+            profiles.push(profile);
+        }
+        drop(profiles);
+        self.save_to_disk()
+    }
+
+    pub fn delete_profile(&self, name: &str) -> Result<(), String> {
+        let mut profiles = self.profiles.lock().unwrap();
+        profiles.retain(|profile| profile.name != name);
+        drop(profiles);
+        self.save_to_disk()
+    }
+
+    /// Apply a saved profile's base URL and model to the active configuration.
+    pub fn apply_profile(&self, name: &str) -> Result<(), String> {
+        let profiles = self.profiles.lock().unwrap();
+        let profile = profiles
+            .iter()
+            .find(|profile| profile.name == name)
+            .ok_or_else(|| format!("找不到服务档案: {}", name))?;
+        let base_url = profile.base_url.clone();
+        let model = profile.model.clone();
+        drop(profiles);
+        *self.base_url.lock().unwrap() = base_url;
+        *self.model.lock().unwrap() = model;
+        self.save_to_disk()
     }
 
     /// Fingerprint every setting that can change a translation result.
@@ -599,6 +666,74 @@ pub async fn do_translate_async(
         .first()
         .map(|c| c.message.content.trim().to_string())
         .ok_or("API 返回了空翻译结果".into())
+}
+
+/// Verify connectivity against the configured service with a minimal request.
+/// Returns a human-readable success message on success.
+pub async fn test_connection_async(
+    state: &ApiConfig,
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+) -> Result<String, String> {
+    let base_url = base_url.trim().trim_end_matches('/').to_string();
+    if base_url.is_empty() {
+        return Err("Base URL 不能为空".into());
+    }
+    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+        return Err("Base URL 必须以 http:// 或 https:// 开头".into());
+    }
+    if model.trim().is_empty() {
+        return Err("模型名称不能为空".into());
+    }
+    if api_key.trim().is_empty() {
+        return Err("请先配置 API Key".into());
+    }
+
+    let chat_url = if base_url.ends_with("/v1") {
+        format!("{}/chat/completions", base_url)
+    } else {
+        format!("{}/v1/chat/completions", base_url)
+    };
+    let body = build_chat_request(
+        model.trim().to_string(),
+        TranslationPrompt {
+            system_prompt: BASE_SYSTEM_PROMPT.to_string(),
+            user_content: "你好".to_string(),
+        },
+        false,
+    );
+    let client = state.client.lock().unwrap().clone();
+    let resp = client
+        .post(&chat_url)
+        .header("Authorization", format!("Bearer {}", api_key.trim()))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .timeout(Duration::from_secs(TIMEOUT_SECS))
+        .send()
+        .await
+        .map_err(map_http_error(&base_url))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let b =
+            String::from_utf8_lossy(&read_response_body_limited(resp).await.unwrap_or_default())
+                .to_string();
+        return Err(match status.as_u16() {
+            401 => "API Key 无效或已过期".into(),
+            404 => "模型名称无效或服务不支持该模型".into(),
+            429 => "API 请求频率超限，请稍后重试".into(),
+            500..=599 => format!("API 服务内部错误 ({})", status.as_u16()),
+            _ => format!("API 错误 ({}): {}", status.as_u16(), b),
+        });
+    }
+    let bytes = read_response_body_limited(resp).await?;
+    let cr: ChatResponse =
+        serde_json::from_slice(&bytes).map_err(|e| format!("解析响应 JSON 失败: {}", e))?;
+    if cr.choices.is_empty() {
+        return Err("服务响应格式异常：缺少 choices".into());
+    }
+    Ok(format!("连接成功：{}（{}）", model.trim(), base_url))
 }
 
 // -----------------------------------------------------------

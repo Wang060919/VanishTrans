@@ -467,7 +467,7 @@ fn handle_alt_r(app: tauri::AppHandle) {
         }
         let target = translate::resolve_target_lang(&cleaned, "auto");
         let api_config = app.state::<ApiConfig>();
-        let seq = api_config.next_request_seq();
+        let seq = api_config.next_replace_request_seq();
         let translated =
             match app
                 .state::<AppState>()
@@ -479,7 +479,7 @@ fn handle_alt_r(app: tauri::AppHandle) {
                     target,
                 )) {
                 Ok(t) => {
-                    if !api_config.is_current_request(seq) {
+                    if !api_config.is_current_replace_request(seq) {
                         return;
                     }
                     t

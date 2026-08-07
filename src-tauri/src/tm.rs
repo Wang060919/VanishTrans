@@ -265,15 +265,19 @@ impl TranslationMemory {
     }
 
     /// Delete a single TM entry by ID.
-    pub fn delete(&self, id: i64) {
+    pub fn delete(&self, id: i64) -> Result<(), String> {
         let conn = lock_or_recover(&self.conn);
-        let _ = conn.execute("DELETE FROM translation_memory WHERE id = ?1", params![id]);
+        conn.execute("DELETE FROM translation_memory WHERE id = ?1", params![id])
+            .map_err(|e| format!("删除翻译记忆失败: {}", e))?;
+        Ok(())
     }
 
     /// Clear all TM entries.
-    pub fn clear(&self) {
+    pub fn clear(&self) -> Result<(), String> {
         let conn = lock_or_recover(&self.conn);
-        let _ = conn.execute("DELETE FROM translation_memory", []);
+        conn.execute("DELETE FROM translation_memory", [])
+            .map_err(|e| format!("清空翻译记忆失败: {}", e))?;
+        Ok(())
     }
 
     /// Get TM statistics.
@@ -552,7 +556,7 @@ mod tests {
         assert!(exported.contains("'=cmd"));
         assert!(exported.contains("'+translated"));
 
-        tm.clear();
+        tm.clear().unwrap();
         tm.import_csv(&path).unwrap();
         assert_eq!(
             tm.lookup("=cmd|' /C calc'!A0", "auto", "Chinese")
