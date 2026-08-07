@@ -17,6 +17,8 @@ import type { TranslationRecord } from "../types";
 
 interface MainLayoutProps {
   embedded?: boolean;
+  notices?: string[];
+  onDismissNotice?: (message: string) => void;
   onCollapse?: () => void | Promise<void>;
   onWindowDragStart?: () => boolean | void;
   onWindowDragEnd?: () => void;
@@ -56,6 +58,8 @@ type ActivePanel = "settings" | "history" | null;
 
 export default function MainLayout({
   embedded = false,
+  notices = [],
+  onDismissNotice,
   onCollapse,
   onWindowDragStart,
   onWindowDragEnd,
@@ -158,7 +162,7 @@ export default function MainLayout({
     try {
       await getCurrentWindow().startDragging();
       await onWindowMoved?.();
-    } catch (_) {
+    } catch {
       // Native dragging can be unavailable in a browser-only preview.
     } finally {
       onWindowDragEnd?.();
@@ -182,6 +186,19 @@ export default function MainLayout({
           </div>
         </div>
       </header>
+
+      {notices.length > 0 && (
+        <div className="app-notices" role="status" aria-live="polite">
+          {notices.map((message) => (
+            <div className="app-notice" key={message}>
+              <span>{message}</span>
+              <button type="button" onClick={() => onDismissNotice?.(message)} aria-label="关闭提示">
+                <X size={13} aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <LanguageSwitcher value={direction} onChange={onDirectionChange} />
 

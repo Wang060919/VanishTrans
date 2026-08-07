@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useConfig } from "../hooks/useConfig";
-import { useTauriEvents } from "../hooks/useTauriEvents";
+import { useTauriEvents, type TranslationRequestEvent } from "../hooks/useTauriEvents";
 import { useTranslation } from "../hooks/useTranslation";
 import MainLayout from "../layouts/MainLayout";
 import { logError } from "../lib/logger";
@@ -28,6 +28,7 @@ export default function MainWindowApp({
   onPinChange,
 }: MainWindowAppProps) {
   const [pinned, setPinned] = useState(false);
+  const [notices, setNotices] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const translation = useTranslation();
   const config = useConfig();
@@ -35,6 +36,10 @@ export default function MainWindowApp({
   const requestExpand = useCallback(() => {
     void onRequestExpand?.();
   }, [onRequestExpand]);
+
+  const addNotices = useCallback((messages: string[]) => {
+    setNotices((current) => Array.from(new Set([...current, ...messages.filter(Boolean)])));
+  }, []);
 
   const doTranslateStreamRef = useRef(translation.doTranslateStream);
   const setOutputTextRef = useRef(translation.setOutputText);
@@ -50,14 +55,14 @@ export default function MainWindowApp({
   }, [translation.doTranslateStream, translation.setOutputText, translation.setInputText, translation.setLoading]);
 
   useTauriEvents({
-    onClipboardTranslate: useCallback((text: string) => {
+    onClipboardTranslate: useCallback((request: TranslationRequestEvent) => {
       requestExpand();
-      if (text.startsWith("ERROR:")) {
-        setOutputTextRef.current(`❌ ${text.slice(6)}`);
+      if (request.type === "error") {
+        setOutputTextRef.current(`❌ ${request.message}`);
         setLoadingRef.current(false);
         return;
       }
-      doTranslateStreamRef.current(text);
+      doTranslateStreamRef.current(request.text);
     }, [requestExpand]),
 
     onOcrTranslate: useCallback((text: string) => {
@@ -78,6 +83,12 @@ export default function MainWindowApp({
       translation.setLoading(false);
     }, [requestExpand]),
 
+    onShortcutConflicts: useCallback((conflicts) => {
+      addNotices(conflicts.map((conflict) => conflict.shortcut
+        ? `快捷键 ${conflict.shortcut} 注册失败，${conflict.action} 功能已暂时禁用。`
+        : `快捷键配置无效：${conflict.error}`));
+    }, [addNotices]),
+
     onStreamChunk: translation.handleStreamChunk,
     onStreamDone: translation.handleStreamDone,
   });
@@ -86,9 +97,15 @@ export default function MainWindowApp({
     const label = getCurrentWindow().label;
     if (label !== "main" && label !== "ball") return;
 
-    invoke("frontend_ready").catch((error) => {
-      logError("app", "frontend_ready failed", error);
-    });
+    void (async () => {
+      try {
+        await invoke("frontend_ready");
+        const warnings = await invoke<string[]>("get_startup_warnings");
+        addNotices(warnings ?? []);
+      } catch (error) {
+        logError("app", "frontend initialization failed", error);
+      }
+    })();
     invoke<boolean>("get_pin_state")
       .then((nextPinned) => {
         if (typeof nextPinned !== "boolean") return;
@@ -96,7 +113,7 @@ export default function MainWindowApp({
         onPinChange?.(nextPinned);
       })
       .catch((error) => logError("app", "get_pin_state failed", error));
-  }, [onPinChange]);
+  }, [addNotices, onPinChange]);
 
   useEffect(() => {
     const listener = listen<boolean>("pin-state-changed", (event) => {
@@ -119,12 +136,15 @@ export default function MainWindowApp({
   }, [onPinChange]);
 
   const handleTranslate = useCallback(async () => {
+    if (translation.loading) return;
     await translation.doTranslateStream(translation.inputText);
-  }, [translation.inputText, translation.doTranslateStream]);
+  }, [translation.inputText, translation.doTranslateStream, translation.loading]);
 
   return (
     <MainLayout
       embedded={embedded}
+      notices={notices}
+      onDismissNotice={(message) => setNotices((current) => current.filter((item) => item !== message))}
       onCollapse={onCollapse}
       onWindowDragStart={onWindowDragStart}
       onWindowDragEnd={onWindowDragEnd}
