@@ -113,10 +113,6 @@ impl ScreenshotBuffer {
     }
 }
 
-fn preview_text(text: &str, max_chars: usize) -> String {
-    text.chars().take(max_chars).collect()
-}
-
 #[cfg(target_os = "windows")]
 pub fn ocr_max_image_dimension() -> u32 {
     windows::Media::Ocr::OcrEngine::MaxImageDimension()
@@ -406,12 +402,7 @@ pub fn native_ocr_on_png(png_data: &[u8]) -> Result<OcrOutput, String> {
             .get()
             .map_err(|e| format!("OCR: {e}"))?;
         let text = result.Text().map_err(|e| format!("text: {e}"))?.to_string();
-        let preview = preview_text(&text, 80);
-        log::info!(
-            "[ocr] raw text chars: {}, preview: {:?}",
-            text.chars().count(),
-            preview
-        );
+        log::info!("[ocr] recognized {} chars", text.chars().count());
         Ok(OcrOutput {
             text: text.trim().to_string(),
         })
@@ -429,11 +420,6 @@ pub fn native_ocr_on_png(_png_data: &[u8]) -> Result<OcrOutput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn preview_text_respects_utf8_character_boundaries() {
-        assert_eq!(preview_text("你好世界", 3), "你好世");
-    }
 
     #[test]
     fn prepared_images_stay_within_the_ocr_dimension_limit() {
@@ -495,7 +481,11 @@ mod tests {
 
         assert_eq!(prepared.dimensions(), (72, 52));
         assert!(prepared.rows().next().unwrap().all(|pixel| pixel[0] == 255));
-        assert!(prepared.rows().last().unwrap().all(|pixel| pixel[0] == 255));
+        assert!(prepared
+            .rows()
+            .next_back()
+            .unwrap()
+            .all(|pixel| pixel[0] == 255));
         assert!(prepared.get_pixel(0, prepared.height() / 2)[0] == 255);
         assert!(prepared.get_pixel(prepared.width() - 1, prepared.height() / 2)[0] == 255);
     }
