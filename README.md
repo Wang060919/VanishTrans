@@ -45,7 +45,7 @@
 
 ### 其他特性
 
-- 🌙 **深色模式** — 跟随系统或手动切换
+- 🌙 **深色主题** — 当前版本固定深色视觉
 - 📋 **剪贴板监听** — 开启后自动翻译复制的文本
 - 📜 **翻译历史** — 保存最近 200 条记录，支持搜索
 - 📌 **窗口置顶** — 固定窗口在最上层
@@ -58,8 +58,8 @@
 
 ### 环境要求
 
-- [Node.js](https://nodejs.org/) 18+
-- [pnpm](https://pnpm.io/)
+- [Node.js](https://nodejs.org/) 20.19+
+- [pnpm](https://pnpm.io/) 10+
 - [Rust](https://www.rust-lang.org/tools/install)
 - [Tauri 2 Prerequisites](https://v2.tauri.app/start/prerequisites/)
 
@@ -85,7 +85,8 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-可执行文件位于 `src-tauri/target/release/vanish-trans.exe`。
+可执行文件位于 `src-tauri/target/release/vanish-trans.exe`，
+NSIS 安装包位于 `src-tauri/target/release/bundle/nsis/`。
 
 ---
 
@@ -109,10 +110,11 @@ VanishTrans/
 │   ├── types.ts                  # 共享类型定义
 │   ├── features/
 │   │   ├── TranslatePanel.tsx    # 翻译主面板（输入/输出/拖拽）
-│   │   ├── SettingsPanel.tsx     # 设置面板（API/快捷键/术语/主题）
+│   │   ├── SettingsPanel.tsx     # 设置面板（API/快捷键/术语/TM）
 │   │   ├── HistoryPanel.tsx      # 翻译历史面板
 │   │   ├── TmPanel.tsx           # 翻译记忆管理面板
-│   │   └── BallWindow.tsx        # 悬浮翻译球窗口
+│   │   ├── BallWindow.tsx        # 悬浮翻译球窗口
+│   │   └── QuickTranslateWindow.tsx # 快捷翻译窗口
 │   ├── hooks/
 │   │   ├── useTranslation.ts     # 翻译状态管理
 │   │   ├── useConfig.ts          # 配置管理
@@ -138,6 +140,9 @@ VanishTrans/
 │       ├── ocr.rs                # Windows OCR 截图识别
 │       ├── keyboard.rs           # 键盘模拟（Ctrl+C/V）
 │       ├── clipboard.rs          # 剪贴板守卫
+│       ├── logging.rs            # 文件日志（轮转）
+│       ├── cursor.rs             # 光标位置工具
+│       ├── window_regions.rs     # 悬浮球位置计算
 │       └── setup/                # 窗口/快捷键/剪贴板初始化
 │           ├── shortcuts.rs      # 全局快捷键注册
 │           ├── tray.rs           # 系统托盘
@@ -155,7 +160,7 @@ VanishTrans/
 | 前端 | React 18 + TypeScript + TailwindCSS |
 | 后端 | Rust + reqwest + rusqlite |
 | OCR | Windows.Media.Ocr (原生 API) |
-| 存储 | SQLite (翻译历史 + TM) + JSON (配置) |
+| 存储 | SQLite (TM) + JSON (历史/配置) |
 
 ---
 
@@ -174,4 +179,4 @@ VanishTrans/
 
 ## License
 
-MIT
+[MIT](LICENSE)
