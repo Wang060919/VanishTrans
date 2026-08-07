@@ -1,0 +1,586 @@
+/* Floating translation island */
+body.ball-window-body,
+body.ball-window-body #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.translation-island {
+  --island-accent: 141, 156, 255;
+  --island-shell: #08090b;
+  --island-edge: rgba(255, 255, 255, 0.09);
+  --island-highlight: rgba(255, 255, 255, 0.045);
+  --island-depth: rgba(0, 0, 0, 0.48);
+  --island-width: 116px;
+  --island-height: 42px;
+  --island-radius: 21px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  color: rgba(248, 248, 251, 0.88);
+  letter-spacing: 0;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.translation-island--right {
+  justify-content: flex-start;
+}
+
+.translation-island--center {
+  justify-content: center;
+}
+
+.translation-island--status.translation-island--done {
+  --island-accent: 93, 195, 157;
+  --color-signal: #5dc39d;
+}
+
+.translation-island--status.translation-island--error {
+  --island-accent: 224, 105, 114;
+  --color-signal: #e06972;
+}
+
+.translation-island__surface {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 0;
+  width: var(--island-width);
+  height: var(--island-height);
+  border-radius: var(--island-radius);
+  background: var(--island-shell);
+  box-shadow: inset 0 -10px 20px rgba(0, 0, 0, 0.22);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  isolation: isolate;
+  will-change: transform, width, height, border-radius;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
+  contain: layout style paint;
+  transition:
+    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-radius 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.translation-island__surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px var(--island-edge),
+    inset 0 1px 0 var(--island-highlight),
+    inset 0 -1px 0 var(--island-depth);
+  pointer-events: none;
+}
+
+.translation-island--instant .translation-island__surface {
+  transition: none;
+}
+
+.translation-island--idle .translation-island__surface {
+  transition:
+    width 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    height 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.translation-island--full .translation-island__surface {
+  background: var(--island-shell);
+  transition:
+    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-radius 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.translation-island--peek .translation-island__surface,
+.translation-island--actions .translation-island__surface,
+.translation-island--status .translation-island__surface {
+  cursor: grab;
+}
+
+.translation-island--peek .translation-island__surface:active,
+.translation-island--actions .translation-island__surface:active,
+.translation-island--status .translation-island__surface:active {
+  cursor: grabbing;
+}
+
+.translation-island__full {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.982) translateZ(0);
+  transform-origin: 50% 0%;
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition:
+    opacity 120ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 120ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0ms linear 120ms;
+}
+
+.translation-island--full.translation-island--stable .translation-island__full {
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+  transform: scale(1) translateZ(0);
+  transition:
+    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1) 60ms,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1) 40ms,
+    visibility 0ms linear;
+}
+
+.translation-island--instant .translation-island__full {
+  transition: none;
+}
+
+.translation-island__full .app-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-radius: inherit !important;
+  box-shadow: none !important;
+  transform: translateZ(0);
+  will-change: contents;
+}
+
+.app-shell--island {
+  animation: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 46px 44px minmax(0, 1fr) 40px;
+}
+
+.app-shell--island .app-header {
+  height: auto;
+  cursor: grab;
+}
+
+.app-shell--island .app-header:active {
+  cursor: grabbing;
+}
+
+.app-shell--island .app-header button,
+.app-shell--island .app-header a,
+.app-shell--island .app-header input,
+.app-shell--island .app-header select {
+  cursor: pointer;
+}
+
+.app-shell--island .app-footer {
+  width: 100%;
+  height: auto;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.translation-island--right .translation-island__surface {
+  flex-direction: row-reverse;
+}
+
+.translation-island__content {
+  min-width: 0;
+  height: 100%;
+  flex: 0 0 auto;
+  overflow: hidden;
+  will-change: width, opacity;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
+  /* Optimize text rendering during animation */
+  -webkit-font-smoothing: subpixel-antialiased;
+  text-rendering: geometricPrecision;
+}
+
+.translation-island__content--actions {
+  width: 0;
+  height: 100%;
+}
+
+.translation-island__actions {
+  width: 238px;
+  min-width: 238px;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 4px 6px 5px;
+  box-sizing: border-box;
+}
+
+.translation-island--left .translation-island__actions,
+.translation-island--center .translation-island__actions {
+  flex-direction: row-reverse;
+}
+
+.translation-island--right .translation-island__actions {
+  padding-right: 5px;
+  padding-left: 4px;
+}
+
+.translation-island__actions button {
+  position: relative;
+  min-width: 0;
+  height: 48px;
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(229, 230, 237, 0.58);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 150ms var(--ease-standard),
+    background-color 150ms var(--ease-standard),
+    transform 150ms var(--ease-standard);
+  /* Text stability during animation */
+  transform: translateZ(0);
+  -webkit-font-smoothing: subpixel-antialiased;
+  text-rendering: geometricPrecision;
+  will-change: transform;
+}
+
+.translation-island__actions button svg {
+  flex: none;
+  stroke-width: 1.8;
+}
+
+.translation-island__actions button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.translation-island__actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.translation-island__actions button:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.075);
+  transform: scale(0.97);
+}
+
+.translation-island__actions button:disabled {
+  cursor: wait;
+  opacity: 0.35;
+}
+
+.translation-island__actions button[data-busy="true"] {
+  color: rgba(var(--island-accent), 0.92);
+  opacity: 1;
+}
+
+.translation-island__action-loader {
+  animation: islandSpin 800ms linear infinite;
+}
+
+.translation-island__notice {
+  width: 238px;
+  min-width: 238px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.translation-island__notice-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(224, 105, 114, 0.11);
+  color: rgba(239, 127, 136, 0.9);
+}
+
+.translation-island__notice-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+
+.translation-island__notice-copy strong {
+  color: rgba(249, 213, 216, 0.88);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.translation-island__notice-copy small {
+  overflow: hidden;
+  color: rgba(224, 225, 233, 0.48);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translation-island__content--status {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  box-sizing: border-box;
+}
+
+.translation-island--right .translation-island__content--status {
+  padding-right: 12px;
+  padding-left: 10px;
+}
+
+.translation-island__state-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(var(--island-accent), 0.1);
+  color: rgba(var(--island-accent), 0.9);
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.translation-island__activity {
+  width: 14px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.translation-island__activity i {
+  width: 2px;
+  height: 10px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: scaleY(0.38);
+  animation: islandActivity 820ms ease-in-out infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.translation-island__activity i:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.translation-island__activity i:nth-child(3) {
+  animation-delay: 220ms;
+}
+
+.translation-island__state-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.translation-island__state-copy strong {
+  overflow: hidden;
+  color: rgba(250, 250, 252, 0.9);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.72);
+}
+
+.translation-island__state-copy small {
+  overflow: hidden;
+  color: rgba(220, 222, 231, 0.42);
+  font-size: 9.5px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+}
+
+.translation-island__core {
+  position: relative;
+  width: 58px;
+  height: 100%;
+  flex: 0 0 58px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(244, 244, 248, 0.82);
+  cursor: pointer;
+  transition:
+    color 160ms var(--ease-standard);
+  /* Performance optimization */
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.translation-island__core::before {
+  content: "";
+  position: absolute;
+  width: 32px;
+  height: 28px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 160ms var(--ease-standard);
+}
+
+.translation-island--idle .translation-island__core {
+  width: 100%;
+  flex-basis: 100%;
+  cursor: grab;
+}
+
+.translation-island__core:hover:not(:disabled) {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.translation-island__core:hover:not(:disabled)::before {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.translation-island__core:disabled {
+  cursor: default;
+}
+
+.translation-island--idle .translation-island__core:active {
+  cursor: grabbing;
+}
+
+.translation-island__core:focus-visible,
+.translation-island__actions button:focus-visible {
+  outline: 0;
+}
+
+.translation-island__actions button:focus-visible {
+  box-shadow: inset 0 0 0 1px rgba(var(--island-accent), 0.72);
+}
+
+.translation-island__core:focus-visible::before {
+  box-shadow: inset 0 0 0 1px rgba(var(--island-accent), 0.72);
+}
+
+.translation-island__core .brand-lockup {
+  position: relative;
+  z-index: 1;
+  transform: translateY(-0.5px);
+  transition: transform 150ms var(--ease-standard);
+}
+
+.translation-island--idle .translation-island__core::before {
+  width: calc(100% - 10px);
+  height: 32px;
+}
+
+.translation-island--idle .translation-island__core .brand-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  letter-spacing: 0;
+}
+
+.translation-island__core:active .brand-lockup {
+  transform: translateY(-0.5px) scale(0.96);
+}
+
+.translation-island__core .brand-mark {
+  width: 22px;
+  height: 20px;
+  filter: drop-shadow(0 0 7px rgba(var(--island-accent), 0.2));
+}
+
+.translation-island--status.translation-island--working .translation-island__core .brand-mark__node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: islandNodePulse 900ms var(--ease-standard) infinite;
+}
+
+@keyframes islandSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes islandActivity {
+  0%, 100% { opacity: 0.42; transform: scaleY(0.38); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+@keyframes islandNodePulse {
+  50% { opacity: 0.42; transform: scale(0.78); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .translation-island__actions button,
+  .translation-island__action-loader,
+  .translation-island__activity i,
+  .translation-island__core .brand-lockup,
+  .translation-island__core .brand-mark__node {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 359px) {
+  .app-header { padding-left: 9px; }
+  .translation-workspace { padding-left: 9px; padding-right: 9px; }
+  .footer-shortcuts b { display: none; }
+  .settings-scroll { padding-left: 12px; padding-right: 12px; }
+}
+
+@media (max-height: 399px) {
+  .app-footer { display: none; }
+  .language-switcher { min-height: 37px; padding-top: 3px; padding-bottom: 3px; }
+  .translation-workspace { padding-top: 5px; padding-bottom: 5px; }
+  .section-toolbar { height: 27px; }
+  .signal-divider { height: 12px; }
+  .empty-translation span { display: none; }
+}
+
