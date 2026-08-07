@@ -43,7 +43,7 @@ describe("App", () => {
     mockedInvoke.mockReset();
     mockedEmit.mockClear();
     for (const key of Object.keys(listeners)) delete listeners[key];
-    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
+    mockedInvoke.mockImplementation((cmd: string, args?: { request?: { requestId?: number } }) => {
       if (cmd === "get_api_config") {
         return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
       }
@@ -53,9 +53,9 @@ describe("App", () => {
       if (cmd === "translate_stream") {
         // Simulate streaming: emit chunks then resolve
         setTimeout(() => {
-          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "你好" });
-          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "世界" });
-          emit("translate-stream-done", { requestId: args?.requestId, fullText: "你好世界" });
+          emit("translate-stream-chunk", { requestId: args?.request?.requestId, chunk: "你好" });
+          emit("translate-stream-chunk", { requestId: args?.request?.requestId, chunk: "世界" });
+          emit("translate-stream-done", { requestId: args?.request?.requestId, fullText: "你好世界" });
         }, 0);
         return Promise.resolve("你好世界");
       }
@@ -101,13 +101,13 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(listeners["shortcut-translate"]).toBeDefined());
 
-    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
+    mockedInvoke.mockImplementation((cmd: string, args?: { request?: { requestId?: number } }) => {
       if (cmd === "cleanup_clipboard_text") return Promise.resolve("hello world");
       if (cmd === "translate_stream") {
         setTimeout(() => {
-          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "你好" });
-          emit("translate-stream-chunk", { requestId: args?.requestId, chunk: "世界" });
-          emit("translate-stream-done", { requestId: args?.requestId, fullText: "你好世界" });
+          emit("translate-stream-chunk", { requestId: args?.request?.requestId, chunk: "你好" });
+          emit("translate-stream-chunk", { requestId: args?.request?.requestId, chunk: "世界" });
+          emit("translate-stream-done", { requestId: args?.request?.requestId, fullText: "你好世界" });
         }, 0);
         return Promise.resolve("你好世界");
       }
@@ -124,7 +124,7 @@ describe("App", () => {
     });
     expect(mockedInvoke).toHaveBeenCalledWith(
       "translate_stream",
-      expect.objectContaining({ text: "hello world" }),
+      expect.objectContaining({ request: expect.objectContaining({ text: "hello world" }) }),
     );
     expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
     expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "done" });
@@ -161,7 +161,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith(
         "translate_stream",
-        expect.objectContaining({ text: "hello world" }),
+        expect.objectContaining({ request: expect.objectContaining({ text: "hello world" }) }),
       );
     });
     await waitFor(() => {
@@ -183,7 +183,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith(
         "translate_stream",
-        expect.objectContaining({ direction: "zh2en" }),
+        expect.objectContaining({ request: expect.objectContaining({ direction: "zh2en" }) }),
       );
     });
   });
@@ -236,8 +236,8 @@ describe("App", () => {
     await waitFor(() => {
       const calls = mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream");
       expect(calls).toHaveLength(2);
-      const firstRequest = calls[0][1].requestId;
-      const secondRequest = calls[1][1].requestId;
+      const firstRequest = calls[0][1].request.requestId;
+      const secondRequest = calls[1][1].request.requestId;
       emit("translate-stream-chunk", { requestId: firstRequest, chunk: "旧结果" });
       emit("translate-stream-chunk", { requestId: secondRequest, chunk: "新结果" });
     });

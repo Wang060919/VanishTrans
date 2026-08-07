@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { useCallback, useRef, useState } from "react";
 import {
+  errorMessage,
+  isCancelledError,
+  isSegmentCountMismatch,
+} from "../lib/errors";
+import {
   detectFileType,
   parseSrt,
   rebuildSrt,
@@ -48,7 +53,7 @@ export function useTranslation() {
     setDirection(d);
   }, []);
 
-  const doTranslate = useCallback(async (text: string) => {
+  const doTranslate = useCallback(async (text: string, forceRefresh = false) => {
     if (!text.trim()) return;
     const cleaned = await invoke<string>("cleanup_clipboard_text", { text });
     setInputText(cleaned);
@@ -60,6 +65,7 @@ export function useTranslation() {
       const result = await invoke<string>("translate_with_direction", {
         text: cleaned,
         direction: directionRef.current,
+        forceRefresh,
       });
       if (reqId === requestIdRef.current) {
         setOutputText(result);
@@ -69,17 +75,17 @@ export function useTranslation() {
         }
       }
     } catch (e: unknown) {
-      if (e === "CANCELLED" || (e && typeof e === "object" && "toString" in e && e.toString() === "CANCELLED")) {
+      if (isCancelledError(e)) {
         if (reqId === requestIdRef.current) setLoading(false);
         return;
       }
-      if (reqId === requestIdRef.current) setOutputText(`❌ ${e}`);
+      if (reqId === requestIdRef.current) setOutputText(`❌ ${errorMessage(e)}`);
     }
     if (reqId === requestIdRef.current) setLoading(false);
   }, []);
 
   /// Streaming translation — emits chunks via Tauri events.
-  const doTranslateStream = useCallback(async (text: string) => {
+  const doTranslateStream = useCallback(async (text: string, forceRefresh = false) => {
     if (!text.trim()) return;
     const reqId = ++requestIdRef.current;
     broadcastTranslationActivity("working");
@@ -91,9 +97,12 @@ export function useTranslation() {
       setLoading(true);
       setStreaming(true);
       await invoke<string>("translate_stream", {
-        text: cleaned,
-        direction: directionRef.current,
-        requestId: reqId,
+        request: {
+          text: cleaned,
+          direction: directionRef.current,
+          requestId: reqId,
+          forceRefresh,
+        },
       });
       // Stream done — finalize
       if (reqId === requestIdRef.current) {
@@ -103,7 +112,7 @@ export function useTranslation() {
         broadcastTranslationActivity("done");
       }
     } catch (e: unknown) {
-      if (e === "CANCELLED" || (e && typeof e === "object" && "toString" in e && e.toString() === "CANCELLED")) {
+      if (isCancelledError(e)) {
         if (reqId === requestIdRef.current) {
           setLoading(false);
           setStreaming(false);
@@ -113,8 +122,8 @@ export function useTranslation() {
       }
       if (reqId === requestIdRef.current) {
         setOutputText((previous) => previous
-          ? `❌ ${e}\n\n已接收的部分译文：\n${previous}`
-          : `❌ ${e}`);
+          ? `❌ ${errorMessage(e)}\n\n已接收的部分译文：\n${previous}`
+          : `❌ ${errorMessage(e)}`);
         setStreaming(false);
         broadcastTranslationActivity("error");
       }
@@ -238,7 +247,7 @@ export function useTranslation() {
         }, 3000);
       } catch (batchErr: unknown) {
         if (reqId !== requestIdRef.current) return;
-        if (batchErr === "SEGMENT_COUNT_MISMATCH") {
+        if (isSegmentCountMismatch(batchErr)) {
           // Model didn't split correctly — show raw result as plain text
           const rawResult = await invoke<string>("translate_with_direction", {
             text: segments.join("\n\n"),
@@ -258,7 +267,7 @@ export function useTranslation() {
       }
     } catch (e: unknown) {
       if (reqId === requestIdRef.current) {
-        setOutputText(`❌ 文件翻译失败: ${e}`);
+        setOutputText(`❌ 文件翻译失败: ${errorMessage(e)}`);
         setFileStatus(null);
       }
     } finally {

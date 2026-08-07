@@ -15,7 +15,7 @@ interface TranslatePanelProps {
   loading: boolean;
   glowActive: boolean;
   onClearGlow: () => void;
-  onTranslate: () => void;
+  onTranslate: (forceRefresh?: boolean) => void;
   inputRef: React.RefObject<HTMLTextAreaElement>;
   streaming?: boolean;
   fileStatus: string | null;
@@ -33,6 +33,7 @@ export default function TranslatePanel({
 }: TranslatePanelProps) {
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [ignoreCache, setIgnoreCache] = useState(false);
   const dragOverCounter = useRef(0);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -144,16 +145,28 @@ export default function TranslatePanel({
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-                  onTranslate();
+                  onTranslate(ignoreCache);
                 }
               }}
             />
             <div className="editor-footer">
               <CharCounter current={inputText.length} max={MAX_INPUT_CHARS} compact />
-              <button type="button" className="translate-action" aria-label="翻译文本" disabled={!inputText.trim() || loading} onClick={onTranslate}>
-                <Sparkles size={14} aria-hidden="true" />
-                <span>{loading ? "翻译中" : "Enter 翻译"}</span>
-              </button>
+              <div className="editor-footer-actions">
+                <button
+                  type="button"
+                  className={`ignore-cache-toggle ${ignoreCache ? "ignore-cache-toggle--active" : ""}`}
+                  aria-pressed={ignoreCache}
+                  title="忽略翻译记忆缓存，强制请求 API"
+                  onClick={() => setIgnoreCache((current) => !current)}
+                >
+                  <RefreshCw size={13} aria-hidden="true" />
+                  <span>忽略缓存</span>
+                </button>
+                <button type="button" className="translate-action" aria-label="翻译文本" disabled={!inputText.trim() || loading} onClick={() => onTranslate(ignoreCache)}>
+                  <Sparkles size={14} aria-hidden="true" />
+                  <span>{loading ? "翻译中" : "Enter 翻译"}</span>
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -179,7 +192,7 @@ export default function TranslatePanel({
                 </SignalBurst>
               )}
               {isError && (
-                <button type="button" className="text-action text-action--danger text-action--hover" onClick={onTranslate} aria-label="重试翻译">
+                <button type="button" className="text-action text-action--danger text-action--hover" onClick={() => onTranslate(ignoreCache)} aria-label="重试翻译">
                   <RefreshCw size={14} aria-hidden="true" />重试
                 </button>
               )}

@@ -1,8 +1,9 @@
-import { Check, KeyRound, Plus, Server, Trash2 } from "lucide-react";
+import { Check, KeyRound, Plus, Server, Shield, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import HotkeyEditor from "../components/HotkeyEditor";
 import SettingInput from "../components/SettingInput";
-import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
+import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../hooks/useConfig";
+import { errorMessage } from "../lib/errors";
 import TmPanel from "./TmPanel";
 
 interface SettingsPanelProps {
@@ -20,15 +21,23 @@ interface SettingsPanelProps {
   hotkeys: HotkeyEntry[];
   hotkeyLabels: Record<string, string>;
   onHotkeysChange: (entries: HotkeyEntry[]) => Promise<void>;
+  profiles: ServiceProfile[];
+  onSaveProfile: (profile: ServiceProfile) => Promise<ServiceProfile[]>;
+  onDeleteProfile: (name: string) => Promise<ServiceProfile[]>;
+  onApplyProfile: (name: string) => Promise<ServiceProfile>;
+  onTestConnection: () => Promise<string>;
+  loggingEnabled: boolean;
+  onSetLogging: (enabled: boolean) => Promise<void>;
 }
 
-export type SettingsTab = "api" | "hotkeys" | "glossary" | "tm";
+export type SettingsTab = "api" | "hotkeys" | "glossary" | "tm" | "privacy";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "api", label: "API" },
   { id: "hotkeys", label: "快捷键" },
   { id: "glossary", label: "术语表" },
   { id: "tm", label: "翻译记忆" },
+  { id: "privacy", label: "隐私" },
 ];
 
 export default function SettingsPanel({
@@ -38,12 +47,17 @@ export default function SettingsPanel({
   hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSave,
   glossary, onGlossaryChange,
   hotkeys, hotkeyLabels, onHotkeysChange,
+  profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
+  loggingEnabled, onSetLogging,
 }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [draftGlossary, setDraftGlossary] = useState(glossary);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [tmSearch, setTmSearch] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionResult, setConnectionResult] = useState<{ ok: boolean; message: string } | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const glossaryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const glossaryDraftRef = useRef(draftGlossary);
@@ -69,7 +83,7 @@ export default function SettingsPanel({
 
   const reportError = useCallback((error: unknown) => {
     setSaved(false);
-    setSaveError(String(error).replace(/^Error:\s*/, "") || "保存失败，请重试");
+    setSaveError(errorMessage(error) || "保存失败，请重试");
   }, []);
 
   const saveConfig = useCallback(async (forcedApiKey?: string) => {
@@ -101,6 +115,64 @@ export default function SettingsPanel({
       reportError(error);
     }
   }, [onGlossaryChange, reportError]);
+
+  const runConnectionTest = useCallback(async () => {
+    setTestingConnection(true);
+    setConnectionResult(null);
+    try {
+      const message = await onTestConnection();
+      setConnectionResult({ ok: true, message });
+    } catch (error) {
+      setConnectionResult({ ok: false, message: errorMessage(error) || "连接失败" });
+    } finally {
+      setTestingConnection(false);
+    }
+  }, [onTestConnection]);
+
+  const handleSaveProfile = useCallback(async () => {
+    const name = profileName.trim();
+    if (!name) {
+      setSaveError("请输入档案名称");
+      return;
+    }
+    try {
+      await onSaveProfile({ name, baseUrl: baseUrl.trim(), model: model.trim() });
+      setProfileName("");
+      setSaveError("");
+      setSaved(true);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => setSaved(false), 1000);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [baseUrl, model, onSaveProfile, profileName, reportError]);
+
+  const handleApplyProfile = useCallback(async (name: string) => {
+    try {
+      await onApplyProfile(name);
+      setSaveError("");
+    } catch (error) {
+      reportError(error);
+    }
+  }, [onApplyProfile, reportError]);
+
+  const handleDeleteProfile = useCallback(async (name: string) => {
+    try {
+      await onDeleteProfile(name);
+      setSaveError("");
+    } catch (error) {
+      reportError(error);
+    }
+  }, [onDeleteProfile, reportError]);
+
+  const handleSetLogging = useCallback(async (enabled: boolean) => {
+    try {
+      await onSetLogging(enabled);
+      setSaveError("");
+    } catch (error) {
+      reportError(error);
+    }
+  }, [onSetLogging, reportError]);
 
   const scheduleGlossarySave = useCallback((entries: GlossaryEntry[]) => {
     glossaryDraftRef.current = entries;
@@ -149,6 +221,48 @@ export default function SettingsPanel({
               </div>
             </div>
             <SettingInput label="模型名称" value={model} onChange={(event) => onModelChange(event.target.value)} onBlur={() => void saveConfig()} placeholder="gpt-4o-mini" />
+            <div className="setting-field">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => void runConnectionTest()}
+                disabled={testingConnection}
+              >
+                {testingConnection ? "测试中..." : "测试连接"}
+              </button>
+              {connectionResult && (
+                <span className={connectionResult.ok ? "connection-result connection-result--ok" : "connection-result connection-result--error"}>
+                  {connectionResult.message}
+                </span>
+              )}
+            </div>
+            <div className="setting-field">
+              <label htmlFor="profile-name">保存为服务档案</label>
+              <div className="setting-inline">
+                <input
+                  id="profile-name"
+                  type="text"
+                  value={profileName}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  placeholder="如：OpenAI / DeepSeek / 本地 Ollama"
+                />
+                <button type="button" className="secondary-button" onClick={() => void handleSaveProfile()}>保存档案</button>
+              </div>
+            </div>
+            {profiles.length > 0 && (
+              <div className="profile-list">
+                {profiles.map((profile) => (
+                  <div className="profile-row" key={profile.name}>
+                    <span className="profile-name">{profile.name}</span>
+                    <span className="profile-meta">{profile.baseUrl} · {profile.model}</span>
+                    <button type="button" className="secondary-button" onClick={() => void handleApplyProfile(profile.name)}>应用</button>
+                    <button type="button" className="text-action text-action--danger" aria-label={`删除档案 ${profile.name}`} onClick={() => void handleDeleteProfile(profile.name)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className={`save-indicator ${saved ? "save-indicator--visible" : ""}`} role="status"><Check size={13} />设置已保存</div>
           </section>
         )}
@@ -196,6 +310,32 @@ export default function SettingsPanel({
         {activeTab === "tm" && (
           <section className="settings-section" style={{ padding: 0, overflow: "hidden" }}>
             <TmPanel searchQuery={tmSearch} onSearchChange={setTmSearch} />
+          </section>
+        )}
+
+        {activeTab === "privacy" && (
+          <section className="settings-section" aria-labelledby="privacy-settings-title">
+            <div className="settings-section-heading">
+              <Shield size={17} aria-hidden="true" />
+              <div><h3 id="privacy-settings-title">隐私</h3><p>控制本地记录与日志行为。</p></div>
+            </div>
+            <div className="setting-field">
+              <label htmlFor="logging-toggle">文件日志</label>
+              <div className="setting-inline">
+                <button
+                  id="logging-toggle"
+                  type="button"
+                  role="switch"
+                  aria-checked={loggingEnabled}
+                  className="toggle-switch"
+                  onClick={() => void handleSetLogging(!loggingEnabled)}
+                >
+                  <span className="toggle-thumb" />
+                </button>
+                <span className="setting-hint">{loggingEnabled ? "已开启" : "已关闭"}</span>
+              </div>
+              <p className="setting-hint">关闭后不再写入日志文件；翻译历史与翻译记忆仍按现有设置保存。</p>
+            </div>
           </section>
         )}
 

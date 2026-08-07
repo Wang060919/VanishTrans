@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import VanishMark from "../components/brand/VanishMark";
 import { useThemeSync } from "../hooks/useTheme";
 import { logError } from "../lib/logger";
+import { errorMessage, isCancelledError } from "../lib/errors";
 
 interface StreamChunk {
   requestId: number;
@@ -54,9 +55,11 @@ export default function QuickTranslateWindow() {
       sourceRef.current = cleaned;
       setSource(cleaned);
       const result = await invoke<string>("translate_stream", {
-        text: cleaned,
-        direction: "auto",
-        requestId,
+        request: {
+          text: cleaned,
+          direction: "auto",
+          requestId,
+        },
       });
       if (requestId === requestIdRef.current && result) {
         setOutput((current) => current || result);
@@ -64,11 +67,10 @@ export default function QuickTranslateWindow() {
       if (requestId === requestIdRef.current) broadcastActivity("done");
     } catch (reason) {
       if (requestId !== requestIdRef.current) return;
-      const message = String(reason);
-      if (message === "CANCELLED") {
+      if (isCancelledError(reason)) {
         broadcastActivity("idle");
       } else {
-        setError(message.replace(/^Error:\s*/, ""));
+        setError(errorMessage(reason));
         broadcastActivity("error");
       }
     } finally {

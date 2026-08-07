@@ -95,6 +95,13 @@ export default function IslandPreview() {
               hotkeys={[]}
               hotkeyLabels={{}}
               onHotkeysChange={async () => {}}
+              profiles={[]}
+              onSaveProfile={async () => []}
+              onDeleteProfile={async () => []}
+              onApplyProfile={async () => ({ name: "", baseUrl: "", model: "" })}
+              onTestConnection={async () => ""}
+              loggingEnabled
+              onSetLogging={async () => {}}
               streaming={false}
               fileStatus={null}
               onTranslateFile={(_filename, content) => setInputText(content)}

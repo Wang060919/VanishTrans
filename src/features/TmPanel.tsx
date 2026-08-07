@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { appDataDir } from "@tauri-apps/api/path";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "../lib/errors";
 
 interface TmEntry {
   id: number;
@@ -69,7 +70,7 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
       const count = await invoke<number>("tm_export", { path });
       window.alert(`已导出 ${count} 条翻译记忆到:\n${path}`);
     } catch (e: unknown) {
-      window.alert(`导出失败: ${e}`);
+      window.alert(`导出失败: ${errorMessage(e)}`);
     }
   }, []);
 
@@ -103,12 +104,12 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
           await loadStats();
           window.alert(`已导入 ${count} 条翻译记忆`);
         } catch (e: unknown) {
-          window.alert(`导入失败: ${e}`);
+          window.alert(`导入失败: ${errorMessage(e)}`);
         }
       };
       input.click();
     } catch (e: unknown) {
-      window.alert(`导入失败: ${e}`);
+      window.alert(`导入失败: ${errorMessage(e)}`);
     }
   }, [loadEntries, loadStats, searchQuery]);
 

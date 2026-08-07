@@ -9,7 +9,7 @@ import VanishMark from "../components/brand/VanishMark";
 import HistoryPanel from "../features/HistoryPanel";
 import SettingsPanel, { type SettingsTab } from "../features/SettingsPanel";
 import TranslatePanel from "../features/TranslatePanel";
-import type { GlossaryEntry, HotkeyEntry } from "../hooks/useConfig";
+import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../hooks/useConfig";
 import { useTheme } from "../hooks/useTheme";
 import type { LangDirection } from "../hooks/useTranslation";
 import { logError } from "../lib/logger";
@@ -33,7 +33,7 @@ interface MainLayoutProps {
   onDirectionChange: (d: LangDirection) => void;
   glowActive: boolean;
   onClearGlow: () => void;
-  onTranslate: () => void;
+  onTranslate: (forceRefresh?: boolean) => void;
   inputRef: React.RefObject<HTMLTextAreaElement>;
   baseUrl: string;
   onBaseUrlChange: (v: string) => void;
@@ -48,6 +48,13 @@ interface MainLayoutProps {
   hotkeys: HotkeyEntry[];
   hotkeyLabels: Record<string, string>;
   onHotkeysChange: (entries: HotkeyEntry[]) => Promise<void>;
+  profiles: ServiceProfile[];
+  onSaveProfile: (profile: ServiceProfile) => Promise<ServiceProfile[]>;
+  onDeleteProfile: (name: string) => Promise<ServiceProfile[]>;
+  onApplyProfile: (name: string) => Promise<ServiceProfile>;
+  onTestConnection: () => Promise<string>;
+  loggingEnabled: boolean;
+  onSetLogging: (enabled: boolean) => Promise<void>;
   streaming: boolean;
   fileStatus: string | null;
   onTranslateFile: (filename: string, content: string) => void;
@@ -75,6 +82,8 @@ export default function MainLayout({
   hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSaveConfig,
   glossary, onGlossaryChange,
   hotkeys, hotkeyLabels, onHotkeysChange,
+  profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
+  loggingEnabled, onSetLogging,
   streaming,
   fileStatus, onTranslateFile,
   translationKey,
@@ -271,6 +280,13 @@ export default function MainLayout({
           hotkeys={hotkeys}
           hotkeyLabels={hotkeyLabels}
           onHotkeysChange={onHotkeysChange}
+          profiles={profiles}
+          onSaveProfile={onSaveProfile}
+          onDeleteProfile={onDeleteProfile}
+          onApplyProfile={onApplyProfile}
+          onTestConnection={onTestConnection}
+          loggingEnabled={loggingEnabled}
+          onSetLogging={onSetLogging}
         />
       </OverlayDrawer>
     </div>

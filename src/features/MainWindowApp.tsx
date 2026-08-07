@@ -135,9 +135,9 @@ export default function MainWindowApp({
     }
   }, [onPinChange]);
 
-  const handleTranslate = useCallback(async () => {
+  const handleTranslate = useCallback(async (forceRefresh = false) => {
     if (translation.loading) return;
-    await translation.doTranslateStream(translation.inputText);
+    await translation.doTranslateStream(translation.inputText, forceRefresh);
   }, [translation.inputText, translation.doTranslateStream, translation.loading]);
 
   return (
@@ -174,6 +174,13 @@ export default function MainWindowApp({
       hotkeys={config.hotkeys}
       hotkeyLabels={config.hotkeyLabels}
       onHotkeysChange={config.saveHotkeys}
+      profiles={config.profiles}
+      onSaveProfile={config.saveProfile}
+      onDeleteProfile={config.deleteProfile}
+      onApplyProfile={config.applyProfile}
+      onTestConnection={config.testConnection}
+      loggingEnabled={config.loggingEnabled}
+      onSetLogging={config.setLogging}
       streaming={translation.streaming}
       fileStatus={translation.fileStatus}
       onTranslateFile={translation.doTranslateFile}

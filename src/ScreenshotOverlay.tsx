@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage } from "./lib/errors";
 
 interface Rect {
   startX: number;
@@ -197,7 +198,7 @@ export default function ScreenshotOverlay() {
       }
     } catch (error) {
       if (session !== sessionRef.current) return;
-      setStatus(`OCR 失败: ${String(error)}，点击重试`);
+      setStatus(`OCR 失败: ${errorMessage(error)}，点击重试`);
       drawingRef.current = false;
       smartCandidateRef.current = null;
       rectRef.current = null;

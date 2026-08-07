@@ -12,6 +12,12 @@ export interface HotkeyEntry {
   shortcut: string;
 }
 
+export interface ServiceProfile {
+  name: string;
+  baseUrl: string;
+  model: string;
+}
+
 const DEFAULT_HOTKEYS: HotkeyEntry[] = [
   { action: "translate", shortcut: "Alt+Q" },
   { action: "replace", shortcut: "Alt+R" },
@@ -31,13 +37,16 @@ export function useConfig() {
   const [hasStoredApiKey, setHasStoredApiKey] = useState(false);
   const [glossary, setGlossary] = useState<GlossaryEntry[]>([]);
   const [hotkeys, setHotkeys] = useState<HotkeyEntry[]>(DEFAULT_HOTKEYS);
+  const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
+  const [loggingEnabled, setLoggingEnabled] = useState(true);
 
   useEffect(() => {
-    invoke<{ baseUrl: string; hasApiKey: boolean; model: string; glossary: [string, string][]; hotkeys: [string, string][] }>("get_api_config")
+    invoke<{ baseUrl: string; hasApiKey: boolean; model: string; glossary: [string, string][]; hotkeys: [string, string][]; profiles: ServiceProfile[] }>("get_api_config")
       .then((cfg) => {
         setBaseUrl(cfg.baseUrl);
         setHasStoredApiKey(cfg.hasApiKey);
         setModel(cfg.model);
+        setProfiles(cfg.profiles ?? []);
         if (cfg.glossary) {
           setGlossary(cfg.glossary.map(([source, target]) => ({ source, target })));
         }
@@ -46,6 +55,9 @@ export function useConfig() {
         }
       })
       .catch((e) => logError("config", "failed to load", e));
+    invoke<boolean>("get_logging_enabled")
+      .then(setLoggingEnabled)
+      .catch((e) => logError("config", "failed to load logging setting", e));
   }, []);
 
   const saveConfig = async (forcedApiKey?: string) => {
@@ -74,6 +86,42 @@ export function useConfig() {
     setHotkeys(entries);
   };
 
+  const testConnection = async (): Promise<string> => {
+    return invoke<string>("test_connection", {
+      baseUrl,
+      apiKey: apiKeyUpdate !== null && apiKeyUpdate !== undefined ? apiKeyUpdate : undefined,
+      model,
+    });
+  };
+
+  const saveProfile = async (profile: ServiceProfile): Promise<ServiceProfile[]> => {
+    const next = await invoke<ServiceProfile[]>("save_service_profile", {
+      name: profile.name,
+      baseUrl: profile.baseUrl,
+      model: profile.model,
+    });
+    setProfiles(next);
+    return next;
+  };
+
+  const deleteProfile = async (name: string): Promise<ServiceProfile[]> => {
+    const next = await invoke<ServiceProfile[]>("delete_service_profile", { name });
+    setProfiles(next);
+    return next;
+  };
+
+  const applyProfile = async (name: string): Promise<ServiceProfile> => {
+    const profile = await invoke<ServiceProfile>("apply_service_profile", { name });
+    setBaseUrl(profile.baseUrl);
+    setModel(profile.model);
+    return profile;
+  };
+
+  const setLogging = async (enabled: boolean) => {
+    await invoke("set_logging_enabled", { enabled });
+    setLoggingEnabled(enabled);
+  };
+
   return {
     baseUrl, setBaseUrl,
     model, setModel,
@@ -83,5 +131,8 @@ export function useConfig() {
     glossary, saveGlossary,
     hotkeys, saveHotkeys,
     hotkeyLabels: HOTKEY_LABELS,
+    profiles, saveProfile, deleteProfile, applyProfile,
+    testConnection,
+    loggingEnabled, setLogging,
   };
 }

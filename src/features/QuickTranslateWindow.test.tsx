@@ -41,12 +41,12 @@ describe("QuickTranslateWindow", () => {
     setSize.mockClear();
     startDragging.mockClear();
     for (const name of Object.keys(listeners)) delete listeners[name];
-    mockedInvoke.mockImplementation((command: string, args?: { text?: string; requestId?: number }) => {
+    mockedInvoke.mockImplementation((command: string, args?: { text?: string; request?: { text?: string; requestId?: number } }) => {
       if (command === "cleanup_clipboard_text") return Promise.resolve(args?.text?.trim() ?? "");
       if (command === "translate_stream") {
         queueMicrotask(() => {
-          dispatch("translate-stream-chunk", { requestId: args?.requestId, chunk: "你好" });
-          dispatch("translate-stream-done", { requestId: args?.requestId, fullText: "你好世界" });
+          dispatch("translate-stream-chunk", { requestId: args?.request?.requestId, chunk: "你好" });
+          dispatch("translate-stream-done", { requestId: args?.request?.requestId, fullText: "你好世界" });
         });
         return Promise.resolve("你好世界");
       }
@@ -73,8 +73,10 @@ describe("QuickTranslateWindow", () => {
     expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
     expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "done" });
     expect(mockedInvoke).toHaveBeenCalledWith("translate_stream", expect.objectContaining({
-      text: "hello world",
-      direction: "auto",
+      request: expect.objectContaining({
+        text: "hello world",
+        direction: "auto",
+      }),
     }));
 
     fireEvent.click(screen.getByRole("button", { name: "复制译文" }));
