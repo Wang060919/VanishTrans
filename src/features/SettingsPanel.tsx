@@ -1,4 +1,4 @@
-import { Check, Database, KeyRound, Plus, Server, Trash2 } from "lucide-react";
+import { Check, KeyRound, Plus, Server, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import HotkeyEditor from "../components/HotkeyEditor";
 import SettingInput from "../components/SettingInput";
@@ -47,7 +47,12 @@ export default function SettingsPanel({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const glossaryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const glossaryDraftRef = useRef(draftGlossary);
+  const onGlossaryChangeRef = useRef(onGlossaryChange);
   const userEditedRef = useRef(false);
+
+  useEffect(() => {
+    onGlossaryChangeRef.current = onGlossaryChange;
+  }, [onGlossaryChange]);
 
   useEffect(() => {
     if (!userEditedRef.current) setDraftGlossary(glossary);
@@ -55,7 +60,11 @@ export default function SettingsPanel({
   useEffect(() => setActiveTab(initialTab), [initialTab]);
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    if (glossaryTimerRef.current) clearTimeout(glossaryTimerRef.current);
+    if (glossaryTimerRef.current) {
+      // Flush the pending debounced edit before the panel unmounts.
+      clearTimeout(glossaryTimerRef.current);
+      void onGlossaryChangeRef.current(glossaryDraftRef.current).catch(() => {});
+    }
   }, []);
 
   const reportError = useCallback((error: unknown) => {
@@ -100,13 +109,6 @@ export default function SettingsPanel({
       void persistGlossary(glossaryDraftRef.current);
     }, 400);
   }, [persistGlossary]);
-
-  const updateTerm = (index: number, field: keyof GlossaryEntry, value: string) => {
-    userEditedRef.current = true;
-    const next = draftGlossary.map((entry, itemIndex) => itemIndex === index ? { ...entry, [field]: value } : entry);
-    setDraftGlossary(next);
-    scheduleGlossarySave(next);
-  };
 
   const addTerm = () => {
     const next = [...draftGlossary, { source: "", target: "" }];

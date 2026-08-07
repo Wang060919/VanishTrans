@@ -70,7 +70,7 @@ export default function ScreenshotOverlay() {
   const fetchLatest = useCallback(() => {
     invoke<ScreenshotPayload>("get_screenshot_payload")
       .then((payload) => loadNewImage(payload))
-      .catch(() => {});
+      .catch(() => setStatus("截图加载失败，点击重试"));
   }, [loadNewImage]);
 
   useEffect(() => {
@@ -209,7 +209,15 @@ export default function ScreenshotOverlay() {
   }, []);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button !== 0 || !imgLoaded || ocrPendingRef.current) return;
+    if (e.button !== 0) return;
+    if (!imgLoaded) {
+      if (status) {
+        setStatus("");
+        fetchLatest();
+      }
+      return;
+    }
+    if (ocrPendingRef.current) return;
     if (status) {
       setStatus("");
       redraw(null);
@@ -222,7 +230,7 @@ export default function ScreenshotOverlay() {
     const r = smart ?? { startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY };
     rectRef.current = r;
     redraw(r, Boolean(smart));
-  }, [findSmartRegion, imgLoaded, redraw, status]);
+  }, [fetchLatest, findSmartRegion, imgLoaded, redraw, status]);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
     if (!drawingRef.current) {
@@ -305,7 +313,7 @@ export default function ScreenshotOverlay() {
       <img
         ref={imgRef}
         onLoad={handleImgLoad}
-        onError={() => setStatus("图片加载失败")}
+        onError={() => setStatus("截图加载失败，点击重试")}
         draggable={false}
         className="absolute inset-0 w-full h-full object-fill block"
       />

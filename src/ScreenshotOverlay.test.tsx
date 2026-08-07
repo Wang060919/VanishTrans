@@ -127,7 +127,7 @@ describe("ScreenshotOverlay", () => {
     await waitFor(() => expect(img.src).toContain("data:image/png;base64,AAA"));
     fireEvent.error(img);
 
-    expect(getByText("图片加载失败")).toBeInTheDocument();
+    expect(getByText("截图加载失败，点击重试")).toBeInTheDocument();
   });
 
   it("maps a high-DPI selection to full-resolution crop coordinates", async () => {
