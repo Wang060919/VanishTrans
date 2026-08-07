@@ -560,6 +560,7 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
         }
         if let Some(w) = app.get_webview_window("screenshot") {
             let _ = w.set_fullscreen(false);
+            let _ = w.set_shadow(false);
             let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                 x: payload.monitor_x,
                 y: payload.monitor_y,
@@ -583,6 +584,11 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
             .inner_size(1.0, 1.0)
             .always_on_top(true)
             .decorations(false)
+            // Undecorated windows with shadows gain hidden frame insets on
+            // Windows (tao computes an offset for the shadow border), which
+            // shifts the overlay content right/down by a few pixels. The
+            // screenshot overlay must cover the monitor pixel-exactly.
+            .shadow(false)
             .resizable(false)
             .visible(false)
             .skip_taskbar(true)
