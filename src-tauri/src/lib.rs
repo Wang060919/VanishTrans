@@ -3,6 +3,7 @@ mod commands;
 mod cursor;
 mod history;
 mod keyboard;
+mod logging;
 mod ocr;
 mod setup;
 mod tm;
@@ -127,71 +128,6 @@ pub(crate) fn clamp_ball_position_to_monitor(
     ))
 }
 
-#[cfg(test)]
-mod ball_position_tests {
-    use super::{
-        ball_position_is_visible, clamp_ball_position_to_monitor, default_ball_position_on_monitor,
-    };
-
-    #[test]
-    fn defaults_to_the_top_center_of_the_monitor() {
-        assert_eq!(default_ball_position_on_monitor(0, 0, 1920, 1.0), (902, 0));
-        assert_eq!(
-            default_ball_position_on_monitor(-2560, -200, 2560, 1.5),
-            (-1367, -200)
-        );
-    }
-
-    #[test]
-    fn migrates_the_previous_top_gutter_to_the_monitor_edge() {
-        assert_eq!(
-            clamp_ball_position_to_monitor(902, 8, 0, 0, 1920, 1080, 1.0),
-            Some((902, 0))
-        );
-        assert_eq!(
-            clamp_ball_position_to_monitor(-1367, -188, -2560, -200, 2560, 1440, 1.5),
-            Some((-1367, -200))
-        );
-    }
-
-    #[test]
-    fn keeps_an_already_visible_position() {
-        assert_eq!(
-            clamp_ball_position_to_monitor(100, 100, 0, 0, 1920, 1080, 1.0),
-            Some((100, 100))
-        );
-    }
-
-    #[test]
-    fn migrates_a_legacy_right_edge_position() {
-        let legacy_x = 1920 - 58;
-        assert!(!ball_position_is_visible(
-            legacy_x, 100, 0, 0, 1920, 1080, 1.0
-        ));
-        assert_eq!(
-            clamp_ball_position_to_monitor(legacy_x, 100, 0, 0, 1920, 1080, 1.0),
-            Some((1811, 100))
-        );
-    }
-
-    #[test]
-    fn migrates_a_scaled_legacy_right_edge_position() {
-        let legacy_x = 2560 - (58.0_f64 * 1.5).round() as i32;
-        assert_eq!(
-            clamp_ball_position_to_monitor(legacy_x, 150, 0, 0, 2560, 1440, 1.5),
-            Some((2397, 150))
-        );
-    }
-
-    #[test]
-    fn rejects_a_position_outside_the_monitor() {
-        assert_eq!(
-            clamp_ball_position_to_monitor(3000, 100, 0, 0, 1920, 1080, 1.0),
-            None
-        );
-    }
-}
-
 // -----------------------------------------------------------
 // Global state
 // -----------------------------------------------------------
@@ -208,6 +144,7 @@ pub struct AppState {
 
 pub struct ShortcutsMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
 pub struct WatchMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
+pub struct StartupWarnings(pub Mutex<Vec<String>>);
 
 // -----------------------------------------------------------
 // App entry
@@ -215,6 +152,7 @@ pub struct WatchMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    logging::init();
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
@@ -232,9 +170,18 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
+            if let Err(error) = logging::configure(&config_dir) {
+                log::error!("[logging] Failed to configure file logging: {error}");
+            }
             let api_config = ApiConfig::load_or_default(config_dir.clone());
+            let history_limit = api_config
+                .max_records
+                .load(std::sync::atomic::Ordering::Relaxed);
             app.manage(api_config);
-            app.manage(HistoryStore::load_or_default(config_dir.clone()));
+            app.manage(HistoryStore::load_or_default_with_max(
+                config_dir.clone(),
+                history_limit,
+            ));
 
             // Use the compositor-backed Windows 11 acrylic material. Setting Mica
             // first enables the immersive dark DWM palette; Acrylic then replaces
@@ -281,21 +228,32 @@ pub fn run() {
                 }
             }
 
-            // Initialize Translation Memory (SQLite)
-            match tm::TranslationMemory::open(&config_dir) {
-                Ok(tmem) => {
-                    app.manage(tmem);
+            // Keep translation usable if persistent TM storage is unavailable.
+            let mut startup_warnings = Vec::new();
+            let translation_memory = match tm::TranslationMemory::open(&config_dir) {
+                Ok(memory) => memory,
+                Err(error) => {
+                    log::error!("[tm] Failed to initialize persistent storage: {error}");
+                    startup_warnings.push(
+                        "翻译记忆数据库不可用，本次运行将使用临时内存，退出后不会保留。".to_string(),
+                    );
+                    tm::TranslationMemory::open_in_memory().map_err(|fallback_error| {
+                        std::io::Error::other(format!(
+                            "翻译记忆初始化失败: {error}; 临时模式也失败: {fallback_error}"
+                        ))
+                    })?
                 }
-                Err(e) => {
-                    log::error!("[tm] Failed to init: {}", e);
-                }
-            }
+            };
+            app.manage(translation_memory);
+            app.manage(StartupWarnings(Mutex::new(startup_warnings)));
 
             // Periodic history flush — every 5 seconds, write dirty records to disk
             let flush_handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_secs(5));
-                flush_handle.state::<HistoryStore>().flush();
+                if let Err(error) = flush_handle.state::<HistoryStore>().flush() {
+                    log::error!("[history] periodic flush failed: {error}");
+                }
             });
 
             setup::setup_tray(app)?;
@@ -430,6 +388,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::frontend_ready,
+            commands::get_startup_warnings,
             commands::quick_frontend_ready,
             commands::log_frontend_message,
             commands::read_clipboard_safe,
@@ -521,4 +480,69 @@ pub fn toggle_clipboard_watch(app: &tauri::AppHandle) {
         "📋 开启剪贴板监听"
     };
     let _ = app.state::<WatchMenuItem>().0.set_text(label);
+}
+
+#[cfg(test)]
+mod ball_position_tests {
+    use super::{
+        ball_position_is_visible, clamp_ball_position_to_monitor, default_ball_position_on_monitor,
+    };
+
+    #[test]
+    fn defaults_to_the_top_center_of_the_monitor() {
+        assert_eq!(default_ball_position_on_monitor(0, 0, 1920, 1.0), (902, 0));
+        assert_eq!(
+            default_ball_position_on_monitor(-2560, -200, 2560, 1.5),
+            (-1367, -200)
+        );
+    }
+
+    #[test]
+    fn migrates_the_previous_top_gutter_to_the_monitor_edge() {
+        assert_eq!(
+            clamp_ball_position_to_monitor(902, 8, 0, 0, 1920, 1080, 1.0),
+            Some((902, 0))
+        );
+        assert_eq!(
+            clamp_ball_position_to_monitor(-1367, -188, -2560, -200, 2560, 1440, 1.5),
+            Some((-1367, -200))
+        );
+    }
+
+    #[test]
+    fn keeps_an_already_visible_position() {
+        assert_eq!(
+            clamp_ball_position_to_monitor(100, 100, 0, 0, 1920, 1080, 1.0),
+            Some((100, 100))
+        );
+    }
+
+    #[test]
+    fn migrates_a_legacy_right_edge_position() {
+        let legacy_x = 1920 - 58;
+        assert!(!ball_position_is_visible(
+            legacy_x, 100, 0, 0, 1920, 1080, 1.0
+        ));
+        assert_eq!(
+            clamp_ball_position_to_monitor(legacy_x, 100, 0, 0, 1920, 1080, 1.0),
+            Some((1811, 100))
+        );
+    }
+
+    #[test]
+    fn migrates_a_scaled_legacy_right_edge_position() {
+        let legacy_x = 2560 - (58.0_f64 * 1.5).round() as i32;
+        assert_eq!(
+            clamp_ball_position_to_monitor(legacy_x, 150, 0, 0, 2560, 1440, 1.5),
+            Some((2397, 150))
+        );
+    }
+
+    #[test]
+    fn rejects_a_position_outside_the_monitor() {
+        assert_eq!(
+            clamp_ball_position_to_monitor(3000, 100, 0, 0, 1920, 1080, 1.0),
+            None
+        );
+    }
 }

@@ -4,6 +4,9 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+const MAX_IMPORT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_IMPORT_ROWS: usize = 100_000;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TmEntry {
     pub id: i64,
@@ -34,29 +37,101 @@ impl TranslationMemory {
     /// Open or create the TM database in the given config directory.
     pub fn open(config_dir: &Path) -> Result<Self, String> {
         let db_path = config_dir.join("tm.db");
-        let conn =
+        let mut conn =
             Connection::open(&db_path).map_err(|e| format!("打开翻译记忆数据库失败: {}", e))?;
 
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;
-             CREATE TABLE IF NOT EXISTS translation_memory (
+             PRAGMA synchronous=NORMAL;",
+        )
+        .map_err(|e| format!("初始化翻译记忆数据库失败: {}", e))?;
+        Self::initialize_schema(&mut conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Keep translation usable when the persistent database cannot be opened.
+    /// Callers should surface a warning because entries will be lost on exit.
+    pub fn open_in_memory() -> Result<Self, String> {
+        let mut conn = Connection::open_in_memory()
+            .map_err(|error| format!("创建临时翻译记忆失败: {error}"))?;
+        conn.execute_batch("PRAGMA synchronous=NORMAL;")
+            .map_err(|error| format!("初始化临时翻译记忆失败: {error}"))?;
+        Self::initialize_schema(&mut conn)?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    fn initialize_schema(conn: &mut Connection) -> Result<(), String> {
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'translation_memory')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("检查翻译记忆表失败: {error}"))?;
+
+        if !table_exists {
+            conn.execute_batch(
+                "CREATE TABLE translation_memory (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  source TEXT NOT NULL,
                  target TEXT NOT NULL,
                  source_lang TEXT NOT NULL DEFAULT '',
                  target_lang TEXT NOT NULL DEFAULT '',
+                 context_hash TEXT NOT NULL DEFAULT '',
                  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
                  hit_count INTEGER NOT NULL DEFAULT 0,
-                 UNIQUE(source, source_lang, target_lang)
+                 UNIQUE(source, source_lang, target_lang, context_hash)
              );
-             CREATE INDEX IF NOT EXISTS idx_tm_source ON translation_memory(source);",
-        )
-        .map_err(|e| format!("初始化翻译记忆表失败: {}", e))?;
+                 CREATE INDEX idx_tm_source ON translation_memory(source);",
+            )
+            .map_err(|error| format!("初始化翻译记忆表失败: {error}"))?;
+            return Ok(());
+        }
 
-        Ok(Self {
-            conn: Mutex::new(conn),
-        })
+        let has_context_hash: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('translation_memory') WHERE name = 'context_hash')",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("检查翻译记忆版本失败: {error}"))?;
+        if has_context_hash {
+            return Ok(());
+        }
+
+        let transaction = conn
+            .transaction()
+            .map_err(|error| format!("开始翻译记忆迁移失败: {error}"))?;
+        transaction
+            .execute_batch(
+                "CREATE TABLE translation_memory_v2 (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     source TEXT NOT NULL,
+                     target TEXT NOT NULL,
+                     source_lang TEXT NOT NULL DEFAULT '',
+                     target_lang TEXT NOT NULL DEFAULT '',
+                     context_hash TEXT NOT NULL DEFAULT '',
+                     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+                     hit_count INTEGER NOT NULL DEFAULT 0,
+                     UNIQUE(source, source_lang, target_lang, context_hash)
+                 );
+                 INSERT INTO translation_memory_v2
+                     (id, source, target, source_lang, target_lang, context_hash, created_at, hit_count)
+                 SELECT id, source, target, source_lang, target_lang, '', created_at, hit_count
+                 FROM translation_memory;
+                 DROP TABLE translation_memory;
+                 ALTER TABLE translation_memory_v2 RENAME TO translation_memory;
+                 CREATE INDEX idx_tm_source ON translation_memory(source);",
+            )
+            .map_err(|error| format!("迁移翻译记忆表失败: {error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| format!("提交翻译记忆迁移失败: {error}"))
     }
 
     /// Internal store method — caller must already hold the lock.
@@ -66,28 +141,42 @@ impl TranslationMemory {
         target: &str,
         source_lang: &str,
         target_lang: &str,
+        context_hash: &str,
     ) -> rusqlite::Result<usize> {
         conn.execute(
-            "INSERT INTO translation_memory (source, target, source_lang, target_lang)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(source, source_lang, target_lang)
+            "INSERT INTO translation_memory (source, target, source_lang, target_lang, context_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(source, source_lang, target_lang, context_hash)
              DO UPDATE SET target = excluded.target",
-            params![source, target, source_lang, target_lang],
+            params![source, target, source_lang, target_lang, context_hash],
         )
     }
 
     /// Look up an exact match in the TM. Returns the translation if found.
+    #[cfg(test)]
     pub fn lookup(&self, source: &str, source_lang: &str, target_lang: &str) -> Option<String> {
+        self.lookup_in_context(source, source_lang, target_lang, "")
+    }
+
+    pub fn lookup_in_context(
+        &self,
+        source: &str,
+        source_lang: &str,
+        target_lang: &str,
+        context_hash: &str,
+    ) -> Option<String> {
         let conn = lock_or_recover(&self.conn);
         let mut stmt = conn
             .prepare(
                 "SELECT id, target FROM translation_memory
-                 WHERE source = ?1 AND source_lang = ?2 AND target_lang = ?3
+                 WHERE source = ?1 AND source_lang = ?2 AND target_lang = ?3 AND context_hash = ?4
                  LIMIT 1",
             )
             .ok()?;
 
-        let mut rows = stmt.query(params![source, source_lang, target_lang]).ok()?;
+        let mut rows = stmt
+            .query(params![source, source_lang, target_lang, context_hash])
+            .ok()?;
         if let Some(row) = rows.next().ok()? {
             let id: i64 = row.get(0).ok()?;
             let target: String = row.get(1).ok()?;
@@ -102,9 +191,28 @@ impl TranslationMemory {
     }
 
     /// Store a translation in the TM (UPSERT).
+    #[cfg(test)]
     pub fn store(&self, source: &str, target: &str, source_lang: &str, target_lang: &str) {
+        self.store_in_context(source, target, source_lang, target_lang, "");
+    }
+
+    pub fn store_in_context(
+        &self,
+        source: &str,
+        target: &str,
+        source_lang: &str,
+        target_lang: &str,
+        context_hash: &str,
+    ) {
         let conn = lock_or_recover(&self.conn);
-        if let Err(e) = Self::store_inner(&conn, source, target, source_lang, target_lang) {
+        if let Err(e) = Self::store_inner(
+            &conn,
+            source,
+            target,
+            source_lang,
+            target_lang,
+            context_hash,
+        ) {
             log::error!("[tm] Failed to store translation: {}", e);
         }
     }
@@ -197,10 +305,10 @@ impl TranslationMemory {
             .map_err(|e| format!("写入 CSV 表头失败: {}", e))?;
         for entry in &entries {
             wtr.serialize((
-                &entry.source,
-                &entry.target,
-                &entry.source_lang,
-                &entry.target_lang,
+                escape_spreadsheet_formula(&entry.source),
+                escape_spreadsheet_formula(&entry.target),
+                escape_spreadsheet_formula(&entry.source_lang),
+                escape_spreadsheet_formula(&entry.target_lang),
             ))
             .map_err(|e| format!("序列化 CSV 失败: {}", e))?;
         }
@@ -239,27 +347,68 @@ impl TranslationMemory {
 
     /// Import TM from CSV (source, target, source_lang, target_lang).
     /// Acquires lock once and inserts directly — avoids R1 deadlock.
+    #[cfg(test)]
     pub fn import_csv(&self, path: &Path) -> Result<usize, String> {
+        self.import_csv_for_context(path, "")
+    }
+
+    pub fn import_csv_for_context(&self, path: &Path, context_hash: &str) -> Result<usize, String> {
+        let size = std::fs::metadata(path)
+            .map_err(|e| format!("读取 CSV 文件信息失败: {}", e))?
+            .len() as usize;
+        if size > MAX_IMPORT_BYTES {
+            return Err(format!(
+                "CSV 文件过大（{} MB），最大支持 {} MB",
+                size / 1024 / 1024,
+                MAX_IMPORT_BYTES / 1024 / 1024
+            ));
+        }
         let file = std::fs::File::open(path).map_err(|e| format!("读取 CSV 文件失败: {}", e))?;
-        self.import_csv_reader(file)
+        self.import_csv_reader(file, context_hash)
     }
 
+    #[cfg(test)]
     pub fn import_csv_content(&self, content: &str) -> Result<usize, String> {
-        self.import_csv_reader(content.as_bytes())
+        self.import_csv_content_for_context(content, "")
     }
 
-    fn import_csv_reader<R: std::io::Read>(&self, reader: R) -> Result<usize, String> {
+    pub fn import_csv_content_for_context(
+        &self,
+        content: &str,
+        context_hash: &str,
+    ) -> Result<usize, String> {
+        if content.len() > MAX_IMPORT_BYTES {
+            return Err(format!(
+                "CSV 内容过大（{} MB），最大支持 {} MB",
+                content.len() / 1024 / 1024,
+                MAX_IMPORT_BYTES / 1024 / 1024
+            ));
+        }
+        self.import_csv_reader(content.as_bytes(), context_hash)
+    }
+
+    fn import_csv_reader<R: std::io::Read>(
+        &self,
+        reader: R,
+        context_hash: &str,
+    ) -> Result<usize, String> {
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader(reader);
 
-        let conn = lock_or_recover(&self.conn);
+        let mut conn = lock_or_recover(&self.conn);
+        let transaction = conn
+            .transaction()
+            .map_err(|error| format!("开始导入翻译记忆失败: {error}"))?;
         let mut count = 0;
         for (index, result) in rdr.records().enumerate() {
+            if index >= MAX_IMPORT_ROWS {
+                return Err(format!("CSV 行数过多，最多支持 {MAX_IMPORT_ROWS} 行"));
+            }
             let record = result.map_err(|e| format!("解析 CSV 行失败: {}", e))?;
             if record.len() >= 2 {
-                let source = record[0].trim_start_matches('\u{FEFF}').to_string();
-                let target = record[1].to_string();
+                let source = unescape_spreadsheet_formula(record[0].trim_start_matches('\u{FEFF}'));
+                let target = unescape_spreadsheet_formula(&record[1]);
                 if index == 0
                     && source.eq_ignore_ascii_case("source")
                     && target.eq_ignore_ascii_case("target")
@@ -269,14 +418,51 @@ impl TranslationMemory {
                 if source.is_empty() {
                     continue;
                 }
-                let source_lang = record.get(2).unwrap_or("").to_string();
-                let target_lang = record.get(3).unwrap_or("").to_string();
-                Self::store_inner(&conn, &source, &target, &source_lang, &target_lang)
-                    .map_err(|e| format!("导入翻译记忆失败: {}", e))?;
+                let source_lang = unescape_spreadsheet_formula(record.get(2).unwrap_or(""));
+                let target_lang = unescape_spreadsheet_formula(record.get(3).unwrap_or(""));
+                Self::store_inner(
+                    &transaction,
+                    &source,
+                    &target,
+                    &source_lang,
+                    &target_lang,
+                    context_hash,
+                )
+                .map_err(|e| format!("导入翻译记忆失败: {}", e))?;
                 count += 1;
             }
         }
+        transaction
+            .commit()
+            .map_err(|error| format!("提交翻译记忆导入失败: {error}"))?;
         Ok(count)
+    }
+}
+
+fn escape_spreadsheet_formula(value: &str) -> String {
+    if value
+        .chars()
+        .next()
+        .is_some_and(|character| matches!(character, '=' | '+' | '-' | '@' | '\t' | '\r'))
+    {
+        format!("'{value}")
+    } else {
+        value.to_string()
+    }
+}
+
+fn unescape_spreadsheet_formula(value: &str) -> String {
+    let Some(rest) = value.strip_prefix('\'') else {
+        return value.to_string();
+    };
+    if rest
+        .chars()
+        .next()
+        .is_some_and(|character| matches!(character, '=' | '+' | '-' | '@' | '\t' | '\r'))
+    {
+        rest.to_string()
+    } else {
+        value.to_string()
     }
 }
 
@@ -332,6 +518,89 @@ mod tests {
             tm.lookup("world", "auto", "Chinese").as_deref(),
             Some("世界")
         );
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cache_entries_are_scoped_to_the_translation_context() {
+        let (tm, dir) = temp_tm();
+        tm.store_in_context("hello", "你好", "auto", "Chinese", "provider-a");
+
+        assert_eq!(
+            tm.lookup_in_context("hello", "auto", "Chinese", "provider-a")
+                .as_deref(),
+            Some("你好")
+        );
+        assert_eq!(
+            tm.lookup_in_context("hello", "auto", "Chinese", "provider-b"),
+            None
+        );
+
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn csv_export_neutralizes_formulas_and_import_restores_text() {
+        let (tm, dir) = temp_tm();
+        tm.store("=cmd|' /C calc'!A0", "+translated", "auto", "Chinese");
+        let path = dir.join("safe-export.csv");
+        tm.export_csv(&path).unwrap();
+
+        let exported = std::fs::read_to_string(&path).unwrap();
+        assert!(exported.contains("'=cmd"));
+        assert!(exported.contains("'+translated"));
+
+        tm.clear();
+        tm.import_csv(&path).unwrap();
+        assert_eq!(
+            tm.lookup("=cmd|' /C calc'!A0", "auto", "Chinese")
+                .as_deref(),
+            Some("+translated")
+        );
+
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn opening_an_legacy_database_migrates_it_without_losing_entries() {
+        let (_, dir) = temp_tm();
+        let db_path = dir.join("tm.db");
+        let _ = std::fs::remove_file(&db_path);
+        let connection = Connection::open(&db_path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE translation_memory (
+                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                     source TEXT NOT NULL,
+                     target TEXT NOT NULL,
+                     source_lang TEXT NOT NULL DEFAULT '',
+                     target_lang TEXT NOT NULL DEFAULT '',
+                     created_at INTEGER NOT NULL DEFAULT 0,
+                     hit_count INTEGER NOT NULL DEFAULT 0,
+                     UNIQUE(source, source_lang, target_lang)
+                 );
+                 INSERT INTO translation_memory
+                     (source, target, source_lang, target_lang)
+                 VALUES ('legacy', '旧数据', 'auto', 'Chinese');",
+            )
+            .unwrap();
+        drop(connection);
+
+        let tm = TranslationMemory::open(&dir).unwrap();
+        assert_eq!(
+            tm.lookup("legacy", "auto", "Chinese").as_deref(),
+            Some("旧数据")
+        );
+        tm.store_in_context("legacy", "新数据", "auto", "Chinese", "new-context");
+        assert_eq!(
+            tm.lookup_in_context("legacy", "auto", "Chinese", "new-context")
+                .as_deref(),
+            Some("新数据")
+        );
+
         drop(tm);
         let _ = std::fs::remove_dir_all(dir);
     }

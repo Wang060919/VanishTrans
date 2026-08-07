@@ -1,3 +1,4 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -361,6 +362,27 @@ impl ApiConfig {
     pub fn is_current_request(&self, seq: u64) -> bool {
         self.request_seq.load(Ordering::SeqCst) == seq
     }
+
+    /// Fingerprint every setting that can change a translation result.
+    /// TM entries are scoped to this value so changing provider, model, or
+    /// glossary cannot silently return a result produced by stale settings.
+    pub fn translation_context_hash(&self) -> String {
+        let mut hasher = DefaultHasher::new();
+        "vanish-trans-context-v1".hash(&mut hasher);
+        self.base_url
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .hash(&mut hasher);
+        self.model
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .hash(&mut hasher);
+        self.glossary
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .hash(&mut hasher);
+        format!("{:016x}", hasher.finish())
+    }
 }
 
 // -----------------------------------------------------------
@@ -418,10 +440,7 @@ struct TranslationPrompt {
 
 /// Validates input and extracts configuration from ApiConfig.
 /// Returns ValidatedConfig with the chat completions URL.
-fn validate_and_get_config(
-    state: &ApiConfig,
-    text: &str,
-) -> Result<ValidatedConfig, String> {
+fn validate_and_get_config(state: &ApiConfig, text: &str) -> Result<ValidatedConfig, String> {
     // 1. Validate input length
     if text.chars().count() > MAX_INPUT_CHARS {
         return Err(format!(
@@ -494,11 +513,7 @@ fn build_translation_prompt(
 }
 
 /// Builds a ChatRequest with the given parameters.
-fn build_chat_request(
-    model: String,
-    prompt: TranslationPrompt,
-    stream: bool,
-) -> ChatRequest {
+fn build_chat_request(model: String, prompt: TranslationPrompt, stream: bool) -> ChatRequest {
     ChatRequest {
         model,
         messages: vec![
@@ -702,7 +717,12 @@ pub async fn do_translate_stream_async(
 
         let next_chunk = tokio::time::timeout(Duration::from_secs(TIMEOUT_SECS), stream.next())
             .await
-            .map_err(|_| format!("流式响应空闲超时（{}秒），请检查网络或 API 服务状态", TIMEOUT_SECS))?;
+            .map_err(|_| {
+                format!(
+                    "流式响应空闲超时（{}秒），请检查网络或 API 服务状态",
+                    TIMEOUT_SECS
+                )
+            })?;
         let Some(chunk_result) = next_chunk else {
             break;
         };

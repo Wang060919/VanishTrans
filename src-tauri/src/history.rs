@@ -4,9 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-/// Default maximum number of history records to keep.
-const DEFAULT_MAX_RECORDS: usize = 200;
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TranslationRecord {
     pub id: u64,
@@ -27,10 +24,6 @@ pub struct HistoryStore {
 }
 
 impl HistoryStore {
-    pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
-        Self::load_or_default_with_max(config_dir, DEFAULT_MAX_RECORDS)
-    }
-
     pub fn load_or_default_with_max(config_dir: std::path::PathBuf, max_records: usize) -> Self {
         let path = config_dir.join("history.json");
         let records: Vec<TranslationRecord> = std::fs::read_to_string(&path)
@@ -86,12 +79,14 @@ impl HistoryStore {
     }
 
     /// Flush pending changes to disk. Called periodically and on app shutdown.
-    pub fn flush(&self) {
-        if !self.dirty.swap(false, Ordering::Relaxed) {
-            return;
+    pub fn flush(&self) -> Result<(), String> {
+        if !self.dirty.load(Ordering::Relaxed) {
+            return Ok(());
         }
         let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
-        self.save_locked(&records);
+        self.save_locked(&records)?;
+        self.dirty.store(false, Ordering::Relaxed);
+        Ok(())
     }
 
     pub fn get_all(&self) -> Vec<TranslationRecord> {
@@ -113,39 +108,58 @@ impl HistoryStore {
             .collect()
     }
 
-    pub fn delete(&self, id: u64) {
+    pub fn delete(&self, id: u64) -> Result<(), String> {
         let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = records.clone();
         records.retain(|r| r.id != id);
-        self.save_locked(&records);
+        if let Err(error) = self.save_locked(&records) {
+            *records = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 
-    pub fn clear(&self) {
+    pub fn clear(&self) -> Result<(), String> {
         let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = records.clone();
         records.clear();
-        self.save_locked(&records);
+        if let Err(error) = self.save_locked(&records) {
+            *records = previous;
+            return Err(error);
+        }
+        Ok(())
     }
 
-    fn save_locked(&self, records: &[TranslationRecord]) {
+    fn save_locked(&self, records: &[TranslationRecord]) -> Result<(), String> {
         if let Some(p) = self.path.parent() {
-            let _ = std::fs::create_dir_all(p);
+            std::fs::create_dir_all(p).map_err(|error| format!("创建历史目录失败: {error}"))?;
         }
         let tmp = self.path.with_extension("json.tmp");
-        if let Ok(j) = serde_json::to_string_pretty(records) {
-            if std::fs::write(&tmp, j).is_ok() && std::fs::rename(&tmp, &self.path).is_err() {
-                let _ = std::fs::remove_file(&tmp);
-            }
+        let json = serde_json::to_string_pretty(records)
+            .map_err(|error| format!("序列化历史记录失败: {error}"))?;
+        std::fs::write(&tmp, json).map_err(|error| format!("写入历史临时文件失败: {error}"))?;
+        if let Err(error) = std::fs::rename(&tmp, &self.path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("替换历史记录失败: {error}"));
         }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicU64;
 
     fn temp_store() -> (HistoryStore, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("vt_test_{}", std::process::id()));
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "vt_test_{}_{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = std::fs::create_dir_all(&dir);
-        let store = HistoryStore::load_or_default(dir.clone());
+        let store = HistoryStore::load_or_default_with_max(dir.clone(), 200);
         (store, dir)
     }
 
@@ -202,7 +216,7 @@ mod tests {
         store.add("b", "乙", "en2zh");
         let all = store.get_all();
         let id_to_delete = all[1].id;
-        store.delete(id_to_delete);
+        store.delete(id_to_delete).unwrap();
         let remaining = store.get_all();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].original, "b");
@@ -214,7 +228,7 @@ mod tests {
         let (store, dir) = temp_store();
         store.add("a", "甲", "en2zh");
         store.add("b", "乙", "en2zh");
-        store.clear();
+        store.clear().unwrap();
         let all = store.get_all();
         assert!(all.is_empty());
         cleanup(&dir);
@@ -255,15 +269,41 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let store = HistoryStore::load_or_default(dir.clone());
+        let store = HistoryStore::load_or_default_with_max(dir.clone(), 200);
         store.add("recent", "最近", "en2zh");
-        store.flush();
+        store.flush().unwrap();
         drop(store);
 
-        let reloaded = HistoryStore::load_or_default(dir.clone());
+        let reloaded = HistoryStore::load_or_default_with_max(dir.clone(), 200);
         assert_eq!(reloaded.get_all().len(), 1);
         assert_eq!(reloaded.get_all()[0].translated, "最近");
         drop(reloaded);
         cleanup(&dir);
+    }
+
+    #[test]
+    fn failed_flush_stays_dirty_and_can_be_retried() {
+        let base = std::env::temp_dir().join(format!(
+            "vt_history_retry_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&base, b"not a directory").unwrap();
+        let store = HistoryStore::load_or_default_with_max(base.clone(), 200);
+        store.add("retry", "重试", "en2zh");
+
+        assert!(store.flush().is_err());
+        assert!(store.dirty.load(Ordering::Relaxed));
+
+        std::fs::remove_file(&base).unwrap();
+        std::fs::create_dir_all(&base).unwrap();
+        store.flush().unwrap();
+        assert!(!store.dirty.load(Ordering::Relaxed));
+
+        drop(store);
+        cleanup(&base);
     }
 }

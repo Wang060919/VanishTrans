@@ -58,7 +58,9 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "toggle_shortcuts" => toggle_shortcuts(app),
             "toggle_watch" => toggle_clipboard_watch(app),
             "quit" => {
-                app.state::<crate::history::HistoryStore>().flush();
+                if let Err(error) = app.state::<crate::history::HistoryStore>().flush() {
+                    log::error!("[history] shutdown flush failed: {error}");
+                }
                 app.exit(0);
             }
             _ => {}

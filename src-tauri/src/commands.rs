@@ -37,6 +37,15 @@ pub fn frontend_ready() {
 }
 
 #[tauri::command]
+pub fn get_startup_warnings(warnings: tauri::State<'_, crate::StartupWarnings>) -> Vec<String> {
+    warnings
+        .0
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .clone()
+}
+
+#[tauri::command]
 pub fn quick_frontend_ready() {
     QUICK_FRONTEND_READY.store(true, std::sync::atomic::Ordering::SeqCst);
 }
@@ -268,9 +277,10 @@ pub async fn translate_with_direction(
 ) -> Result<String, String> {
     let target = crate::translate::resolve_target_lang(&text, &direction);
     let seq = state.next_request_seq();
+    let context_hash = state.translation_context_hash();
 
     // Check Translation Memory first
-    if let Some(cached) = tm.lookup(&text, "auto", target) {
+    if let Some(cached) = tm.lookup_in_context(&text, "auto", target, &context_hash) {
         if !state.is_current_request(seq) {
             return Err("CANCELLED".into());
         }
@@ -283,7 +293,7 @@ pub async fn translate_with_direction(
         return Err("CANCELLED".into());
     }
     // Store in TM and history
-    tm.store(&text, &result, "auto", target);
+    tm.store_in_context(&text, &result, "auto", target, &context_hash);
     history.add(&text, &result, &direction);
     Ok(result)
 }
@@ -300,9 +310,10 @@ pub async fn translate_stream(
 ) -> Result<String, String> {
     let target = crate::translate::resolve_target_lang(&text, &direction);
     let seq = state.next_request_seq();
+    let context_hash = state.translation_context_hash();
 
     // Check Translation Memory first
-    if let Some(cached) = tm.lookup(&text, "auto", target) {
+    if let Some(cached) = tm.lookup_in_context(&text, "auto", target, &context_hash) {
         if !state.is_current_request(seq) {
             return Err("CANCELLED".into());
         }
@@ -358,7 +369,7 @@ pub async fn translate_stream(
         },
     );
     // Store in TM and history
-    tm.store(&text, &result, "auto", target);
+    tm.store_in_context(&text, &result, "auto", target, &context_hash);
     history.add(&text, &result, &direction);
     Ok(result)
 }
@@ -631,14 +642,12 @@ pub fn delete_history_record(
     history: tauri::State<'_, HistoryStore>,
     id: u64,
 ) -> Result<(), String> {
-    history.delete(id);
-    Ok(())
+    history.delete(id)
 }
 
 #[tauri::command]
 pub fn clear_history(history: tauri::State<'_, HistoryStore>) -> Result<(), String> {
-    history.clear();
-    Ok(())
+    history.clear()
 }
 
 pub(crate) fn dismiss_screenshot(app: &tauri::AppHandle) {
@@ -713,17 +722,22 @@ pub fn tm_export(
 #[tauri::command]
 pub fn tm_import(
     tm: tauri::State<'_, crate::tm::TranslationMemory>,
+    config: tauri::State<'_, ApiConfig>,
     path: String,
 ) -> Result<usize, String> {
-    tm.import_csv(std::path::Path::new(&path))
+    tm.import_csv_for_context(
+        std::path::Path::new(&path),
+        &config.translation_context_hash(),
+    )
 }
 
 #[tauri::command]
 pub fn tm_import_content(
     tm: tauri::State<'_, crate::tm::TranslationMemory>,
+    config: tauri::State<'_, ApiConfig>,
     content: String,
 ) -> Result<usize, String> {
-    tm.import_csv_content(&content)
+    tm.import_csv_content_for_context(&content, &config.translation_context_hash())
 }
 
 // -----------------------------------------------------------
