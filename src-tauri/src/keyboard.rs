@@ -245,9 +245,67 @@ fn foreground_window_class() -> Option<String> {
     }
 }
 
+/// Best-effort executable name of the foreground window's process.
+#[cfg(target_os = "windows")]
+fn foreground_process_name() -> Option<String> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.0.is_null() {
+            return None;
+        }
+        let mut process_id = 0u32;
+        let _ = GetWindowThreadProcessId(window, Some(&mut process_id));
+        if process_id == 0 {
+            return None;
+        }
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process_id).ok()?;
+        let mut buffer = [0u16; 512];
+        let mut size = buffer.len() as u32;
+        let result = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buffer.as_mut_ptr()),
+            &mut size,
+        );
+        let _ = CloseHandle(process);
+        result.ok()?;
+        let path = String::from_utf16_lossy(&buffer[..size as usize]);
+        std::path::Path::new(&path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    }
+}
+
 fn is_terminal_window_class(class_name: &str) -> bool {
-    class_name.eq_ignore_ascii_case("CASCADIA_HOSTING_WINDOW_CLASS")
-        || class_name.eq_ignore_ascii_case("ConsoleWindowClass")
+    matches!(
+        class_name.to_ascii_lowercase().as_str(),
+        "cascadia_hosting_window_class" // Windows Terminal
+            | "consolewindowclass" // conhost (cmd / PowerShell)
+            | "mintty" // Git Bash
+            | "virtualconsoleclass" // ConEmu / Cmder
+            | "alacritty" // Alacritty
+            | "org.wezfurlong.wezterm" // WezTerm
+            | "hyper" // Hyper
+    )
+}
+
+fn is_terminal_process_name(process_name: &str) -> bool {
+    matches!(
+        process_name.to_ascii_lowercase().as_str(),
+        "windowsterminal.exe" // Windows Terminal
+            | "mintty.exe" // Git Bash
+            | "conemu64.exe" // ConEmu / Cmder
+            | "alacritty.exe" // Alacritty
+            | "wezterm-gui.exe" // WezTerm
+            | "hyper.exe" // Hyper
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -282,7 +340,11 @@ fn try_send_input_copy(app: &tauri::AppHandle) -> (&'static str, Option<String>)
     let terminal_copy = foreground_window_class()
         .as_deref()
         .map(is_terminal_window_class)
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || foreground_process_name()
+            .as_deref()
+            .map(is_terminal_process_name)
+            .unwrap_or(false);
     let method = if terminal_copy {
         "SendInput Ctrl+Shift+C"
     } else {
@@ -363,6 +425,21 @@ mod tests {
     fn recognizes_native_windows_terminal_classes() {
         assert!(is_terminal_window_class("CASCADIA_HOSTING_WINDOW_CLASS"));
         assert!(is_terminal_window_class("ConsoleWindowClass"));
+        assert!(is_terminal_window_class("mintty"));
+        assert!(is_terminal_window_class("VirtualConsoleClass"));
+        assert!(is_terminal_window_class("Alacritty"));
+        assert!(is_terminal_window_class("org.wezfurlong.wezterm"));
         assert!(!is_terminal_window_class("Chrome_WidgetWin_1"));
+    }
+
+    #[test]
+    fn recognizes_common_terminal_process_names() {
+        assert!(is_terminal_process_name("mintty.exe"));
+        assert!(is_terminal_process_name("ConEmu64.exe"));
+        assert!(is_terminal_process_name("alacritty.exe"));
+        assert!(is_terminal_process_name("wezterm-gui.exe"));
+        assert!(is_terminal_process_name("WindowsTerminal.exe"));
+        assert!(!is_terminal_process_name("chrome.exe"));
+        assert!(!is_terminal_process_name("explorer.exe"));
     }
 }
