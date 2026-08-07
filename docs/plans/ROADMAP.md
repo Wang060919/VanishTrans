@@ -54,9 +54,9 @@ VanishTrans 当前属于“功能较完整、可构建的 beta”。核心翻译
 
 | 项目 | 状态 | 说明 |
 |---|---|---|
-| 拆分大文件 | ⏳ 待办 | `BallWindow.tsx`（~880 行）、`commands.rs`（~950 行）、`index.css`（~1900 行） |
-| 结构化错误 | ⏳ 待办 | 前端统一错误类型与展示；后端命令返回结构化错误码 |
-| 按工作流取消 | ⏳ 待办 | 翻译/OCR/替换各工作流独立取消，避免互相影响 |
+| 拆分大文件 | ✅ 完成 | `commands.rs`（~950 行）→ `commands/` 8 个领域模块；`BallWindow.tsx`（~880 行）→ `useBallWindow.ts` hook + 渲染壳（~50 行）；`index.css`（~1900 行）→ `styles/` 5 个文件 |
+| 结构化错误 | ✅ 完成 | 后端 `CommandError { code, message }`，全部命令返回结构化错误；前端 `errorMessage/errorCode` 统一解析，兼容字符串/对象/Error |
+| 按工作流取消 | ✅ 完成 | 主窗口翻译与 Alt+R 替换使用独立 `request_seq`，互不取消；OCR 已有 session 隔离 |
 | 原子持久化 | 🟡 部分 | 历史已原子写入（tmp+rename）；配置/TM 同步复核 |
 | 带配置版本的 TM | ✅ 完成 | `context_hash` 覆盖 base_url/model/glossary，改配置即隔离旧缓存 |
 
@@ -64,10 +64,10 @@ VanishTrans 当前属于“功能较完整、可构建的 beta”。核心翻译
 
 目标：围绕可用性与隐私控制做增量，不做大重构。
 
-- 服务配置档案（多套 Base URL/Model 快速切换）
-- 连接测试按钮
-- 强制刷新缓存（绕过 TM）
-- 历史/隐私控制（清除历史、禁用日志记录）
+- 服务配置档案（多套 Base URL/Model 快速切换）— ✅ 完成：`save/apply/delete_service_profile` + 设置页档案管理
+- 连接测试按钮 — ✅ 完成：`test_connection` 命令 + 设置页"测试连接"
+- 强制刷新缓存（绕过 TM）— ✅ 完成：`forceRefresh` 参数 + 翻译面板"忽略缓存"开关
+- 历史/隐私控制（清除历史、禁用日志记录）— ✅ 完成：日志开关（`set/get_logging_enabled`）+ 设置页隐私标签
 - 暂缓：多引擎对比、滚动截图 OCR
 
 ## 完成标准（稳定公开版）
