@@ -5,6 +5,28 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// Opaque identifier for the top-level window that owned focus when a
+/// selection-replacement workflow started.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ForegroundWindowToken(isize);
+
+#[cfg(target_os = "windows")]
+pub fn foreground_window_token() -> Option<ForegroundWindowToken> {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    let window = unsafe { GetForegroundWindow() };
+    (!window.0.is_null()).then_some(ForegroundWindowToken(window.0 as isize))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn foreground_window_token() -> Option<ForegroundWindowToken> {
+    None
+}
+
+pub fn foreground_window_is_current(expected: ForegroundWindowToken) -> bool {
+    foreground_window_token() == Some(expected)
+}
+
 #[cfg(target_os = "windows")]
 mod vk {
     pub use windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY;
@@ -299,7 +321,7 @@ pub fn copy_selection(app: &tauri::AppHandle) -> Option<String> {
     } else {
         try_send_input_copy(app)
     };
-    restore_clipboard(app, backup);
+    let _ = restore_clipboard(app, backup);
 
     if let Some(text) = text.as_ref() {
         log::info!("[keyboard] {} captured {} chars", method, text.len());
@@ -315,13 +337,14 @@ pub fn copy_selection(_app: &tauri::AppHandle) -> Option<String> {
 
 /// Paste clipboard content via simulated Ctrl+V.
 #[cfg(target_os = "windows")]
-pub fn simulate_paste() {
-    send_key_combo(vk::PASTE, false);
+pub fn simulate_paste() -> bool {
+    send_key_combo(vk::PASTE, false)
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn simulate_paste() {
+pub fn simulate_paste() -> bool {
     log::warn!("simulate_paste only available on Windows");
+    false
 }
 
 #[cfg(all(test, target_os = "windows"))]

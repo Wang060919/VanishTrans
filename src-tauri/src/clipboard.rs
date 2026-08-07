@@ -125,14 +125,17 @@ fn clipboard_is_empty() -> bool {
 /// Restore a previously backed-up clipboard content.
 /// An originally empty clipboard is restored to empty instead of leaving the
 /// temporary selection text behind.
-pub fn restore_clipboard(app: &tauri::AppHandle, mut backup: ClipboardBackup) {
+pub fn restore_clipboard(app: &tauri::AppHandle, mut backup: ClipboardBackup) -> bool {
+    let restored_text = backup.text.clone();
+
     #[cfg(target_os = "windows")]
     if restore_native_clipboard(app, std::mem::take(&mut backup.formats)) {
-        return;
+        mark_restored_clipboard(app, restored_text.as_deref());
+        return true;
     }
 
     if backup.text.is_none() && !backup.was_empty {
-        return;
+        return false;
     }
     for attempt in 0..5 {
         let result = match backup.text.as_ref() {
@@ -140,13 +143,26 @@ pub fn restore_clipboard(app: &tauri::AppHandle, mut backup: ClipboardBackup) {
             None => app.clipboard().clear(),
         };
         if result.is_ok() {
-            return;
+            mark_restored_clipboard(app, restored_text.as_deref());
+            return true;
         }
         if attempt < 4 {
             thread::sleep(Duration::from_millis(10));
         }
     }
     log::warn!("[clipboard] Failed to restore clipboard after selection capture");
+    false
+}
+
+fn mark_restored_clipboard(app: &tauri::AppHandle, restored_text: Option<&str>) {
+    let Some(guard) = app.try_state::<ClipboardGuard>() else {
+        return;
+    };
+    if let Some(text) = restored_text {
+        guard.mark_written(text);
+    } else {
+        guard.clear_dirty();
+    }
 }
 
 #[cfg(target_os = "windows")]

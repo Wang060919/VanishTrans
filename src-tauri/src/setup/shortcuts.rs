@@ -3,11 +3,12 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
+use serde::Serialize;
 use tauri::{Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-use crate::clipboard::ClipboardGuard;
+use crate::clipboard::{backup_clipboard, restore_clipboard, ClipboardGuard};
 use crate::keyboard;
 use crate::translate::{self, ApiConfig};
 use crate::AppState;
@@ -18,12 +19,82 @@ static REGISTERED_SHORTCUTS: std::sync::OnceLock<Mutex<Vec<(Shortcut, String)>>>
     std::sync::OnceLock::new();
 static ALT_Q_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShortcutRegistrationConflict {
+    action: String,
+    shortcut: String,
+    error: String,
+}
+
 struct AltQActiveGuard;
 
 impl Drop for AltQActiveGuard {
     fn drop(&mut self) {
         ALT_Q_ACTIVE.store(false, Ordering::Release);
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ReplaceSelectionError {
+    FocusChanged,
+    ClipboardWrite(String),
+    PasteInputRejected,
+}
+
+impl std::fmt::Display for ReplaceSelectionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::FocusChanged => write!(formatter, "前台窗口已切换，已取消原地替换"),
+            Self::ClipboardWrite(error) => write!(formatter, "写入剪贴板失败: {error}"),
+            Self::PasteInputRejected => write!(formatter, "系统未接受粘贴按键"),
+        }
+    }
+}
+
+fn replace_clipboard_and_paste<CheckFocus, WriteClipboard, Paste, AfterPaste, Restore>(
+    mut original_window_is_current: CheckFocus,
+    write_clipboard: WriteClipboard,
+    paste: Paste,
+    after_paste: AfterPaste,
+    restore_clipboard: Restore,
+) -> Result<(), ReplaceSelectionError>
+where
+    CheckFocus: FnMut() -> bool,
+    WriteClipboard: FnOnce() -> Result<(), String>,
+    Paste: FnOnce() -> bool,
+    AfterPaste: FnOnce(),
+    Restore: FnOnce(),
+{
+    if !original_window_is_current() {
+        return Err(ReplaceSelectionError::FocusChanged);
+    }
+
+    let mut restore_clipboard = Some(restore_clipboard);
+    let restore = |restore_clipboard: &mut Option<Restore>| {
+        if let Some(restore_clipboard) = restore_clipboard.take() {
+            restore_clipboard();
+        }
+    };
+
+    if let Err(error) = write_clipboard() {
+        restore(&mut restore_clipboard);
+        return Err(ReplaceSelectionError::ClipboardWrite(error));
+    }
+
+    if !original_window_is_current() {
+        restore(&mut restore_clipboard);
+        return Err(ReplaceSelectionError::FocusChanged);
+    }
+
+    if !paste() {
+        restore(&mut restore_clipboard);
+        return Err(ReplaceSelectionError::PasteInputRejected);
+    }
+
+    after_paste();
+    restore(&mut restore_clipboard);
+    Ok(())
 }
 
 fn get_shortcuts() -> &'static Mutex<Vec<(Shortcut, String)>> {
@@ -96,7 +167,9 @@ fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
     Ok(Shortcut::new(Some(modifiers), key))
 }
 
-fn validate_shortcuts(hotkeys: &[(String, String)]) -> Result<Vec<(Shortcut, String)>, String> {
+fn validate_shortcuts(
+    hotkeys: &[(String, String)],
+) -> Result<Vec<(Shortcut, String, String)>, String> {
     let mut validated = Vec::with_capacity(hotkeys.len());
     for (action, combo) in hotkeys {
         if !matches!(action.as_str(), "translate" | "replace" | "screenshot") {
@@ -104,18 +177,77 @@ fn validate_shortcuts(hotkeys: &[(String, String)]) -> Result<Vec<(Shortcut, Str
         }
         if validated
             .iter()
-            .any(|(_, existing_action)| existing_action == action)
+            .any(|(_, existing_action, _)| existing_action == action)
         {
             return Err(format!("快捷键操作重复: {}", action));
         }
 
         let shortcut = parse_shortcut(combo)?;
-        if validated.iter().any(|(existing, _)| *existing == shortcut) {
+        if validated
+            .iter()
+            .any(|(existing, _, _)| *existing == shortcut)
+        {
             return Err(format!("快捷键重复: {}", combo));
         }
-        validated.push((shortcut, action.clone()));
+        validated.push((shortcut, action.clone(), combo.clone()));
     }
     Ok(validated)
+}
+
+fn register_available_shortcuts(
+    validated: Vec<(Shortcut, String, String)>,
+    mut register: impl FnMut(Shortcut) -> Result<(), String>,
+) -> (Vec<(Shortcut, String)>, Vec<ShortcutRegistrationConflict>) {
+    let mut registered = Vec::with_capacity(validated.len());
+    let mut conflicts = Vec::new();
+
+    for (shortcut, action, combo) in validated {
+        match register(shortcut) {
+            Ok(()) => registered.push((shortcut, action)),
+            Err(error) => conflicts.push(ShortcutRegistrationConflict {
+                action,
+                shortcut: combo,
+                error,
+            }),
+        }
+    }
+
+    (registered, conflicts)
+}
+
+fn publish_shortcut_conflicts(
+    app: &tauri::AppHandle,
+    conflicts: Vec<ShortcutRegistrationConflict>,
+) {
+    for conflict in &conflicts {
+        log::warn!(
+            "[shortcut] Could not register {} ({}): {}",
+            conflict.action,
+            conflict.shortcut,
+            conflict.error
+        );
+    }
+
+    let _ = app.emit("shortcut-registration-conflicts", conflicts.clone());
+    if conflicts.is_empty()
+        || crate::commands::FRONTEND_READY.load(std::sync::atomic::Ordering::SeqCst)
+    {
+        return;
+    }
+
+    let app = app.clone();
+    let _ = thread::Builder::new()
+        .name("shortcut-conflict-notice".into())
+        .spawn(move || {
+            for _ in 0..200 {
+                if crate::commands::FRONTEND_READY.load(std::sync::atomic::Ordering::SeqCst) {
+                    let _ = app.emit("shortcut-registration-conflicts", conflicts);
+                    return;
+                }
+                thread::sleep(Duration::from_millis(25));
+            }
+            log::warn!("[shortcut] Frontend was not ready to receive shortcut conflicts");
+        });
 }
 
 /// Synchronize registered shortcuts with the current config.
@@ -130,7 +262,7 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
         hotkeys,
         validated
             .iter()
-            .map(|(s, a)| format!("{:?}→{}", s, a))
+            .map(|(s, a, _)| format!("{:?}→{}", s, a))
             .collect::<Vec<_>>()
     );
 
@@ -143,31 +275,14 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
         let _ = shortcut_plugin.unregister(*shortcut);
     }
 
-    let mut replacement = Vec::with_capacity(validated.len());
-    for (shortcut, action) in validated {
-        if let Err(error) = shortcut_plugin.register(shortcut) {
-            for (registered, _) in replacement.drain(..) {
-                let _ = shortcut_plugin.unregister(registered);
-            }
-
-            let mut restored = Vec::with_capacity(previous.len());
-            for (old_shortcut, old_action) in previous {
-                match shortcut_plugin.register(old_shortcut) {
-                    Ok(()) => restored.push((old_shortcut, old_action)),
-                    Err(restore_error) => log::error!(
-                        "[shortcut] Failed to restore {:?}: {}",
-                        old_shortcut,
-                        restore_error
-                    ),
-                }
-            }
-            *get_shortcuts().lock().unwrap() = restored;
-            return Err(format!("注册快捷键 {} 失败: {}", action, error));
-        }
-        replacement.push((shortcut, action));
-    }
+    let (replacement, conflicts) = register_available_shortcuts(validated, |shortcut| {
+        shortcut_plugin
+            .register(shortcut)
+            .map_err(|error| error.to_string())
+    });
 
     *get_shortcuts().lock().unwrap() = replacement;
+    publish_shortcut_conflicts(app, conflicts);
     Ok(())
 }
 
@@ -239,13 +354,24 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
             .build(),
     )?;
 
-    // NOW the plugin exists — register shortcuts from config
-    sync_shortcuts(app.handle())?;
-
     // Register Alt+Escape for screenshot dismiss (always present)
     let esc = Shortcut::new(Some(Modifiers::ALT), Code::Escape);
     if let Err(e) = app.global_shortcut().register(esc) {
         log::warn!("[shortcut] Failed to register Alt+Escape: {}", e);
+    }
+
+    // Registration conflicts are a degraded state, not a startup failure.
+    // Alt+Escape is registered first so it remains reserved for screenshot cancel.
+    if let Err(error) = sync_shortcuts(app.handle()) {
+        log::error!("[shortcut] Invalid shortcut configuration: {error}");
+        publish_shortcut_conflicts(
+            app.handle(),
+            vec![ShortcutRegistrationConflict {
+                action: "configuration".into(),
+                shortcut: String::new(),
+                error,
+            }],
+        );
     }
 
     Ok(())
@@ -320,6 +446,11 @@ fn handle_alt_r(app: tauri::AppHandle) {
             }
         };
 
+        let Some(original_window) = keyboard::foreground_window_token() else {
+            log::warn!("[alt-r] No foreground window; replacement cancelled");
+            return;
+        };
+
         // 1. Copy selected text (WM_COPY first, SendInput fallback)
         let text = match keyboard::copy_selection(&app) {
             Some(t) => t,
@@ -363,14 +494,38 @@ fn handle_alt_r(app: tauri::AppHandle) {
                 }
             };
 
-        // 2. Write translation to clipboard (guarded so clipboard watch ignores it)
-        {
-            let g = app.state::<ClipboardGuard>();
-            g.mark_written(&translated);
-            let _ = app.clipboard().write_text(&translated);
+        // 2. Only replace in the window that owned focus when the workflow began.
+        // Back up the now-restored user clipboard, then restore it after paste.
+        let clipboard_backup = backup_clipboard(&app);
+        let write_app = app.clone();
+        let restore_app = app.clone();
+        let replacement = replace_clipboard_and_paste(
+            || keyboard::foreground_window_is_current(original_window),
+            || {
+                write_app
+                    .clipboard()
+                    .write_text(translated.clone())
+                    .map_err(|error| error.to_string())?;
+                write_app
+                    .state::<ClipboardGuard>()
+                    .mark_written(&translated);
+                Ok(())
+            },
+            keyboard::simulate_paste,
+            || thread::sleep(Duration::from_millis(150)),
+            || {
+                if !restore_clipboard(&restore_app, clipboard_backup) {
+                    log::warn!("[alt-r] Failed to restore the user's clipboard after paste");
+                }
+            },
+        );
+
+        if let Err(error) = replacement {
+            log::warn!("[alt-r] Replacement cancelled: {error}");
+            if let Some(window) = app.get_webview_window("ball") {
+                let _ = window.emit("screenshot-error", format!("Alt+R 失败: {error}"));
+            }
         }
-        thread::sleep(Duration::from_millis(50));
-        keyboard::simulate_paste();
     });
 }
 
@@ -494,5 +649,141 @@ mod tests {
             ("replace".into(), "Alt+Q".into()),
         ])
         .is_err());
+    }
+
+    #[test]
+    fn registration_keeps_available_shortcuts_when_one_conflicts() {
+        let validated = validate_shortcuts(&[
+            ("translate".into(), "Alt+Q".into()),
+            ("replace".into(), "Alt+R".into()),
+            ("screenshot".into(), "Alt+W".into()),
+        ])
+        .unwrap();
+        let conflicting = parse_shortcut("Alt+R").unwrap();
+
+        let (registered, conflicts) = register_available_shortcuts(validated, |shortcut| {
+            if shortcut == conflicting {
+                Err("already registered".into())
+            } else {
+                Ok(())
+            }
+        });
+
+        assert_eq!(registered.len(), 2);
+        assert!(registered.iter().any(|(_, action)| action == "translate"));
+        assert!(registered.iter().any(|(_, action)| action == "screenshot"));
+        assert_eq!(
+            conflicts,
+            vec![ShortcutRegistrationConflict {
+                action: "replace".into(),
+                shortcut: "Alt+R".into(),
+                error: "already registered".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn replacement_never_writes_after_focus_changed() {
+        use std::cell::Cell;
+
+        let wrote = Cell::new(false);
+        let pasted = Cell::new(false);
+        let restored = Cell::new(false);
+        let result = replace_clipboard_and_paste(
+            || false,
+            || {
+                wrote.set(true);
+                Ok(())
+            },
+            || {
+                pasted.set(true);
+                true
+            },
+            || {},
+            || restored.set(true),
+        );
+
+        assert_eq!(result, Err(ReplaceSelectionError::FocusChanged));
+        assert!(!wrote.get());
+        assert!(!pasted.get());
+        assert!(!restored.get());
+    }
+
+    #[test]
+    fn replacement_restores_clipboard_when_focus_changes_before_paste() {
+        use std::cell::Cell;
+
+        let focus_checks = Cell::new(0);
+        let pasted = Cell::new(false);
+        let restored = Cell::new(false);
+        let result = replace_clipboard_and_paste(
+            || {
+                let check = focus_checks.get();
+                focus_checks.set(check + 1);
+                check == 0
+            },
+            || Ok(()),
+            || {
+                pasted.set(true);
+                true
+            },
+            || {},
+            || restored.set(true),
+        );
+
+        assert_eq!(result, Err(ReplaceSelectionError::FocusChanged));
+        assert!(!pasted.get());
+        assert!(restored.get());
+    }
+
+    #[test]
+    fn replacement_restores_clipboard_on_write_and_paste_failures() {
+        use std::cell::Cell;
+
+        let write_restore_count = Cell::new(0);
+        let write_result = replace_clipboard_and_paste(
+            || true,
+            || Err("locked".into()),
+            || true,
+            || {},
+            || write_restore_count.set(write_restore_count.get() + 1),
+        );
+        assert_eq!(
+            write_result,
+            Err(ReplaceSelectionError::ClipboardWrite("locked".into()))
+        );
+        assert_eq!(write_restore_count.get(), 1);
+
+        let paste_restore_count = Cell::new(0);
+        let paste_result = replace_clipboard_and_paste(
+            || true,
+            || Ok(()),
+            || false,
+            || {},
+            || paste_restore_count.set(paste_restore_count.get() + 1),
+        );
+        assert_eq!(paste_result, Err(ReplaceSelectionError::PasteInputRejected));
+        assert_eq!(paste_restore_count.get(), 1);
+    }
+
+    #[test]
+    fn successful_replacement_restores_clipboard_after_paste() {
+        use std::cell::Cell;
+
+        let pasted = Cell::new(false);
+        let restored_after_paste = Cell::new(false);
+        let result = replace_clipboard_and_paste(
+            || true,
+            || Ok(()),
+            || {
+                pasted.set(true);
+                true
+            },
+            || assert!(pasted.get()),
+            || restored_after_paste.set(pasted.get()),
+        );
+
+        assert_eq!(result, Ok(()));
+        assert!(restored_after_paste.get());
     }
 }
