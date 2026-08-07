@@ -71,7 +71,7 @@ describe("App", () => {
   });
 
   it("preserves a stored API key when saving another setting", async () => {
-    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
+    mockedInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_api_config") {
         return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: true, model: "gpt-4o-mini" });
       }
@@ -216,7 +216,7 @@ describe("App", () => {
   });
 
   it("ignores stream chunks from a superseded request", async () => {
-    mockedInvoke.mockImplementation((cmd: string, args?: { requestId?: number }) => {
+    mockedInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_api_config") {
         return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
       }

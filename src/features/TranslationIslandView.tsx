@@ -13,7 +13,6 @@ import type {
   PointerEventHandler,
   ReactNode,
 } from "react";
-import { useEffect, useState } from "react";
 import VanishMark from "../components/brand/VanishMark";
 import {
   getIslandGeometry,

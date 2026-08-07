@@ -64,7 +64,10 @@ export function parseJson(content: string): JsonSegment[] {
     collectStrings(obj, "", segments);
     return segments;
   } catch (error) {
-    throw new Error(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }
 
@@ -95,7 +98,10 @@ export function rebuildJson(original: string, translations: Map<string, string>)
     const obj = JSON.parse(original);
     return JSON.stringify(applyTranslations(obj, "", translations), null, 2);
   } catch (error) {
-    throw new Error(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
   }
 }
 

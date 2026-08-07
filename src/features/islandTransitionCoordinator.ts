@@ -143,7 +143,7 @@ export class IslandTransitionCoordinator {
     executor: IslandTransitionExecutor,
   ): TransitionTask {
     let resolve = () => {};
-    let reject = (_error: unknown) => {};
+    let reject = () => {};
     const promise = new Promise<void>((taskResolve, taskReject) => {
       resolve = taskResolve;
       reject = taskReject;
