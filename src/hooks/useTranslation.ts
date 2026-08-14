@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type SetStateAction } from "react";
 import {
   errorMessage,
   isCancelledError,
@@ -36,16 +36,28 @@ function broadcastTranslationActivity(state: TranslationActivityState) {
 
 export function useTranslation() {
   const [inputText, setInputText] = useState("");
-  const [outputText, setOutputText] = useState("");
+  const [outputText, setOutputTextState] = useState("");
   const [loading, setLoading] = useState(false);
   const [glowActive, setGlowActive] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [direction, setDirection] = useState<LangDirection>("auto");
   const [fileStatus, setFileStatus] = useState<string | null>(null);
   const [translationKey, setTranslationKey] = useState(0);
+  const [translationError, setTranslationError] = useState<string | null>(null);
 
   const directionRef = useRef(direction);
   const requestIdRef = useRef(0);
+  const completedRequestIdRef = useRef<number | null>(null);
+  const outputTextRef = useRef("");
+
+  // Keep a synchronous copy for cancellation, which can occur between stream chunks.
+  const setOutputText = useCallback((nextValue: SetStateAction<string>) => {
+    const nextText = typeof nextValue === "function"
+      ? (nextValue as (current: string) => string)(outputTextRef.current)
+      : nextValue;
+    outputTextRef.current = nextText;
+    setOutputTextState(nextText);
+  }, []);
 
   // Keep ref in sync
   const updateDirection = useCallback((d: LangDirection) => {
@@ -55,13 +67,17 @@ export function useTranslation() {
 
   const doTranslate = useCallback(async (text: string, forceRefresh = false) => {
     if (!text.trim()) return;
-    const cleaned = await invoke<string>("cleanup_clipboard_text", { text });
-    setInputText(cleaned);
+    const reqId = ++requestIdRef.current;
+    completedRequestIdRef.current = null;
     setOutputText("");
+    setTranslationError(null);
     setLoading(true);
     setStreaming(false);
-    const reqId = ++requestIdRef.current;
+    setGlowActive(false);
     try {
+      const cleaned = await invoke<string>("cleanup_clipboard_text", { text });
+      if (reqId !== requestIdRef.current) return;
+      setInputText(cleaned);
       const result = await invoke<string>("translate_with_direction", {
         text: cleaned,
         direction: directionRef.current,
@@ -70,32 +86,39 @@ export function useTranslation() {
       if (reqId === requestIdRef.current) {
         setOutputText(result);
         setTranslationKey(++translationIdCounter);
-        if (!result.startsWith("❌")) {
-          setGlowActive(true);
-        }
+        setGlowActive(true);
       }
     } catch (e: unknown) {
+      if (reqId !== requestIdRef.current) return;
       if (isCancelledError(e)) {
-        if (reqId === requestIdRef.current) setLoading(false);
-        return;
+        setTranslationError(outputTextRef.current
+          ? "翻译已取消，已保留部分译文"
+          : "翻译已取消");
+        broadcastTranslationActivity("idle");
+      } else {
+        setTranslationError(errorMessage(e) || "翻译失败，请重试");
+        broadcastTranslationActivity("error");
       }
-      if (reqId === requestIdRef.current) setOutputText(`❌ ${errorMessage(e)}`);
+    } finally {
+      if (reqId === requestIdRef.current) setLoading(false);
     }
-    if (reqId === requestIdRef.current) setLoading(false);
-  }, []);
+  }, [setOutputText]);
 
   /// Streaming translation — emits chunks via Tauri events.
   const doTranslateStream = useCallback(async (text: string, forceRefresh = false) => {
     if (!text.trim()) return;
     const reqId = ++requestIdRef.current;
+    completedRequestIdRef.current = null;
+    setOutputText("");
+    setTranslationError(null);
+    setLoading(true);
+    setStreaming(true);
+    setGlowActive(false);
     broadcastTranslationActivity("working");
     try {
       const cleaned = await invoke<string>("cleanup_clipboard_text", { text });
       if (reqId !== requestIdRef.current) return;
       setInputText(cleaned);
-      setOutputText("");
-      setLoading(true);
-      setStreaming(true);
       await invoke<string>("translate_stream", {
         request: {
           text: cleaned,
@@ -112,36 +135,58 @@ export function useTranslation() {
         broadcastTranslationActivity("done");
       }
     } catch (e: unknown) {
+      if (reqId !== requestIdRef.current) return;
       if (isCancelledError(e)) {
-        if (reqId === requestIdRef.current) {
-          setLoading(false);
-          setStreaming(false);
-          broadcastTranslationActivity("idle");
-        }
-        return;
-      }
-      if (reqId === requestIdRef.current) {
-        setOutputText((previous) => previous
-          ? `❌ ${errorMessage(e)}\n\n已接收的部分译文：\n${previous}`
-          : `❌ ${errorMessage(e)}`);
+        setTranslationError(outputTextRef.current
+          ? "翻译已取消，已保留部分译文"
+          : "翻译已取消");
+        setStreaming(false);
+        broadcastTranslationActivity("idle");
+      } else {
+        setTranslationError(errorMessage(e) || "翻译失败，请重试");
         setStreaming(false);
         broadcastTranslationActivity("error");
       }
     } finally {
       if (reqId === requestIdRef.current) setLoading(false);
     }
-  }, []);
+  }, [setOutputText]);
 
   /// Called by useTauriEvents when a stream chunk arrives.
   const handleStreamChunk = useCallback((payload: { requestId: number; chunk: string }) => {
-    if (payload.requestId !== requestIdRef.current) return;
+    if (payload.requestId !== requestIdRef.current || payload.requestId === completedRequestIdRef.current) return;
     setOutputText((prev) => prev + payload.chunk);
-  }, []);
+  }, [setOutputText]);
 
   /// Called by useTauriEvents when stream is complete.
   const handleStreamDone = useCallback((payload: { requestId: number; fullText: string }) => {
     if (payload.requestId !== requestIdRef.current) return;
+    completedRequestIdRef.current = payload.requestId;
+    // Chunks can be delayed or coalesced, so the authoritative final payload
+    // replaces the incremental display instead of merely marking it complete.
+    setOutputText(payload.fullText);
     setStreaming(false);
+  }, [setOutputText]);
+
+  const cancelTranslation = useCallback(async () => {
+    // Invalidate the local request before the native command returns so late
+    // chunks and completion events cannot overwrite the preserved text.
+    ++requestIdRef.current;
+    setLoading(false);
+    setStreaming(false);
+    setGlowActive(false);
+    setFileStatus(null);
+    setTranslationError(outputTextRef.current
+      ? "翻译已取消，已保留部分译文"
+      : "翻译已取消");
+    broadcastTranslationActivity("idle");
+
+    try {
+      await invoke("cancel_translation");
+    } catch {
+      // Local invalidation still prevents stale output when the native command
+      // is unavailable, such as in the browser preview.
+    }
   }, []);
 
   const clearGlow = useCallback(() => setGlowActive(false), []);
@@ -150,6 +195,7 @@ export function useTranslation() {
   const doTranslateFile = useCallback(async (filename: string, content: string) => {
     const fileType = detectFileType(filename);
     const contentLength = Array.from(content).length;
+    setTranslationError(null);
 
     if (fileType === "txt" && contentLength > MAX_TRANSLATION_CHARS) {
       setOutputText(`❌ 文件内容过长（${contentLength.toLocaleString()} 字符），最多支持 ${MAX_TRANSLATION_CHARS.toLocaleString()} 字符`);
@@ -278,12 +324,13 @@ export function useTranslation() {
     return () => {
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
     };
-  }, [doTranslateStream]);
+  }, [doTranslateStream, setOutputText]);
 
   return {
     inputText, setInputText,
     outputText, setOutputText,
     loading, setLoading,
+    translationError, setTranslationError,
     glowActive, clearGlow,
     streaming,
     direction, updateDirection,
@@ -291,6 +338,7 @@ export function useTranslation() {
     translationKey,
     doTranslate,
     doTranslateStream,
+    cancelTranslation,
     doTranslateFile,
     handleStreamChunk,
     handleStreamDone,

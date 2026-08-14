@@ -7,12 +7,11 @@ describe("LanguageSwitcher", () => {
     const onChange = vi.fn();
     render(<LanguageSwitcher value="auto2zh" onChange={onChange} />);
 
-    expect(screen.getByRole("combobox", { name: "源语言" })).toHaveValue("auto");
-    expect(screen.getByRole("combobox", { name: "目标语言" })).toHaveValue("zh");
+    expect(screen.getByRole("button", { name: "源语言：自动检测" })).toBeInTheDocument();
+    const target = screen.getByRole("button", { name: "目标语言：中文" });
 
-    fireEvent.change(screen.getByRole("combobox", { name: "目标语言" }), {
-      target: { value: "en" },
-    });
+    fireEvent.click(target);
+    fireEvent.click(screen.getByRole("option", { name: "英语" }));
 
     expect(onChange).toHaveBeenCalledWith("auto2en");
   });
@@ -26,5 +25,15 @@ describe("LanguageSwitcher", () => {
 
     rerender(<LanguageSwitcher value="auto2zh" onChange={onChange} />);
     expect(screen.getByRole("button", { name: "交换语言" })).toBeDisabled();
+  });
+
+  it("keeps the menu closed and controls disabled while translating", () => {
+    const onChange = vi.fn();
+    render(<LanguageSwitcher value="auto" onChange={onChange} disabled />);
+
+    const source = screen.getByRole("button", { name: "源语言：自动检测" });
+    expect(source).toBeDisabled();
+    fireEvent.click(source);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 });

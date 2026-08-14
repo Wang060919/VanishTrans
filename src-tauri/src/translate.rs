@@ -377,6 +377,12 @@ impl ApiConfig {
         self.request_seq.fetch_add(1, Ordering::SeqCst) + 1
     }
 
+    /// Invalidate the current main-window translation request. Streaming
+    /// callers observe the sequence change between chunks and stop promptly.
+    pub fn cancel_current_request(&self) {
+        self.next_request_seq();
+    }
+
     /// Returns true if `seq` is still the latest request (i.e., has not been
     /// superseded by a newer translation).
     pub fn is_current_request(&self, seq: u64) -> bool {

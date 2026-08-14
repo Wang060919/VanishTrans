@@ -1,13 +1,28 @@
-﻿import { ArrowLeftRight } from "lucide-react";
+import { ArrowLeftRight, Check, ChevronDown } from "lucide-react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import type { LangDirection } from "../hooks/useTranslation";
 
 interface LanguageSwitcherProps {
   value: LangDirection;
   onChange: (direction: LangDirection) => void;
+  disabled?: boolean;
 }
 
 type SourceLanguage = "auto" | "zh" | "en";
 type TargetLanguage = "smart" | "zh" | "en";
+type OpenMenu = "source" | "target" | null;
+
+const SOURCE_OPTIONS: ReadonlyArray<{ value: SourceLanguage; label: string }> = [
+  { value: "auto", label: "自动检测" },
+  { value: "zh", label: "中文" },
+  { value: "en", label: "英语" },
+];
+
+const TARGET_OPTIONS: ReadonlyArray<{ value: TargetLanguage; label: string }> = [
+  { value: "smart", label: "智能选择" },
+  { value: "zh", label: "中文" },
+  { value: "en", label: "英语" },
+];
 
 function decodeDirection(value: LangDirection): { source: SourceLanguage; target: TargetLanguage } {
   switch (value) {
@@ -19,9 +34,143 @@ function decodeDirection(value: LangDirection): { source: SourceLanguage; target
   }
 }
 
-export default function LanguageSwitcher({ value, onChange }: LanguageSwitcherProps) {
+interface LanguageMenuProps<T extends string> {
+  align?: "start" | "end";
+  disabled: boolean;
+  label: string;
+  onClose: () => void;
+  onOpen: () => void;
+  onSelect: (value: T) => void;
+  open: boolean;
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+}
+
+function LanguageMenu<T extends string>({
+  align = "start",
+  disabled,
+  label,
+  onClose,
+  onOpen,
+  onSelect,
+  open,
+  options,
+  value,
+}: LanguageMenuProps<T>) {
+  const menuId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
+    optionRefs.current[selectedIndex]?.focus();
+  }, [open, options, value]);
+
+  const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onOpen();
+    } else if (event.key === "Escape") {
+      onClose();
+    }
+  };
+
+  const handleMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const currentIndex = optionRefs.current.findIndex((option) => option === document.activeElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      triggerRef.current?.focus();
+      return;
+    }
+    if (event.key === "Tab") {
+      onClose();
+      return;
+    }
+
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1 + options.length) % options.length;
+    if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + options.length) % options.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = options.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    optionRefs.current[nextIndex]?.focus();
+  };
+
+  const selectOption = (nextValue: T) => {
+    onSelect(nextValue);
+    onClose();
+    triggerRef.current?.focus();
+  };
+
+  return (
+    <div className={`language-field language-field--${align}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="language-menu-trigger"
+        aria-controls={open ? menuId : undefined}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`${label}：${selectedOption.label}`}
+        disabled={disabled}
+        onClick={() => (open ? onClose() : onOpen())}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <span>{selectedOption.label}</span>
+        <ChevronDown size={14} aria-hidden="true" className={open ? "language-menu-trigger__icon language-menu-trigger__icon--open" : "language-menu-trigger__icon"} />
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          className="language-menu"
+          role="listbox"
+          aria-label={label}
+          onKeyDown={handleMenuKeyDown}
+        >
+          {options.map((option, index) => (
+            <button
+              ref={(element) => { optionRefs.current[index] = element; }}
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              className={option.value === value ? "language-menu__option language-menu__option--selected" : "language-menu__option"}
+              onClick={() => selectOption(option.value)}
+            >
+              <span>{option.label}</span>
+              {option.value === value && <Check size={14} aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function LanguageSwitcher({ value, onChange, disabled = false }: LanguageSwitcherProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const { source, target } = decodeDirection(value);
   const canSwap = value === "zh2en" || value === "en2zh";
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpenMenu(null);
+    };
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => window.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [openMenu]);
+
+  useEffect(() => {
+    if (disabled) setOpenMenu(null);
+  }, [disabled]);
 
   const changeSource = (next: SourceLanguage) => {
     if (next === "auto") {
@@ -42,32 +191,37 @@ export default function LanguageSwitcher({ value, onChange }: LanguageSwitcherPr
   };
 
   return (
-    <div className="language-switcher" aria-label="翻译语言">
-      <label className="language-field">
-        <span className="sr-only">源语言</span>
-        <select aria-label="源语言" value={source} onChange={(event) => changeSource(event.target.value as SourceLanguage)}>
-          <option value="auto">自动检测</option>
-          <option value="zh">中文</option>
-          <option value="en">英语</option>
-        </select>
-      </label>
+    <div ref={rootRef} className="language-switcher" aria-label="翻译语言">
+      <LanguageMenu
+        label="源语言"
+        value={source}
+        options={SOURCE_OPTIONS}
+        disabled={disabled}
+        open={openMenu === "source"}
+        onOpen={() => setOpenMenu("source")}
+        onClose={() => setOpenMenu(null)}
+        onSelect={changeSource}
+      />
       <button
         type="button"
         className="language-swap"
         aria-label="交换语言"
-        disabled={!canSwap}
+        disabled={!canSwap || disabled}
         onClick={() => onChange(value === "zh2en" ? "en2zh" : "zh2en")}
       >
         <ArrowLeftRight size={15} aria-hidden="true" />
       </button>
-      <label className="language-field language-field--target">
-        <span className="sr-only">目标语言</span>
-        <select aria-label="目标语言" value={target} onChange={(event) => changeTarget(event.target.value as TargetLanguage)}>
-          <option value="smart">智能选择</option>
-          <option value="zh">中文</option>
-          <option value="en">英语</option>
-        </select>
-      </label>
+      <LanguageMenu
+        align="end"
+        label="目标语言"
+        value={target}
+        options={TARGET_OPTIONS}
+        disabled={disabled}
+        open={openMenu === "target"}
+        onOpen={() => setOpenMenu("target")}
+        onClose={() => setOpenMenu(null)}
+        onSelect={changeTarget}
+      />
     </div>
   );
 }

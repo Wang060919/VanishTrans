@@ -45,6 +45,7 @@ export default function MainWindowApp({
   const setOutputTextRef = useRef(translation.setOutputText);
   const setInputTextRef = useRef(translation.setInputText);
   const setLoadingRef = useRef(translation.setLoading);
+  const setTranslationErrorRef = useRef(translation.setTranslationError);
 
   // Keep refs in sync
   useEffect(() => {
@@ -52,13 +53,15 @@ export default function MainWindowApp({
     setOutputTextRef.current = translation.setOutputText;
     setInputTextRef.current = translation.setInputText;
     setLoadingRef.current = translation.setLoading;
-  }, [translation.doTranslateStream, translation.setOutputText, translation.setInputText, translation.setLoading]);
+    setTranslationErrorRef.current = translation.setTranslationError;
+  }, [translation.doTranslateStream, translation.setOutputText, translation.setInputText, translation.setLoading, translation.setTranslationError]);
 
   useTauriEvents({
     onClipboardTranslate: useCallback((request: TranslationRequestEvent) => {
       requestExpand();
       if (request.type === "error") {
-        setOutputTextRef.current(`❌ ${request.message}`);
+        setOutputTextRef.current("");
+        setTranslationErrorRef.current(request.message);
         setLoadingRef.current(false);
         return;
       }
@@ -69,18 +72,21 @@ export default function MainWindowApp({
       requestExpand();
       setOutputTextRef.current("");
       setInputTextRef.current("");
+      setTranslationErrorRef.current(null);
       doTranslateStreamRef.current(text);
     }, [requestExpand]),
 
     onScreenshotStart: useCallback(() => {
-      translation.setOutputText("");
-      translation.setInputText("");
+      setOutputTextRef.current("");
+      setInputTextRef.current("");
+      setTranslationErrorRef.current(null);
     }, []),
 
     onScreenshotError: useCallback((message: string) => {
       requestExpand();
-      translation.setOutputText(`❌ ${message}`);
-      translation.setLoading(false);
+      setOutputTextRef.current("");
+      setTranslationErrorRef.current(message);
+      setLoadingRef.current(false);
     }, [requestExpand]),
 
     onShortcutConflicts: useCallback((conflicts) => {
@@ -138,7 +144,7 @@ export default function MainWindowApp({
   const handleTranslate = useCallback(async (forceRefresh = false) => {
     if (translation.loading) return;
     await translation.doTranslateStream(translation.inputText, forceRefresh);
-  }, [translation.inputText, translation.doTranslateStream, translation.loading]);
+  }, [translation]);
 
   return (
     <MainLayout
@@ -152,6 +158,7 @@ export default function MainWindowApp({
       inputText={translation.inputText}
       onInputChange={translation.setInputText}
       outputText={translation.outputText}
+      translationError={translation.translationError}
       loading={translation.loading}
       pinned={pinned}
       onPin={handlePin}
@@ -160,6 +167,7 @@ export default function MainWindowApp({
       glowActive={translation.glowActive}
       onClearGlow={translation.clearGlow}
       onTranslate={handleTranslate}
+      onCancelTranslation={translation.cancelTranslation}
       inputRef={inputRef as React.RefObject<HTMLTextAreaElement>}
       baseUrl={config.baseUrl}
       onBaseUrlChange={config.setBaseUrl}

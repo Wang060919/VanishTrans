@@ -26,6 +26,7 @@ interface MainLayoutProps {
   inputText: string;
   onInputChange: (v: string) => void;
   outputText: string;
+  translationError?: string | null;
   loading: boolean;
   pinned: boolean;
   onPin: () => void;
@@ -34,6 +35,7 @@ interface MainLayoutProps {
   glowActive: boolean;
   onClearGlow: () => void;
   onTranslate: (forceRefresh?: boolean) => void;
+  onCancelTranslation?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement>;
   baseUrl: string;
   onBaseUrlChange: (v: string) => void;
@@ -72,11 +74,11 @@ export default function MainLayout({
   onWindowDragEnd,
   onWindowMoved,
   inputText, onInputChange,
-  outputText, loading,
+  outputText, translationError = null, loading,
   pinned, onPin,
   direction, onDirectionChange,
   glowActive, onClearGlow,
-  onTranslate, inputRef,
+  onTranslate, onCancelTranslation, inputRef,
   baseUrl, onBaseUrlChange,
   model, onModelChange,
   hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSaveConfig,
@@ -209,16 +211,18 @@ export default function MainLayout({
         </div>
       )}
 
-      <LanguageSwitcher value={direction} onChange={onDirectionChange} />
+      <LanguageSwitcher value={direction} onChange={onDirectionChange} disabled={loading} />
 
       <TranslatePanel
         inputText={inputText}
         onInputChange={onInputChange}
         outputText={outputText}
+        error={translationError}
         loading={loading}
         glowActive={glowActive}
         onClearGlow={onClearGlow}
         onTranslate={onTranslate}
+        onCancel={onCancelTranslation}
         inputRef={inputRef}
         streaming={streaming}
         fileStatus={fileStatus}
@@ -232,7 +236,7 @@ export default function MainLayout({
             <button type="button" disabled={!inputText} onClick={() => void copyText(inputText)}>
               <Copy size={13} aria-hidden="true" /><span>复制原文</span>
             </button>
-            <button type="button" disabled={!outputText} onClick={() => void copyText(outputText)}>
+            <button type="button" disabled={!outputText || outputText.startsWith("❌")} onClick={() => void copyText(outputText)}>
               <Copy size={13} aria-hidden="true" /><span>复制译文</span>
             </button>
             <button type="button" onClick={() => void startScreenshot()}>

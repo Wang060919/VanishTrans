@@ -103,8 +103,7 @@
 .text-action:hover { color: #f4f4f5 !important; background: rgba(255, 255, 255, 0.08); }
 .text-action:active { transform: scale(0.96); }
 .text-action--danger:hover { color: var(--color-danger); background: var(--color-danger-soft); }
-.text-action--hover { opacity: 0; }
-.group:hover .text-action--hover { opacity: 1; }
+.text-action--hover { opacity: 1; }
 
 .editor-frame {
   min-height: 0;
@@ -131,6 +130,7 @@
   line-height: 1.58;
 }
 .editor-frame textarea::placeholder { color: #a1a1aa !important; }
+.editor-frame textarea:disabled { opacity: 0.72; cursor: wait; }
 .editor-footer { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 7px 0 11px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .compact-counter { color: #a1a1aa !important; font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; }
 .compact-counter--warn { color: var(--color-danger); font-weight: 650; }
@@ -178,6 +178,7 @@
 }
 .translation-copy { margin: 0; padding: 11px 12px 18px; color: #f4f4f5 !important; font-size: 14px; line-height: 1.62; white-space: pre-wrap; user-select: text; animation: resultReveal var(--duration-normal) var(--ease-standard) both; }
 .translation-copy--error { color: var(--color-danger); }
+.result-notice { margin: 10px 12px 0; color: #ff9d9d; font-size: 11px; line-height: 1.45; }
 .empty-translation, .loading-state { height: 100%; min-height: 74px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 10px; text-align: center; }
 .empty-translation .brand-mark { width: 26px; height: 23px; margin-bottom: 2px; color: #a1a1aa; opacity: 0.62; }
 .empty-translation strong { color: #f4f4f5 !important; font-size: 12px; font-weight: 620; }
@@ -230,12 +231,23 @@
 .panel-empty span { font-size: 11px; }
 
 /* Settings drawer */
-.settings-tabs { height: 43px; display: grid; grid-template-columns: repeat(4, 1fr); flex: none; padding: 6px 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); background: rgba(0, 0, 0, 0.3); }
-.settings-tabs button { position: relative; border: 0; background: transparent; color: var(--color-ink-muted); font-size: 11px; font-weight: 600; cursor: pointer; transition: color var(--duration-fast) var(--ease-standard); }
+.settings-tabs { height: 43px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; padding: 6px 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); background: rgba(0, 0, 0, 0.3); }
+.settings-tabs button { position: relative; min-width: 0; border: 0; background: transparent; color: var(--color-ink-muted); font-size: 11px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: color var(--duration-fast) var(--ease-standard); }
 .settings-tabs button:hover { color: var(--color-ink-secondary); }
 .settings-tabs button::after { content: ""; position: absolute; left: 20%; right: 20%; bottom: -1px; height: 2px; border-radius: 2px; background: var(--color-signal); opacity: 0; transform: scaleX(0.55); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); will-change: opacity, transform; }
 .settings-tabs button[aria-selected="true"] { color: #fff; }
 .settings-tabs button[aria-selected="true"]::after { opacity: 1; transform: scaleX(1); }
+.settings-tabs button:focus-visible { outline: 2px solid rgba(141, 156, 255, 0.58); outline-offset: -2px; border-radius: 4px; }
+.section-actions--result { gap: 4px; }
+.text-action:disabled { opacity: 0.38; cursor: default; }
+@media (max-width: 520px) {
+  .settings-tabs {
+    grid-template-columns: repeat(5, minmax(68px, 1fr));
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .settings-tabs::-webkit-scrollbar { display: none; }
+}
 .settings-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: 16px 16px 20px; }
 .settings-section { display: flex; flex-direction: column; gap: 16px; padding: 16px; margin-bottom: 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); animation: fadeSlideUp var(--duration-normal) var(--ease-standard) both; will-change: opacity, transform; backface-visibility: hidden; }
 .settings-section-heading { display: flex; align-items: flex-start; gap: 9px; color: var(--color-signal); margin-bottom: 4px; }

@@ -174,8 +174,8 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
 
-    const sourceLanguage = screen.getByRole("combobox", { name: "源语言" });
-    await user.selectOptions(sourceLanguage, "zh");
+    await user.click(screen.getByRole("button", { name: "源语言：自动检测" }));
+    await user.click(screen.getByRole("option", { name: "中文" }));
 
     const textarea = screen.getByPlaceholderText("输入、粘贴或拖入文件");
     await user.type(textarea, "some text{enter}");
@@ -186,6 +186,73 @@ describe("App", () => {
         expect.objectContaining({ request: expect.objectContaining({ direction: "zh2en" }) }),
       );
     });
+  });
+
+  it("reconciles incremental output with the stream's authoritative full text", async () => {
+    mockedInvoke.mockImplementation((cmd: string, args?: { request?: { requestId?: number } }) => {
+      if (cmd === "get_api_config") {
+        return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
+      }
+      if (cmd === "cleanup_clipboard_text") return Promise.resolve("hello");
+      if (cmd === "translate_stream") {
+        return new Promise<string>((resolve) => {
+          setTimeout(() => {
+            emit("translate-stream-chunk", { requestId: args?.request?.requestId, chunk: "片段" });
+            emit("translate-stream-done", { requestId: args?.request?.requestId, fullText: "最终译文" });
+            emit("translate-stream-chunk", { requestId: args?.request?.requestId, chunk: "迟到片段" });
+            resolve("最终译文");
+          }, 0);
+        });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
+    await user.type(screen.getByPlaceholderText("输入、粘贴或拖入文件"), "hello{enter}");
+
+    await waitFor(() => expect(screen.getByText("最终译文")).toBeInTheDocument());
+    expect(screen.queryByText("片段")).not.toBeInTheDocument();
+    expect(screen.queryByText("迟到片段")).not.toBeInTheDocument();
+  });
+
+  it("cancels a stream while preserving and copying the partial result", async () => {
+    let resolveStream: ((value: string) => void) | undefined;
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_api_config") {
+        return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
+      }
+      if (cmd === "cleanup_clipboard_text") return Promise.resolve("hello");
+      if (cmd === "translate_stream") {
+        return new Promise<string>((resolve) => { resolveStream = resolve; });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
+    await user.type(screen.getByPlaceholderText("输入、粘贴或拖入文件"), "hello{enter}");
+    await waitFor(() => expect(mockedInvoke.mock.calls.some(([cmd]) => cmd === "translate_stream")).toBe(true));
+
+    const streamCall = mockedInvoke.mock.calls.find(([cmd]) => cmd === "translate_stream");
+    const requestId = streamCall?.[1]?.request?.requestId;
+    emit("translate-stream-chunk", { requestId, chunk: "已接收部分" });
+    await waitFor(() => expect(screen.getByText("已接收部分")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "取消翻译" }));
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("cancel_translation"));
+    expect(screen.getByText(/已保留部分译文/)).toBeInTheDocument();
+
+    const copyButton = screen.getByRole("button", { name: "复制译文" });
+    expect(copyButton).toBeEnabled();
+    await user.click(copyButton);
+    expect(mockedInvoke).toHaveBeenCalledWith("write_clipboard_safe", { text: "已接收部分" });
+
+    emit("translate-stream-chunk", { requestId, chunk: "迟到结果" });
+    expect(screen.queryByText("迟到结果")).not.toBeInTheDocument();
+    resolveStream?.("迟到结果");
   });
 
   it("keeps one Tauri listener per event in StrictMode", async () => {

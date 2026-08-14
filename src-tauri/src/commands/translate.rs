@@ -35,6 +35,13 @@ pub struct TranslateStreamRequest {
 // Translation commands
 // -----------------------------------------------------------
 
+/// Cancel the current main-window translation. The active request observes
+/// the sequence change and returns the structured `CANCELLED` error.
+#[tauri::command]
+pub fn cancel_translation(state: tauri::State<'_, ApiConfig>) {
+    state.cancel_current_request();
+}
+
 #[tauri::command]
 pub async fn translate(
     state: tauri::State<'_, ApiConfig>,

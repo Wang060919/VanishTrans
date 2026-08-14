@@ -128,15 +128,39 @@ body {
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.075), rgba(0, 0, 0, 0.025));
 }
 
-.language-field select {
+/* Keep the language popover above the editor text layer. */
+.app-shell > .language-switcher {
+  position: relative;
+  z-index: 25;
+}
+
+.language-menu-trigger {
   height: 31px;
   color: rgba(248, 248, 250, 0.86) !important;
   font-size: 11.5px;
   font-weight: 620;
 }
 
-.language-field select:hover {
+.language-menu-trigger:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.045);
+}
+
+.language-menu {
+  background: #11131a !important;
+  background-color: #11131a !important;
+  border-color: rgba(255, 255, 255, 0.14);
+  opacity: 1;
+  isolation: isolate;
+}
+
+.language-menu__option {
+  color: rgba(245, 246, 250, 0.78);
+}
+
+.language-menu__option:hover,
+.language-menu__option:focus-visible,
+.language-menu__option--selected {
+  background: rgba(141, 156, 255, 0.13);
 }
 
 .language-swap {
@@ -188,12 +212,12 @@ body {
 }
 
 .section-meta {
-  color: rgba(218, 220, 230, 0.38) !important;
+  color: rgba(218, 220, 230, 0.58) !important;
   font-size: 10px;
 }
 
 .text-action {
-  color: rgba(220, 222, 232, 0.46) !important;
+  color: rgba(220, 222, 232, 0.66) !important;
   font-size: 10.5px;
 }
 
@@ -234,7 +258,7 @@ body {
 }
 
 .editor-frame textarea::placeholder {
-  color: rgba(218, 220, 230, 0.34) !important;
+  color: rgba(218, 220, 230, 0.56) !important;
 }
 
 .editor-footer {
@@ -243,7 +267,7 @@ body {
 }
 
 .compact-counter {
-  color: rgba(212, 215, 226, 0.34) !important;
+  color: rgba(212, 215, 226, 0.54) !important;
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
 }
 
@@ -317,15 +341,34 @@ body {
 
 .empty-translation span,
 .loading-state > span {
-  color: rgba(215, 218, 228, 0.38) !important;
+  color: rgba(215, 218, 228, 0.56) !important;
   font-size: 10.5px;
+}
+
+.result-notice {
+  margin: 10px 13px 0;
+  color: rgba(255, 157, 157, 0.92);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .app-footer {
   height: 31px;
   border-top-color: rgba(255, 255, 255, 0.06);
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.012));
-  color: rgba(210, 213, 224, 0.27);
+  color: rgba(210, 213, 224, 0.52);
+}
+
+.settings-tabs button {
+  color: rgba(226, 229, 240, 0.68);
+}
+
+.footer-shortcuts kbd {
+  color: rgba(225, 227, 236, 0.64) !important;
+}
+
+.window-status i {
+  background: rgba(225, 227, 236, 0.54) !important;
 }
 
 .app-shell--island .acrylic-panel {

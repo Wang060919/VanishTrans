@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
-import { Check, ClipboardPaste, Copy, Eraser, FileText, RefreshCw, Sparkles } from "lucide-react";
+import { Check, ClipboardPaste, Copy, Eraser, FileText, RefreshCw, Sparkles, Square } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import AnimatedContent from "../components/AnimatedContent";
 import CharCounter from "../components/CharCounter";
@@ -12,10 +12,12 @@ interface TranslatePanelProps {
   inputText: string;
   onInputChange: (v: string) => void;
   outputText: string;
+  error?: string | null;
   loading: boolean;
   glowActive: boolean;
   onClearGlow: () => void;
   onTranslate: (forceRefresh?: boolean) => void;
+  onCancel?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement>;
   streaming?: boolean;
   fileStatus: string | null;
@@ -25,8 +27,8 @@ interface TranslatePanelProps {
 
 export default function TranslatePanel({
   inputText, onInputChange,
-  outputText, loading, glowActive, onClearGlow,
-  onTranslate, inputRef,
+  outputText, error = null, loading, glowActive, onClearGlow,
+  onTranslate, onCancel, inputRef,
   streaming = false,
   fileStatus, onTranslateFile,
   translationKey,
@@ -48,7 +50,8 @@ export default function TranslatePanel({
   }, [glowActive, onClearGlow]);
 
   const handleCopyOutput = useCallback(async () => {
-    if (!outputText || outputText.startsWith("❌")) return;
+    const isLegacyError = outputText.startsWith("❌");
+    if (!outputText || isLegacyError) return;
     await invoke("write_clipboard_safe", { text: outputText });
     setCopied(true);
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
@@ -66,11 +69,12 @@ export default function TranslatePanel({
   }, [inputRef, onInputChange]);
 
   const handleDragEnter = useCallback((event: React.DragEvent) => {
+    if (loading) return;
     event.preventDefault();
     event.stopPropagation();
     dragOverCounter.current += 1;
     if (event.dataTransfer.types.includes("Files")) setDragging(true);
-  }, []);
+  }, [loading]);
 
   const handleDragLeave = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -87,15 +91,18 @@ export default function TranslatePanel({
     event.stopPropagation();
     dragOverCounter.current = 0;
     setDragging(false);
+    if (loading) return;
     const file = event.dataTransfer.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => onTranslateFile(file.name, reader.result as string);
     reader.onerror = () => window.alert("读取文件失败，请检查文件是否可访问。");
     reader.readAsText(file);
-  }, [onTranslateFile]);
+  }, [loading, onTranslateFile]);
 
-  const isError = outputText.startsWith("❌");
+  const isLegacyError = outputText.startsWith("❌");
+  const displayError = error ?? (isLegacyError ? outputText.replace(/^❌\s*/, "") : null);
+  const copyableText = isLegacyError ? "" : outputText;
   const isStreamingActive = loading && streaming;
 
   return (
@@ -125,11 +132,11 @@ export default function TranslatePanel({
             </div>
             <div className="section-actions">
               {inputText && (
-                <button type="button" className="text-action" onClick={() => onInputChange("")} aria-label="清除原文">
+                <button type="button" className="text-action" disabled={loading} onClick={() => onInputChange("")} aria-label="清除原文">
                   <Eraser size={14} aria-hidden="true" />清除
                 </button>
               )}
-              <button type="button" className="text-action" onClick={handlePaste} aria-label="粘贴文本">
+              <button type="button" className="text-action" disabled={loading} onClick={handlePaste} aria-label="粘贴文本">
                 <ClipboardPaste size={14} aria-hidden="true" />粘贴
               </button>
             </div>
@@ -138,12 +145,13 @@ export default function TranslatePanel({
             <textarea
               ref={inputRef}
               value={inputText}
+              disabled={loading}
               maxLength={MAX_INPUT_CHARS}
               onChange={(event) => onInputChange(event.target.value)}
               placeholder="输入、粘贴或拖入文件"
               spellCheck={false}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
+                if (!loading && event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
                   onTranslate(ignoreCache);
                 }
@@ -157,6 +165,7 @@ export default function TranslatePanel({
                   className={`ignore-cache-toggle ${ignoreCache ? "ignore-cache-toggle--active" : ""}`}
                   aria-pressed={ignoreCache}
                   title="忽略翻译记忆缓存，强制请求 API"
+                  disabled={loading}
                   onClick={() => setIgnoreCache((current) => !current)}
                 >
                   <RefreshCw size={13} aria-hidden="true" />
@@ -180,30 +189,34 @@ export default function TranslatePanel({
             <div className="section-heading">
               <span id="result-title">译文</span>
               {isStreamingActive && <span className="section-meta section-meta--active">流式生成中</span>}
-              {!loading && outputText && !isError && <span className="section-meta section-meta--success">已完成</span>}
+              {!loading && outputText && !isLegacyError && !displayError && <span className="section-meta section-meta--success">已完成</span>}
             </div>
-            <div className="section-actions opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              {outputText && !isError && (
-                <SignalBurst active={copied}>
-                  <button type="button" className="text-action text-action--hover" onClick={handleCopyOutput} aria-label="复制译文">
-                    {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-                    {copied ? "已复制" : "复制"}
-                  </button>
-                </SignalBurst>
+            <div className="section-actions section-actions--result">
+              {loading && (
+                <button type="button" className="text-action text-action--danger" onClick={onCancel} aria-label="取消翻译">
+                  <Square size={12} aria-hidden="true" />取消
+                </button>
               )}
-              {isError && (
-                <button type="button" className="text-action text-action--danger text-action--hover" onClick={() => onTranslate(ignoreCache)} aria-label="重试翻译">
+              <SignalBurst active={copied}>
+                <button type="button" className="text-action" disabled={!copyableText} onClick={handleCopyOutput} aria-label="复制译文">
+                  {copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+                  {copied ? "已复制" : "复制"}
+                </button>
+              </SignalBurst>
+              {displayError && !loading && (
+                <button type="button" className="text-action text-action--danger" onClick={() => onTranslate(ignoreCache)} aria-label="重试翻译">
                   <RefreshCw size={14} aria-hidden="true" />重试
                 </button>
               )}
             </div>
           </div>
-          <div className="result-frame" role="status" aria-live="polite">
-            {loading && !outputText ? (
+          <div className="result-frame" aria-live="polite">
+            {displayError && <p className="result-notice" role="alert">{displayError}</p>}
+            {loading && !outputText && !displayError ? (
               <LoadingState />
             ) : outputText ? (
-              <AnimatedContent key={translationKey} preset="slide-up"><p className={`translation-copy ${isError ? "translation-copy--error" : ""}`}>{isError ? outputText.replace(/^❌\s*/, "") : outputText}</p></AnimatedContent>
-            ) : (
+              !isLegacyError && <AnimatedContent key={translationKey} preset="slide-up"><p className="translation-copy">{outputText}</p></AnimatedContent>
+            ) : displayError ? null : (
               <div className="empty-translation">
                 <VanishMark compact animated={false} decorative />
                 <strong>等待一次语言转换</strong>

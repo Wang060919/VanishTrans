@@ -413,6 +413,7 @@ pub fn run() {
             commands::translate,
             commands::translate_with_direction,
             commands::translate_stream,
+            commands::cancel_translation,
             commands::translate_batch,
             commands::cleanup_clipboard_text,
             commands::get_screenshot_payload,
