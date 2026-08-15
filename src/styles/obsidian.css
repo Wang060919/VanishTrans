@@ -72,7 +72,10 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
 }
 
-.app-shell > * {
+/* Base layer for ordinary content. The drawer must stay above it (and above
+   the language switcher / its popover), so exclude it here — it gets its own
+   z-index in the .drawer-layer rule below. */
+.app-shell > :not(.drawer-layer) {
   z-index: 1;
 }
 
@@ -512,6 +515,7 @@ body {
 
 .drawer-layer {
   inset: 46px 0 0;
+  z-index: 30;
 }
 
 .drawer-backdrop {
