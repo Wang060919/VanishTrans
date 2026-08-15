@@ -8,7 +8,7 @@
 ## 总体判断
 
 VanishTrans 当前属于“功能较完整、可构建的 beta”。核心翻译链路与测试基础
-良好（Rust 69 测试、前端 98 测试全绿），主要欠账集中在真实 Windows 交互安全、
+良好（Rust 75 测试、前端 101 测试全绿），主要欠账集中在真实 Windows 交互安全、
 失败处理、交付流程与文档一致性。以下按阶段列出状态与待办。
 
 ## 阶段 1：稳定性止血（2–3 天）
@@ -37,11 +37,12 @@ VanishTrans 当前属于“功能较完整、可构建的 beta”。核心翻译
 |---|---|---|
 | `cargo fmt --check` | ✅ 完成 | 全仓格式化通过 |
 | 严格 Clippy（`-D warnings`） | ✅ 完成 | 0 警告 |
-| Rust 测试 | ✅ 完成 | 69/69 通过 |
-| 前端测试 | ✅ 完成 | 98/98 通过 |
+| Rust 测试 | ✅ 完成 | 75/75 通过 |
+| 前端测试 | ✅ 完成 | 101/101 通过 |
 | 统一 `check` 脚本 | ✅ 完成 | `pnpm check`（typecheck+测试）、`pnpm check:rust`（fmt+clippy+test） |
 | 前端 lint | ✅ 完成 | ESLint flat config + typescript-eslint + react-hooks 经典规则，纳入 `pnpm check` 与 CI |
 | Windows CI | ✅ 完成 | `.github/workflows/ci.yml`：前端/Rust 门禁 + Tauri 安装包构建 |
+| 发布自动化 | ✅ 完成 | `.github/workflows/version-bump.yml`（手动触发 bump 版本+打 tag）→ `.github/workflows/release.yml`（tag 触发构建安装包并发布 GitHub Release）；本地可 `pnpm bump 0.2.0` |
 | 锁定 Node/pnpm/Rust | ✅ 完成 | `engines`、`packageManager`、`.nvmrc`、`rust-toolchain.toml` |
 | LICENSE | ✅ 完成 | MIT，版权 2026 Wang060919 |
 | NSIS 安装包配置 | ✅ 完成 | `tauri.conf.json` bundle 已配置；MSI 需安装 WiX 后可启用 |
@@ -57,8 +58,8 @@ VanishTrans 当前属于“功能较完整、可构建的 beta”。核心翻译
 | 拆分大文件 | ✅ 完成 | `commands.rs`（~950 行）→ `commands/` 8 个领域模块；`BallWindow.tsx`（~880 行）→ `useBallWindow.ts` hook + 渲染壳（~50 行）；`index.css`（~1900 行）→ `styles/` 5 个文件 |
 | 结构化错误 | ✅ 完成 | 后端 `CommandError { code, message }`，全部命令返回结构化错误；前端 `errorMessage/errorCode` 统一解析，兼容字符串/对象/Error |
 | 按工作流取消 | ✅ 完成 | 主窗口翻译与 Alt+R 替换使用独立 `request_seq`，互不取消；OCR 已有 session 隔离 |
-| 原子持久化 | 🟡 部分 | 历史已原子写入（tmp+rename）；配置/TM 同步复核 |
-| 带配置版本的 TM | ✅ 完成 | `context_hash` 覆盖 base_url/model/glossary，改配置即隔离旧缓存 |
+| 原子持久化 | ✅ 完成 | 历史与配置（含灵动岛位置）均原子写入（tmp+rename）；TM 使用 SQLite WAL |
+| 带配置版本的 TM | ✅ 完成 | `context_hash` 覆盖 base_url/model/glossary，改配置即隔离旧缓存；哈希改用稳定 FNV-1a，升级不失效 |
 
 ## 阶段 4：产品增量（下一迭代）
 

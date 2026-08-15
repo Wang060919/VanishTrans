@@ -76,13 +76,20 @@ async function saveBallPosition(
   position: { x: number; y: number },
   reposition = true,
 ) {
-  const saved = await invoke<[number, number] | undefined>("save_ball_position", {
-    ...position,
-    reposition,
-  });
-  return Array.isArray(saved) && saved.length === 2
-    ? { x: saved[0], y: saved[1] }
-    : position;
+  try {
+    const saved = await invoke<[number, number] | undefined>("save_ball_position", {
+      ...position,
+      reposition,
+    });
+    return Array.isArray(saved) && saved.length === 2
+      ? { x: saved[0], y: saved[1] }
+      : position;
+  } catch (error) {
+    // Position persistence is best-effort: keep the in-memory anchor even if
+    // writing config.json fails so the island never resets mid-transition.
+    logError("ball.position", "save position failed", error);
+    return position;
+  }
 }
 
 export function useBallWindow() {
@@ -838,6 +845,9 @@ export function useBallWindow() {
     const lifetime = ++coordinatorLifetimeRef.current;
     return () => {
       queueMicrotask(() => {
+        // Read the counter fresh: a StrictMode remount bumps it synchronously,
+        // so a stale cleanup must NOT dispose the shared coordinator.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         if (coordinatorLifetimeRef.current === lifetime) {
           transitionCoordinator.dispose();
         }

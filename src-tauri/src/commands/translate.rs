@@ -179,9 +179,43 @@ pub async fn translate_stream(
     Ok(result)
 }
 
+/// Marker separating segments in a batched translation request.
+const SEGMENT_MARKER: &str = "\n\n===SEGMENT_BREAK===\n\n";
+
+/// Marker used to split the model's batched response back into segments.
+const SEGMENT_SPLIT_MARKER: &str = "===SEGMENT_BREAK===";
+
+/// Join segments into one request payload, separated by an unambiguous marker.
+fn join_segments(segments: &[String]) -> String {
+    segments.join(SEGMENT_MARKER)
+}
+
+/// Split a batched translation result back into segments, trimming surrounding
+/// whitespace the model may have introduced. Returns `SEGMENT_COUNT_MISMATCH`
+/// when the model merged or dropped segments, so the caller can fall back to
+/// showing raw text instead of a broken reassembly.
+fn split_translated(result: &str, expected_len: usize) -> Result<Vec<String>, CommandError> {
+    let translated: Vec<String> = result
+        .split(SEGMENT_SPLIT_MARKER)
+        .map(|segment| segment.trim().to_string())
+        .collect();
+    if translated.len() != expected_len {
+        return Err(CommandError::new(
+            code::SEGMENT_COUNT_MISMATCH,
+            "分段数量与原文不一致",
+        ));
+    }
+    Ok(translated)
+}
+
 /// Batch translate multiple text segments in a single API call.
 /// Used for file translation (.srt subtitles, .json values).
-/// Each segment is separated by a unique marker so they can be split back.
+///
+/// This path intentionally bypasses the translation-memory cache and does not
+/// write to it: the combined multi-segment request is a different key space
+/// from per-segment lookups, and caching a partial reassembly would risk
+/// returning a stale or mismatched block layout. Single-shot translation
+/// (`translate_with_direction` / `translate_stream`) remains the cache-backed path.
 #[tauri::command]
 pub async fn translate_batch(
     state: tauri::State<'_, ApiConfig>,
@@ -194,9 +228,7 @@ pub async fn translate_batch(
 
     let seq = state.next_request_seq();
 
-    // Join segments with a unique marker
-    const MARKER: &str = "\n\n===SEGMENT_BREAK===\n\n";
-    let combined = segments.join(MARKER);
+    let combined = join_segments(&segments);
     let target = crate::translate::resolve_target_lang(&combined, &direction);
     let result = crate::translate::do_translate_async(&state, &combined, "auto", target)
         .await
@@ -206,20 +238,36 @@ pub async fn translate_batch(
         return Err(CommandError::cancelled());
     }
 
-    // Split result back into segments
-    let translated: Vec<String> = result
-        .split("===SEGMENT_BREAK===")
-        .map(|s| s.trim().to_string())
-        .collect();
+    split_translated(&result, segments.len())
+}
 
-    // If split count doesn't match (model may have merged/split segments),
-    // return an error so the frontend shows raw text instead of broken reassembly
-    if translated.len() != segments.len() {
-        return Err(CommandError::new(
-            code::SEGMENT_COUNT_MISMATCH,
-            "分段数量与原文不一致",
-        ));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn join_segments_separates_each_segment_with_the_marker() {
+        assert_eq!(
+            join_segments(&["a".to_string(), "b".to_string()]),
+            "a\n\n===SEGMENT_BREAK===\n\nb"
+        );
     }
 
-    Ok(translated)
+    #[test]
+    fn split_translated_trims_surrounding_whitespace() {
+        let translated = split_translated(" 你好 \n\n===SEGMENT_BREAK===\n\n world ", 2).unwrap();
+        assert_eq!(translated, vec!["你好".to_string(), "world".to_string()]);
+    }
+
+    #[test]
+    fn split_translated_handles_a_single_segment() {
+        let translated = split_translated("hello", 1).unwrap();
+        assert_eq!(translated, vec!["hello".to_string()]);
+    }
+
+    #[test]
+    fn split_translated_reports_a_segment_count_mismatch() {
+        let error = split_translated("only one segment", 2).unwrap_err();
+        assert_eq!(error.code, code::SEGMENT_COUNT_MISMATCH);
+    }
 }

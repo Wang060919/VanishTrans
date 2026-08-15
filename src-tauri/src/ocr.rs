@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use crate::lock::LockRecover;
+
 /// Maximum width for the preview/OCR image. Larger images are resized to
 /// this width before encoding, which dramatically reduces memory usage
 /// on 4K/Retina displays while preserving enough detail for OCR.
@@ -72,7 +74,7 @@ impl ScreenshotBuffer {
     }
 
     pub fn begin(&self, windows: ScreenshotWindowState) -> Option<u64> {
-        let mut session = self.session.lock().unwrap();
+        let mut session = self.session.lock_recover();
         if session.is_some() {
             return None;
         }
@@ -87,12 +89,12 @@ impl ScreenshotBuffer {
         payload: ScreenshotPayload,
         image: image::DynamicImage,
     ) -> bool {
-        let session = self.session.lock().unwrap();
+        let session = self.session.lock_recover();
         if session.as_ref().map(|session| session.id) != Some(session_id) {
             return false;
         }
-        *self.payload.lock().unwrap() = Some(payload);
-        *self.image.lock().unwrap() = Some(image);
+        *self.payload.lock_recover() = Some(payload);
+        *self.image.lock_recover() = Some(image);
         true
     }
 
@@ -105,10 +107,10 @@ impl ScreenshotBuffer {
     }
 
     fn end_session(&self) -> Option<ScreenshotWindowState> {
-        let mut session = self.session.lock().unwrap();
+        let mut session = self.session.lock_recover();
         let windows = session.take().map(|session| session.windows);
-        *self.payload.lock().unwrap() = None;
-        *self.image.lock().unwrap() = None;
+        *self.payload.lock_recover() = None;
+        *self.image.lock_recover() = None;
         windows
     }
 }
@@ -542,8 +544,8 @@ mod tests {
         assert!(buffer.begin(ScreenshotWindowState::default()).is_none());
         assert!(buffer.store(session, payload(), image::DynamicImage::new_rgba8(1, 1)));
         assert_eq!(buffer.complete(), Some(window_state()));
-        assert!(buffer.payload.lock().unwrap().is_none());
-        assert!(buffer.image.lock().unwrap().is_none());
+        assert!(buffer.payload.lock_recover().is_none());
+        assert!(buffer.image.lock_recover().is_none());
     }
 
     #[test]

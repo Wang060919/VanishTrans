@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
@@ -36,6 +36,13 @@ const mockedEmit = emitTauriEvent as unknown as ReturnType<typeof vi.fn>;
 
 function emit(eventName: string, payload: unknown = undefined) {
   listeners[eventName]?.forEach((listener) => listener({ payload }));
+}
+
+async function triggerAndFlush(action: () => void) {
+  await act(async () => {
+    action();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 describe("App", () => {
@@ -117,7 +124,7 @@ describe("App", () => {
       return Promise.resolve(undefined);
     });
 
-    emit("shortcut-translate", "hello world");
+    await triggerAndFlush(() => emit("shortcut-translate", "hello world"));
 
     await waitFor(() => {
       expect(screen.getByText(/你好/)).toBeInTheDocument();
@@ -156,7 +163,7 @@ describe("App", () => {
     render(<App />);
     await waitFor(() => expect(listeners["ocr-translate"]).toBeDefined());
 
-    emit("ocr-translate", "scanned text");
+    await triggerAndFlush(() => emit("ocr-translate", "scanned text"));
 
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith(
@@ -238,7 +245,7 @@ describe("App", () => {
 
     const streamCall = mockedInvoke.mock.calls.find(([cmd]) => cmd === "translate_stream");
     const requestId = streamCall?.[1]?.request?.requestId;
-    emit("translate-stream-chunk", { requestId, chunk: "已接收部分" });
+    await triggerAndFlush(() => emit("translate-stream-chunk", { requestId, chunk: "已接收部分" }));
     await waitFor(() => expect(screen.getByText("已接收部分")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "取消翻译" }));
@@ -294,11 +301,11 @@ describe("App", () => {
 
     render(<App />);
     await waitFor(() => expect(listeners["ocr-translate"]).toBeDefined());
-    emit("ocr-translate", "first");
+    await triggerAndFlush(() => emit("ocr-translate", "first"));
     await waitFor(() => {
       expect(mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream")).toHaveLength(1);
     });
-    emit("ocr-translate", "second");
+    await triggerAndFlush(() => emit("ocr-translate", "second"));
 
     await waitFor(() => {
       const calls = mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream");

@@ -1,5 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
+use crate::lock::LockRecover;
+
 // -----------------------------------------------------------
 // Frontend readiness signal
 // -----------------------------------------------------------
@@ -16,11 +18,7 @@ pub fn frontend_ready() {
 
 #[tauri::command]
 pub fn get_startup_warnings(warnings: tauri::State<'_, crate::StartupWarnings>) -> Vec<String> {
-    warnings
-        .0
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner())
-        .clone()
+    warnings.0.lock_recover().clone()
 }
 
 #[tauri::command]

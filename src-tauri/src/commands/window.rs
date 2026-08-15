@@ -6,6 +6,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use crate::commands::app::{FRONTEND_READY, QUICK_FRONTEND_READY};
 use crate::commands::clipboard::cleanup_clipboard_text;
 use crate::error::CommandError;
+use crate::lock::LockRecover;
 
 // -----------------------------------------------------------
 // Window commands
@@ -290,8 +291,9 @@ pub fn save_ball_position(
     } else {
         (x, y)
     };
-    // Persist to config (with lock to avoid concurrent write conflicts)
-    let _lock = crate::translate::CONFIG_FILE_LOCK.lock().unwrap();
+    // Persist to config (with lock to avoid concurrent write conflicts).
+    // Written via tmp+rename so a crash mid-write cannot truncate config.json.
+    let _lock = crate::translate::CONFIG_FILE_LOCK.lock_recover();
     let config_dir = app
         .path()
         .app_data_dir()
@@ -304,12 +306,18 @@ pub fn save_ball_position(
     cfg["ball_x"] = serde_json::json!(x);
     cfg["ball_y"] = serde_json::json!(y);
     if let Some(p) = config_path.parent() {
-        let _ = std::fs::create_dir_all(p);
+        std::fs::create_dir_all(p)
+            .map_err(|e| CommandError::io(format!("创建配置目录失败: {}", e)))?;
     }
-    let _ = std::fs::write(
-        &config_path,
-        serde_json::to_string_pretty(&cfg).unwrap_or_default(),
-    );
+    let json = serde_json::to_string_pretty(&cfg)
+        .map_err(|e| CommandError::io(format!("序列化配置失败: {}", e)))?;
+    let tmp_path = config_path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, json)
+        .map_err(|e| CommandError::io(format!("写入临时配置失败: {}", e)))?;
+    if let Err(e) = std::fs::rename(&tmp_path, &config_path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(CommandError::io(format!("替换配置文件失败: {}", e)));
+    }
     Ok((x, y))
 }
 

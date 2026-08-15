@@ -24,7 +24,21 @@ vi.mock("@tauri-apps/api/window", () => ({
 import { invoke } from "@tauri-apps/api/core";
 
 const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
-let canvasContext: Record<string, any>;
+
+type CanvasContextMock = {
+  setTransform: ReturnType<typeof vi.fn>;
+  fillRect: ReturnType<typeof vi.fn>;
+  clearRect: ReturnType<typeof vi.fn>;
+  strokeRect: ReturnType<typeof vi.fn>;
+  measureText: ReturnType<typeof vi.fn>;
+  fillText: ReturnType<typeof vi.fn>;
+  fillStyle: string;
+  strokeStyle: string;
+  lineWidth: number;
+  font: string;
+};
+
+let canvasContext: CanvasContextMock;
 
 const screenshotPayload = {
   dataUri: "data:image/png;base64,AAA",

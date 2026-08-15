@@ -1,10 +1,11 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+
+use crate::lock::LockRecover;
 
 /// Mutex protecting concurrent reads/writes to config.json.
 pub static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
@@ -243,6 +244,17 @@ fn default_max_records() -> usize {
     200
 }
 
+/// FNV-1a 64-bit hash — deterministic and stable across Rust toolchains,
+/// unlike `std::hash::DefaultHasher` whose algorithm is unspecified.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &byte in bytes {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 impl ApiConfig {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
         let config_path = config_dir.join("config.json");
@@ -327,14 +339,14 @@ impl ApiConfig {
     }
 
     pub fn save_to_disk(&self) -> Result<(), String> {
-        let _lock = CONFIG_FILE_LOCK.lock().unwrap();
+        let _lock = CONFIG_FILE_LOCK.lock_recover();
         let cfg = PersistedConfig {
-            base_url: self.base_url.lock().unwrap().clone(),
-            model: self.model.lock().unwrap().clone(),
-            hotkeys: self.hotkeys.lock().unwrap().clone(),
-            glossary: self.glossary.lock().unwrap().clone(),
+            base_url: self.base_url.lock_recover().clone(),
+            model: self.model.lock_recover().clone(),
+            hotkeys: self.hotkeys.lock_recover().clone(),
+            glossary: self.glossary.lock_recover().clone(),
             max_records: self.max_records.load(std::sync::atomic::Ordering::Relaxed),
-            profiles: self.profiles.lock().unwrap().clone(),
+            profiles: self.profiles.lock_recover().clone(),
         };
         if let Some(p) = self.config_path.parent() {
             std::fs::create_dir_all(p).map_err(|e| format!("创建配置目录失败: {}", e))?;
@@ -367,7 +379,7 @@ impl ApiConfig {
     }
 
     pub fn save_api_key(&self) -> Result<(), String> {
-        let key = self.api_key.lock().unwrap().clone();
+        let key = self.api_key.lock_recover().clone();
         save_api_key_credential(&key)
     }
 
@@ -401,7 +413,7 @@ impl ApiConfig {
 
     /// Replace the saved profile with the same name, or append it.
     pub fn upsert_profile(&self, profile: ServiceProfile) -> Result<(), String> {
-        let mut profiles = self.profiles.lock().unwrap();
+        let mut profiles = self.profiles.lock_recover();
         if let Some(existing) = profiles
             .iter_mut()
             .find(|existing| existing.name == profile.name)
@@ -415,7 +427,7 @@ impl ApiConfig {
     }
 
     pub fn delete_profile(&self, name: &str) -> Result<(), String> {
-        let mut profiles = self.profiles.lock().unwrap();
+        let mut profiles = self.profiles.lock_recover();
         profiles.retain(|profile| profile.name != name);
         drop(profiles);
         self.save_to_disk()
@@ -423,7 +435,7 @@ impl ApiConfig {
 
     /// Apply a saved profile's base URL and model to the active configuration.
     pub fn apply_profile(&self, name: &str) -> Result<(), String> {
-        let profiles = self.profiles.lock().unwrap();
+        let profiles = self.profiles.lock_recover();
         let profile = profiles
             .iter()
             .find(|profile| profile.name == name)
@@ -431,30 +443,28 @@ impl ApiConfig {
         let base_url = profile.base_url.clone();
         let model = profile.model.clone();
         drop(profiles);
-        *self.base_url.lock().unwrap() = base_url;
-        *self.model.lock().unwrap() = model;
+        *self.base_url.lock_recover() = base_url;
+        *self.model.lock_recover() = model;
         self.save_to_disk()
     }
 
     /// Fingerprint every setting that can change a translation result.
     /// TM entries are scoped to this value so changing provider, model, or
     /// glossary cannot silently return a result produced by stale settings.
+    ///
+    /// Hashes a canonical JSON encoding with FNV-1a. This is stable across
+    /// Rust toolchains, so an app upgrade does not silently orphan the whole
+    /// translation-memory cache (the previous `DefaultHasher` had no such
+    /// guarantee).
     pub fn translation_context_hash(&self) -> String {
-        let mut hasher = DefaultHasher::new();
-        "vanish-trans-context-v1".hash(&mut hasher);
-        self.base_url
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .hash(&mut hasher);
-        self.model
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .hash(&mut hasher);
-        self.glossary
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner())
-            .hash(&mut hasher);
-        format!("{:016x}", hasher.finish())
+        let canonical = serde_json::json!({
+            "v": 2,
+            "baseUrl": *self.base_url.lock_recover(),
+            "model": *self.model.lock_recover(),
+            "glossary": *self.glossary.lock_recover(),
+        });
+        let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
+        format!("{:016x}", fnv1a64(&bytes))
     }
 }
 
@@ -526,9 +536,9 @@ fn validate_and_get_config(state: &ApiConfig, text: &str) -> Result<ValidatedCon
     // 2. Get configuration
     let (base_url, api_key, model) = {
         (
-            state.base_url.lock().unwrap().clone(),
-            state.api_key.lock().unwrap().clone(),
-            state.model.lock().unwrap().clone(),
+            state.base_url.lock_recover().clone(),
+            state.api_key.lock_recover().clone(),
+            state.model.lock_recover().clone(),
         )
     };
 
@@ -571,7 +581,7 @@ fn build_translation_prompt(
         format!(" (source language: {})", source_lang)
     };
 
-    let glossary = state.glossary.lock().unwrap().clone();
+    let glossary = state.glossary.lock_recover().clone();
     let system_prompt = build_system_prompt(&glossary);
 
     let user_content = format!(
@@ -638,7 +648,7 @@ pub async fn do_translate_async(
     let body = build_chat_request(config.model, prompt, false);
 
     // 4. Send request
-    let client = state.client.lock().unwrap().clone();
+    let client = state.client.lock_recover().clone();
     let resp = client
         .post(&config.chat_url)
         .header("Authorization", format!("Bearer {}", config.api_key))
@@ -709,7 +719,7 @@ pub async fn test_connection_async(
         },
         false,
     );
-    let client = state.client.lock().unwrap().clone();
+    let client = state.client.lock_recover().clone();
     let resp = client
         .post(&chat_url)
         .header("Authorization", format!("Bearer {}", api_key.trim()))
@@ -816,7 +826,7 @@ pub async fn do_translate_stream_async(
     let body = build_chat_request(config.model, prompt, true);
 
     // 4. Send streaming request
-    let client = state.client.lock().unwrap().clone();
+    let client = state.client.lock_recover().clone();
     let resp = tokio::time::timeout(
         Duration::from_secs(TIMEOUT_SECS),
         client
@@ -964,12 +974,12 @@ mod tests {
         let chunks = std::sync::Mutex::new(Vec::new());
         let line = r#"data:{"choices":[{"delta":{"content":"你好"}}]}"#;
         let done = process_sse_line(line.as_bytes(), &mut full_text, &|chunk| {
-            chunks.lock().unwrap().push(chunk);
+            chunks.lock_recover().push(chunk);
         })
         .unwrap();
         assert!(!done);
         assert_eq!(full_text, "你好");
-        assert_eq!(*chunks.lock().unwrap(), vec!["你好"]);
+        assert_eq!(*chunks.lock_recover(), vec!["你好"]);
     }
 
     #[test]
@@ -983,13 +993,30 @@ mod tests {
         )
         .unwrap();
         let config = ApiConfig::load_or_default(dir.clone());
-        *config.model.lock().unwrap() = "updated".into();
+        *config.model.lock_recover() = "updated".into();
         config.save_to_disk().unwrap();
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(saved["ball_x"], 321);
         assert_eq!(saved["ball_y"], 654);
         assert_eq!(saved["model"], "updated");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn translation_context_hash_is_stable_and_tracks_settings() {
+        let dir = std::env::temp_dir().join(format!("vt_ctx_hash_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let config = ApiConfig::load_or_default(dir.clone());
+
+        let first = config.translation_context_hash();
+        let second = config.translation_context_hash();
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 16);
+
+        *config.model.lock_recover() = "deepseek-chat".into();
+        assert_ne!(first, config.translation_context_hash());
+
         let _ = std::fs::remove_dir_all(dir);
     }
 }

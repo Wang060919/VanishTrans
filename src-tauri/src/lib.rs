@@ -4,6 +4,7 @@ mod cursor;
 mod error;
 mod history;
 mod keyboard;
+mod lock;
 mod logging;
 mod ocr;
 mod setup;
@@ -19,6 +20,7 @@ use tauri::{Emitter, Manager};
 
 use crate::clipboard::ClipboardGuard;
 use crate::history::HistoryStore;
+use crate::lock::LockRecover;
 use crate::ocr::ScreenshotBuffer;
 use crate::translate::ApiConfig;
 
@@ -352,8 +354,8 @@ pub fn run() {
             let warm_handle = app.handle().clone();
             app.state::<AppState>().runtime.spawn(async move {
                 let cfg = warm_handle.state::<ApiConfig>();
-                let base_url = cfg.base_url.lock().unwrap().clone();
-                let client = cfg.client.lock().unwrap().clone();
+                let base_url = cfg.base_url.lock_recover().clone();
+                let client = cfg.client.lock_recover().clone();
                 let url = if base_url.ends_with("/v1") || base_url.ends_with("/v1/") {
                     format!("{}/models", base_url.trim_end_matches('/'))
                 } else {
@@ -440,8 +442,20 @@ pub fn run() {
             commands::save_ball_position,
             commands::get_ball_position,
         ])
-        .run(tauri::generate_context!())
-        .expect("启动 VanishTrans 失败");
+        .build(tauri::generate_context!())
+        .expect("启动 VanishTrans 失败")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Flush pending history once more on shutdown so a kill via the
+                // OS or a crash path does not silently drop the last few seconds
+                // of records (the tray "quit" path already flushes explicitly).
+                if let Some(store) = app.try_state::<HistoryStore>() {
+                    if let Err(error) = store.flush() {
+                        log::error!("[history] exit flush failed: {error}");
+                    }
+                }
+            }
+        });
 }
 
 // -----------------------------------------------------------

@@ -10,6 +10,7 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 
 use crate::clipboard::{backup_clipboard, restore_clipboard, ClipboardGuard};
 use crate::keyboard;
+use crate::lock::LockRecover;
 use crate::translate::{self, ApiConfig};
 use crate::AppState;
 
@@ -254,7 +255,7 @@ fn publish_shortcut_conflicts(
 /// Called on init and whenever hotkeys are updated.
 pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
     let api_config = app.state::<ApiConfig>();
-    let hotkeys = api_config.hotkeys.lock().unwrap().clone();
+    let hotkeys = api_config.hotkeys.lock_recover().clone();
     let shortcut_plugin = app.global_shortcut();
     let validated = validate_shortcuts(&hotkeys)?;
     log::info!(
@@ -268,7 +269,7 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
 
     // Validate the complete replacement set before touching active bindings.
     let previous = {
-        let mut registered = get_shortcuts().lock().unwrap();
+        let mut registered = get_shortcuts().lock_recover();
         std::mem::take(&mut *registered)
     };
     for (shortcut, _) in &previous {
@@ -281,7 +282,7 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
             .map_err(|error| error.to_string())
     });
 
-    *get_shortcuts().lock().unwrap() = replacement;
+    *get_shortcuts().lock_recover() = replacement;
     publish_shortcut_conflicts(app, conflicts);
     Ok(())
 }
@@ -318,7 +319,7 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
 
                 // Look up the action for this shortcut
                 let action = {
-                    let registered = get_shortcuts().lock().unwrap();
+                    let registered = get_shortcuts().lock_recover();
                     log::info!(
                         "[shortcut] fired: {:?}, registered: {:?}",
                         sc,

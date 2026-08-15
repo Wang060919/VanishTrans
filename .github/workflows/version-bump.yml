@@ -1,0 +1,43 @@
+name: Version bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "新版本号（不带 v，例如 0.2.0）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bump version across manifests
+        run: node scripts/bump-version.mjs "${{ inputs.version }}"
+
+      # The tag push below triggers the `release` workflow, which builds the
+      # installer and publishes the GitHub Release.
+      - name: Commit and push tag
+        env:
+          VERSION: ${{ inputs.version }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "chore: bump version to ${VERSION}"
+          git tag "v${VERSION}"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          git push origin "v${VERSION}"

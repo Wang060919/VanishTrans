@@ -2,6 +2,7 @@ use tauri::Manager;
 
 use crate::error::CommandError;
 use crate::history::HistoryStore;
+use crate::lock::LockRecover;
 use crate::translate::{test_connection_async, ApiConfig, ServiceProfile};
 
 // -----------------------------------------------------------
@@ -13,13 +14,13 @@ pub fn get_api_config(
     state: tauri::State<'_, ApiConfig>,
 ) -> Result<serde_json::Value, CommandError> {
     Ok(serde_json::json!({
-        "baseUrl": *state.base_url.lock().unwrap(),
-        "hasApiKey": !state.api_key.lock().unwrap().is_empty(),
-        "model": *state.model.lock().unwrap(),
-        "hotkeys": *state.hotkeys.lock().unwrap(),
-        "glossary": *state.glossary.lock().unwrap(),
+        "baseUrl": *state.base_url.lock_recover(),
+        "hasApiKey": !state.api_key.lock_recover().is_empty(),
+        "model": *state.model.lock_recover(),
+        "hotkeys": *state.hotkeys.lock_recover(),
+        "glossary": *state.glossary.lock_recover(),
         "maxRecords": state.max_records.load(std::sync::atomic::Ordering::Relaxed),
-        "profiles": *state.profiles.lock().unwrap(),
+        "profiles": *state.profiles.lock_recover(),
     }))
 }
 
@@ -45,17 +46,17 @@ pub fn set_api_config(
     }
 
     if let Some(api_key) = api_key {
-        let mut key_guard = state.api_key.lock().unwrap();
+        let mut key_guard = state.api_key.lock_recover();
         let previous_key = key_guard.clone();
         *key_guard = api_key;
         drop(key_guard);
         if let Err(error) = state.save_api_key() {
-            *state.api_key.lock().unwrap() = previous_key;
+            *state.api_key.lock_recover() = previous_key;
             return Err(CommandError::io(error));
         }
     }
-    *state.base_url.lock().unwrap() = base_url;
-    *state.model.lock().unwrap() = model;
+    *state.base_url.lock_recover() = base_url;
+    *state.model.lock_recover() = model;
     state.save_to_disk().map_err(CommandError::io)
 }
 
@@ -65,11 +66,11 @@ pub fn set_hotkeys(
     state: tauri::State<'_, ApiConfig>,
     hotkeys: Vec<(String, String)>,
 ) -> Result<(), CommandError> {
-    let previous = state.hotkeys.lock().unwrap().clone();
-    *state.hotkeys.lock().unwrap() = hotkeys;
+    let previous = state.hotkeys.lock_recover().clone();
+    *state.hotkeys.lock_recover() = hotkeys;
     // Re-register global shortcuts with the new bindings
     if let Err(error) = crate::setup::sync_shortcuts(&app) {
-        *state.hotkeys.lock().unwrap() = previous;
+        *state.hotkeys.lock_recover() = previous;
         return Err(CommandError::validation(format!(
             "快捷键更新失败: {}",
             error
@@ -83,7 +84,7 @@ pub fn set_glossary(
     state: tauri::State<'_, ApiConfig>,
     glossary: Vec<(String, String)>,
 ) -> Result<(), CommandError> {
-    *state.glossary.lock().unwrap() = glossary;
+    *state.glossary.lock_recover() = glossary;
     state.save_to_disk().map_err(CommandError::io)
 }
 
@@ -111,7 +112,7 @@ pub fn set_max_records(
 pub fn list_service_profiles(
     state: tauri::State<'_, ApiConfig>,
 ) -> Result<Vec<ServiceProfile>, CommandError> {
-    Ok(state.profiles.lock().unwrap().clone())
+    Ok(state.profiles.lock_recover().clone())
 }
 
 #[tauri::command]
@@ -140,7 +141,7 @@ pub fn save_service_profile(
             model,
         })
         .map_err(CommandError::io)?;
-    Ok(state.profiles.lock().unwrap().clone())
+    Ok(state.profiles.lock_recover().clone())
 }
 
 #[tauri::command]
@@ -151,7 +152,7 @@ pub fn delete_service_profile(
     state
         .delete_profile(name.trim())
         .map_err(CommandError::io)?;
-    Ok(state.profiles.lock().unwrap().clone())
+    Ok(state.profiles.lock_recover().clone())
 }
 
 #[tauri::command]
@@ -160,7 +161,7 @@ pub fn apply_service_profile(
     name: String,
 ) -> Result<ServiceProfile, CommandError> {
     state.apply_profile(name.trim()).map_err(CommandError::io)?;
-    let profiles = state.profiles.lock().unwrap();
+    let profiles = state.profiles.lock_recover();
     profiles
         .iter()
         .find(|profile| profile.name == name.trim())
@@ -177,7 +178,7 @@ pub async fn test_connection(
 ) -> Result<String, CommandError> {
     let api_key = match api_key {
         Some(key) if !key.trim().is_empty() => key,
-        _ => state.api_key.lock().unwrap().clone(),
+        _ => state.api_key.lock_recover().clone(),
     };
     test_connection_async(&state, &base_url, &api_key, &model)
         .await

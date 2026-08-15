@@ -4,6 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::lock::LockRecover;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TranslationRecord {
     pub id: u64,
@@ -43,7 +45,7 @@ impl HistoryStore {
     pub fn set_max_records(&self, max: usize) {
         self.max_records.store(max, Ordering::Relaxed);
         // Trim existing records if new limit is lower
-        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let mut records = self.records.lock_recover();
         if records.len() > max {
             let drain_count = records.len() - max;
             records.drain(..drain_count);
@@ -66,7 +68,7 @@ impl HistoryStore {
             direction: direction.to_string(),
             timestamp,
         };
-        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let mut records = self.records.lock_recover();
         records.push(record);
         // Keep only the latest max_records
         let limit = self.max_records.load(Ordering::Relaxed);
@@ -83,20 +85,20 @@ impl HistoryStore {
         if !self.dirty.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let records = self.records.lock_recover();
         self.save_locked(&records)?;
         self.dirty.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     pub fn get_all(&self) -> Vec<TranslationRecord> {
-        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let records = self.records.lock_recover();
         records.iter().rev().cloned().collect()
     }
 
     pub fn search(&self, query: &str) -> Vec<TranslationRecord> {
         let query_lower = query.to_lowercase();
-        let records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let records = self.records.lock_recover();
         records
             .iter()
             .rev()
@@ -109,7 +111,7 @@ impl HistoryStore {
     }
 
     pub fn delete(&self, id: u64) -> Result<(), String> {
-        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let mut records = self.records.lock_recover();
         let previous = records.clone();
         records.retain(|r| r.id != id);
         if let Err(error) = self.save_locked(&records) {
@@ -120,7 +122,7 @@ impl HistoryStore {
     }
 
     pub fn clear(&self) -> Result<(), String> {
-        let mut records = self.records.lock().unwrap_or_else(|e| e.into_inner());
+        let mut records = self.records.lock_recover();
         let previous = records.clone();
         records.clear();
         if let Err(error) = self.save_locked(&records) {

@@ -4,6 +4,8 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::lock::LockRecover;
+
 const MAX_IMPORT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_IMPORT_ROWS: usize = 100_000;
 
@@ -26,11 +28,6 @@ pub struct TmStats {
 
 pub struct TranslationMemory {
     conn: Mutex<Connection>,
-}
-
-/// Recover from a poisoned mutex by consuming the poison and returning the inner value.
-fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
 impl TranslationMemory {
@@ -165,7 +162,7 @@ impl TranslationMemory {
         target_lang: &str,
         context_hash: &str,
     ) -> Option<String> {
-        let conn = lock_or_recover(&self.conn);
+        let conn = self.conn.lock_recover();
         let mut stmt = conn
             .prepare(
                 "SELECT id, target FROM translation_memory
@@ -204,7 +201,7 @@ impl TranslationMemory {
         target_lang: &str,
         context_hash: &str,
     ) {
-        let conn = lock_or_recover(&self.conn);
+        let conn = self.conn.lock_recover();
         if let Err(e) = Self::store_inner(
             &conn,
             source,
@@ -219,7 +216,7 @@ impl TranslationMemory {
 
     /// Search TM entries by source or target text.
     pub fn search(&self, query: &str) -> Vec<TmEntry> {
-        let conn = lock_or_recover(&self.conn);
+        let conn = self.conn.lock_recover();
         let sql = if query.is_empty() {
             "SELECT id, source, target, source_lang, target_lang, created_at, hit_count
              FROM translation_memory ORDER BY created_at DESC LIMIT 200"
@@ -266,7 +263,7 @@ impl TranslationMemory {
 
     /// Delete a single TM entry by ID.
     pub fn delete(&self, id: i64) -> Result<(), String> {
-        let conn = lock_or_recover(&self.conn);
+        let conn = self.conn.lock_recover();
         conn.execute("DELETE FROM translation_memory WHERE id = ?1", params![id])
             .map_err(|e| format!("删除翻译记忆失败: {}", e))?;
         Ok(())
@@ -274,7 +271,7 @@ impl TranslationMemory {
 
     /// Clear all TM entries.
     pub fn clear(&self) -> Result<(), String> {
-        let conn = lock_or_recover(&self.conn);
+        let conn = self.conn.lock_recover();
         conn.execute("DELETE FROM translation_memory", [])
             .map_err(|e| format!("清空翻译记忆失败: {}", e))?;
         Ok(())
@@ -282,7 +279,7 @@ impl TranslationMemory {
 
     /// Get TM statistics.
     pub fn stats(&self) -> TmStats {
-        let conn = lock_or_recover(&self.conn);
+        let conn = self.conn.lock_recover();
         let total_entries: usize = conn
             .query_row("SELECT COUNT(*) FROM translation_memory", [], |r| r.get(0))
             .unwrap_or(0);
@@ -325,7 +322,7 @@ impl TranslationMemory {
     }
 
     fn all_entries(&self) -> Result<Vec<TmEntry>, String> {
-        let conn = lock_or_recover(&self.conn);
+        let conn = self.conn.lock_recover();
         let mut stmt = conn
             .prepare(
                 "SELECT id, source, target, source_lang, target_lang, created_at, hit_count
@@ -400,7 +397,7 @@ impl TranslationMemory {
             .has_headers(false)
             .from_reader(reader);
 
-        let mut conn = lock_or_recover(&self.conn);
+        let mut conn = self.conn.lock_recover();
         let transaction = conn
             .transaction()
             .map_err(|error| format!("开始导入翻译记忆失败: {error}"))?;

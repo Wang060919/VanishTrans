@@ -8,6 +8,8 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
+use crate::lock::LockRecover;
+
 #[cfg(target_os = "windows")]
 struct ClipboardFormatSnapshot {
     format: u32,
@@ -238,7 +240,7 @@ impl ClipboardGuard {
     pub fn mark_written(&self, text: &str) {
         let mut h = DefaultHasher::new();
         text.hash(&mut h);
-        *self.last_written_hash.lock().unwrap() = h.finish();
+        *self.last_written_hash.lock_recover() = h.finish();
         self.dirty.store(true, Ordering::SeqCst);
     }
 
@@ -248,7 +250,7 @@ impl ClipboardGuard {
         }
         let mut h = DefaultHasher::new();
         text.hash(&mut h);
-        h.finish() == *self.last_written_hash.lock().unwrap()
+        h.finish() == *self.last_written_hash.lock_recover()
     }
 
     pub fn clear_dirty(&self) {
@@ -267,7 +269,7 @@ impl ClipboardGuard {
         let mut h = DefaultHasher::new();
         text.hash(&mut h);
         let hash = h.finish();
-        let mut last = self.watch_last_hash.lock().unwrap();
+        let mut last = self.watch_last_hash.lock_recover();
         if *last == hash {
             return false;
         }

@@ -2,6 +2,7 @@ use tauri::Manager;
 
 use crate::commands::window::{show_quick_translation, show_without_activation};
 use crate::error::CommandError;
+use crate::lock::LockRecover;
 use crate::ocr::{OcrOutput, ScreenshotBuffer, ScreenshotPayload, ScreenshotWindowState};
 
 // -----------------------------------------------------------
@@ -12,7 +13,7 @@ use crate::ocr::{OcrOutput, ScreenshotBuffer, ScreenshotPayload, ScreenshotWindo
 pub fn get_screenshot_payload(
     state: tauri::State<'_, ScreenshotBuffer>,
 ) -> Result<ScreenshotPayload, CommandError> {
-    let guard = state.payload.lock().unwrap();
+    let guard = state.payload.lock_recover();
     match guard.as_ref() {
         Some(payload) => Ok(payload.clone()),
         None => Err(CommandError::not_found("没有截图数据，请先截屏 (Alt+W)")),

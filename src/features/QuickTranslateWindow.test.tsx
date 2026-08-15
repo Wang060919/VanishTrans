@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QuickTranslateWindow from "./QuickTranslateWindow";
 
-type Listener = (event: { payload: any }) => void;
+type Listener = (event: { payload: unknown }) => void;
 const listeners: Record<string, Listener> = {};
 const setSize = vi.fn(() => Promise.resolve());
 const startDragging = vi.fn(() => Promise.resolve());
@@ -30,8 +30,15 @@ import { emit } from "@tauri-apps/api/event";
 const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
 const mockedEmit = emit as unknown as ReturnType<typeof vi.fn>;
 
-function dispatch(name: string, payload: any) {
+function dispatch(name: string, payload: unknown) {
   listeners[name]?.({ payload });
+}
+
+async function triggerAndFlush(action: () => void) {
+  await act(async () => {
+    action();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 describe("QuickTranslateWindow", () => {
@@ -66,7 +73,7 @@ describe("QuickTranslateWindow", () => {
   it("streams a selected-text translation and copies the result", async () => {
     render(<QuickTranslateWindow />);
     await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
-    dispatch("quick-translate", " hello world ");
+    await triggerAndFlush(() => dispatch("quick-translate", " hello world "));
 
     await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText("你好世界")).toBeInTheDocument());
@@ -88,7 +95,7 @@ describe("QuickTranslateWindow", () => {
   it("shows selection capture failures without starting translation", async () => {
     render(<QuickTranslateWindow />);
     await waitFor(() => expect(listeners["quick-translate-error"]).toBeDefined());
-    dispatch("quick-translate-error", "未读取到选中文字");
+    await triggerAndFlush(() => dispatch("quick-translate-error", "未读取到选中文字"));
 
     expect(await screen.findByText("未读取到选中文字")).toBeInTheDocument();
     expect(mockedInvoke).not.toHaveBeenCalledWith("translate_stream", expect.anything());
@@ -104,7 +111,7 @@ describe("QuickTranslateWindow", () => {
     render(<QuickTranslateWindow />);
     await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
 
-    dispatch("quick-translate", "hello");
+    await triggerAndFlush(() => dispatch("quick-translate", "hello"));
 
     expect(await screen.findByText("网络连接失败")).toBeInTheDocument();
     expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
