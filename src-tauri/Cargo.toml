@@ -1,6 +1,6 @@
 [package]
 name = "vanish-trans"
-version = "0.1.0"
+version = "0.1.1"
 description = "A lightweight, AI-driven translation tool for Windows"
 authors = ["wang"]
 edition = "2021"

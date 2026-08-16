@@ -1,7 +1,7 @@
 {
   "name": "vanish-trans",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "packageManager": "pnpm@10.33.2",
   "engines": {
