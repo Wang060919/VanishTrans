@@ -28,6 +28,8 @@ interface SettingsPanelProps {
   onTestConnection: () => Promise<string>;
   loggingEnabled: boolean;
   onSetLogging: (enabled: boolean) => Promise<void>;
+  freeTranslation: boolean;
+  onSetFreeTranslation: (enabled: boolean) => Promise<void>;
 }
 
 export type SettingsTab = "api" | "hotkeys" | "glossary" | "tm" | "privacy";
@@ -49,6 +51,7 @@ export default function SettingsPanel({
   hotkeys, hotkeyLabels, onHotkeysChange,
   profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
   loggingEnabled, onSetLogging,
+  freeTranslation, onSetFreeTranslation,
 }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [draftGlossary, setDraftGlossary] = useState(glossary);
@@ -174,6 +177,15 @@ export default function SettingsPanel({
     }
   }, [onSetLogging, reportError]);
 
+  const handleSetFreeTranslation = useCallback(async (enabled: boolean) => {
+    try {
+      await onSetFreeTranslation(enabled);
+      setSaveError("");
+    } catch (error) {
+      reportError(error);
+    }
+  }, [onSetFreeTranslation, reportError]);
+
   const scheduleGlossarySave = useCallback((entries: GlossaryEntry[]) => {
     glossaryDraftRef.current = entries;
     if (glossaryTimerRef.current) clearTimeout(glossaryTimerRef.current);
@@ -211,6 +223,23 @@ export default function SettingsPanel({
             <div className="settings-section-heading">
               <Server size={17} aria-hidden="true" />
               <div><h3 id="api-settings-title">模型连接</h3><p>连接任意兼容 OpenAI API 的服务。</p></div>
+            </div>
+            <div className="setting-field">
+              <label htmlFor="free-translation-toggle">免费翻译（Google）</label>
+              <div className="setting-inline">
+                <button
+                  id="free-translation-toggle"
+                  type="button"
+                  role="switch"
+                  aria-checked={freeTranslation}
+                  className="toggle-switch"
+                  onClick={() => void handleSetFreeTranslation(!freeTranslation)}
+                >
+                  <span className="toggle-thumb" />
+                </button>
+                <span className="setting-hint">{freeTranslation ? "已开启" : "已关闭"}</span>
+              </div>
+              <p className="setting-hint">开启后使用 Google 免费翻译（无需 API Key），下方的 Base URL / Key / 模型将被忽略。</p>
             </div>
             <SettingInput label="Base URL" value={baseUrl} onChange={(event) => onBaseUrlChange(event.target.value)} onBlur={() => void saveConfig()} placeholder="https://api.openai.com" />
             <div className="setting-field">

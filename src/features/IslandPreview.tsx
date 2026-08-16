@@ -102,6 +102,8 @@ export default function IslandPreview() {
               onTestConnection={async () => ""}
               loggingEnabled
               onSetLogging={async () => {}}
+              freeTranslation={false}
+              onSetFreeTranslation={async () => {}}
               streaming={false}
               fileStatus={null}
               onTranslateFile={(_filename, content) => setInputText(content)}

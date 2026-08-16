@@ -407,6 +407,7 @@ pub fn run() {
             commands::set_hotkeys,
             commands::set_glossary,
             commands::set_max_records,
+            commands::set_free_translation,
             commands::list_service_profiles,
             commands::save_service_profile,
             commands::delete_service_profile,

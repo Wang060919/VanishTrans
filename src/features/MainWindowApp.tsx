@@ -189,6 +189,8 @@ export default function MainWindowApp({
       onTestConnection={config.testConnection}
       loggingEnabled={config.loggingEnabled}
       onSetLogging={config.setLogging}
+      freeTranslation={config.freeTranslation}
+      onSetFreeTranslation={config.setFreeTranslation}
       streaming={translation.streaming}
       fileStatus={translation.fileStatus}
       onTranslateFile={translation.doTranslateFile}

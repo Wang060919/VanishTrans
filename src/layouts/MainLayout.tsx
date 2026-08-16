@@ -57,6 +57,8 @@ interface MainLayoutProps {
   onTestConnection: () => Promise<string>;
   loggingEnabled: boolean;
   onSetLogging: (enabled: boolean) => Promise<void>;
+  freeTranslation: boolean;
+  onSetFreeTranslation: (enabled: boolean) => Promise<void>;
   streaming: boolean;
   fileStatus: string | null;
   onTranslateFile: (filename: string, content: string) => void;
@@ -86,6 +88,7 @@ export default function MainLayout({
   hotkeys, hotkeyLabels, onHotkeysChange,
   profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
   loggingEnabled, onSetLogging,
+  freeTranslation, onSetFreeTranslation,
   streaming,
   fileStatus, onTranslateFile,
   translationKey,
@@ -291,6 +294,8 @@ export default function MainLayout({
           onTestConnection={onTestConnection}
           loggingEnabled={loggingEnabled}
           onSetLogging={onSetLogging}
+          freeTranslation={freeTranslation}
+          onSetFreeTranslation={onSetFreeTranslation}
         />
       </OverlayDrawer>
     </div>

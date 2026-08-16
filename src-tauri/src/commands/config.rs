@@ -21,6 +21,7 @@ pub fn get_api_config(
         "glossary": *state.glossary.lock_recover(),
         "maxRecords": state.max_records.load(std::sync::atomic::Ordering::Relaxed),
         "profiles": *state.profiles.lock_recover(),
+        "freeTranslation": state.free_translation(),
     }))
 }
 
@@ -86,6 +87,16 @@ pub fn set_glossary(
 ) -> Result<(), CommandError> {
     *state.glossary.lock_recover() = glossary;
     state.save_to_disk().map_err(CommandError::io)
+}
+
+#[tauri::command]
+pub fn set_free_translation(
+    state: tauri::State<'_, ApiConfig>,
+    enabled: bool,
+) -> Result<(), CommandError> {
+    state
+        .set_free_translation(enabled)
+        .map_err(CommandError::io)
 }
 
 #[tauri::command]

@@ -217,6 +217,9 @@ pub struct ApiConfig {
     pub max_records: std::sync::atomic::AtomicUsize,
     /// Saved service profiles for quick switching between providers/models.
     pub profiles: Mutex<Vec<ServiceProfile>>,
+    /// When enabled, translation uses the free Google Translate endpoint
+    /// instead of the configured OpenAI-compatible API (no key required).
+    pub free_translation: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -231,6 +234,8 @@ struct PersistedConfig {
     max_records: usize,
     #[serde(default)]
     profiles: Vec<ServiceProfile>,
+    #[serde(default)]
+    free_translation: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -258,33 +263,43 @@ fn fnv1a64(bytes: &[u8]) -> u64 {
 impl ApiConfig {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
         let config_path = config_dir.join("config.json");
-        let (base_url, model, hotkeys, glossary, max_records, profiles, config_existed) =
-            std::fs::read_to_string(&config_path)
-                .ok()
-                .and_then(|d| serde_json::from_str::<PersistedConfig>(&d).ok())
-                .map(|c| {
-                    (
-                        c.base_url,
-                        c.model,
-                        c.hotkeys,
-                        c.glossary,
-                        c.max_records,
-                        c.profiles,
-                        true,
-                    )
-                })
-                .unwrap_or_else(|| {
-                    let (b, _, m) = Self::defaults();
-                    (
-                        b,
-                        m,
-                        Self::default_hotkeys(),
-                        Vec::new(),
-                        default_max_records(),
-                        Vec::new(),
-                        false,
-                    )
-                });
+        let (
+            base_url,
+            model,
+            hotkeys,
+            glossary,
+            max_records,
+            profiles,
+            free_translation,
+            config_existed,
+        ) = std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|d| serde_json::from_str::<PersistedConfig>(&d).ok())
+            .map(|c| {
+                (
+                    c.base_url,
+                    c.model,
+                    c.hotkeys,
+                    c.glossary,
+                    c.max_records,
+                    c.profiles,
+                    c.free_translation,
+                    true,
+                )
+            })
+            .unwrap_or_else(|| {
+                let (b, _, m) = Self::defaults();
+                (
+                    b,
+                    m,
+                    Self::default_hotkeys(),
+                    Vec::new(),
+                    default_max_records(),
+                    Vec::new(),
+                    false,
+                    false,
+                )
+            });
         let api_key = load_api_key_credential().unwrap_or_default();
         let client = reqwest::Client::builder()
             // Non-streaming requests apply their own total timeout below.
@@ -312,6 +327,7 @@ impl ApiConfig {
             glossary: Mutex::new(glossary),
             max_records: std::sync::atomic::AtomicUsize::new(max_records),
             profiles: Mutex::new(profiles),
+            free_translation: std::sync::atomic::AtomicBool::new(free_translation),
         };
         // Only persist when the file didn't exist — avoid a sync write on every cold start
         if !config_existed {
@@ -347,6 +363,7 @@ impl ApiConfig {
             glossary: self.glossary.lock_recover().clone(),
             max_records: self.max_records.load(std::sync::atomic::Ordering::Relaxed),
             profiles: self.profiles.lock_recover().clone(),
+            free_translation: self.free_translation(),
         };
         if let Some(p) = self.config_path.parent() {
             std::fs::create_dir_all(p).map_err(|e| format!("创建配置目录失败: {}", e))?;
@@ -381,6 +398,19 @@ impl ApiConfig {
     pub fn save_api_key(&self) -> Result<(), String> {
         let key = self.api_key.lock_recover().clone();
         save_api_key_credential(&key)
+    }
+
+    /// Whether the free Google Translate provider is active.
+    pub fn free_translation(&self) -> bool {
+        self.free_translation
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Toggle the free Google Translate provider and persist the change.
+    pub fn set_free_translation(&self, enabled: bool) -> Result<(), String> {
+        self.free_translation
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+        self.save_to_disk()
     }
 
     /// Claim a new translation sequence number. The caller stores this and
@@ -462,6 +492,7 @@ impl ApiConfig {
             "baseUrl": *self.base_url.lock_recover(),
             "model": *self.model.lock_recover(),
             "glossary": *self.glossary.lock_recover(),
+            "freeTranslation": self.free_translation(),
         });
         let bytes = serde_json::to_vec(&canonical).unwrap_or_default();
         format!("{:016x}", fnv1a64(&bytes))
@@ -500,6 +531,15 @@ pub fn resolve_target_lang(text: &str, direction: &str) -> &'static str {
         "auto" if cjk_ratio(text) > 0.3 => "English",
         "auto" => "Chinese",
         _ => "Chinese",
+    }
+}
+
+/// Map a resolved target language ("Chinese" / "English") to the two-letter
+/// language code the free Google Translate endpoint expects.
+pub fn google_target_lang(target_lang: &str) -> &'static str {
+    match target_lang {
+        "English" => "en",
+        _ => "zh-CN",
     }
 }
 
@@ -682,6 +722,103 @@ pub async fn do_translate_async(
         .first()
         .map(|c| c.message.content.trim().to_string())
         .ok_or("API 返回了空翻译结果".into())
+}
+
+// -----------------------------------------------------------
+// Free Google Translate provider
+// -----------------------------------------------------------
+
+/// Public, keyless Google Translate endpoint (the same one used by the web
+/// client). Not an official API — no SLA, may change or be rate-limited.
+const FREE_TRANSLATE_URL: &str = "https://translate.googleapis.com/translate_a/single";
+
+/// Parse a `translate_a/single` response into the joined translation text.
+fn parse_google_response(bytes: &[u8]) -> Result<String, String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("解析免费翻译响应失败: {}", e))?;
+
+    // The response is `[[["译文","原文",...], ...], null, "detected-lang", ...]`.
+    // Join every segment's first element to preserve line breaks exactly.
+    let segments = value
+        .get(0)
+        .and_then(|v| v.as_array())
+        .ok_or("免费翻译响应格式异常")?;
+    let mut translated = String::new();
+    for segment in segments {
+        if let Some(text) = segment.get(0).and_then(|v| v.as_str()) {
+            translated.push_str(text);
+        }
+    }
+    let translated = translated.trim().to_string();
+    if translated.is_empty() {
+        return Err("免费翻译返回了空结果".into());
+    }
+    Ok(translated)
+}
+
+/// Translate `text` via the free Google Translate endpoint.
+/// `target_lang` is the resolved "Chinese" / "English" label from
+/// [`resolve_target_lang`]; source language is auto-detected server-side.
+pub async fn do_free_translate_async(
+    state: &ApiConfig,
+    text: &str,
+    target_lang: &str,
+) -> Result<String, String> {
+    // 1. Validate input length (mirrors the API path).
+    if text.chars().count() > MAX_INPUT_CHARS {
+        return Err(format!(
+            "输入文本过长（{} 字符），最多支持 {} 字符",
+            text.chars().count(),
+            MAX_INPUT_CHARS
+        ));
+    }
+    if text.trim().is_empty() {
+        return Err("请输入要翻译的文本".into());
+    }
+
+    let target = google_target_lang(target_lang);
+    let client = state.client.lock_recover().clone();
+
+    // 2. Send the keyless request. `query` percent-encodes `text` for us.
+    let resp = client
+        .get(FREE_TRANSLATE_URL)
+        .query(&[
+            ("client", "gtx"),
+            ("sl", "auto"),
+            ("tl", target),
+            ("dt", "t"),
+            ("q", text),
+        ])
+        .timeout(Duration::from_secs(TIMEOUT_SECS))
+        .send()
+        .await
+        .map_err(map_http_error(FREE_TRANSLATE_URL))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(match status.as_u16() {
+            429 => "免费翻译请求过于频繁，请稍后重试".into(),
+            _ => format!("免费翻译服务错误 ({})", status.as_u16()),
+        });
+    }
+
+    let bytes = read_response_body_limited(resp).await?;
+    parse_google_response(&bytes)
+}
+
+/// Unified translation entry point: routes to the free Google provider when
+/// enabled, otherwise to the configured OpenAI-compatible API.
+pub async fn do_translate_unified(
+    state: &ApiConfig,
+    text: &str,
+    source_lang: &str,
+    target_lang: &str,
+) -> Result<String, String> {
+    if state.free_translation() {
+        do_free_translate_async(state, text, target_lang).await
+    } else {
+        do_translate_async(state, text, source_lang, target_lang).await
+    }
 }
 
 /// Verify connectivity against the configured service with a minimal request.
@@ -966,6 +1103,26 @@ mod tests {
     fn cjk_ratio_handles_mixed_text() {
         let ratio = cjk_ratio("hi你好");
         assert!(ratio > 0.0 && ratio < 1.0);
+    }
+
+    #[test]
+    fn google_target_lang_maps_resolved_labels() {
+        assert_eq!(google_target_lang("English"), "en");
+        assert_eq!(google_target_lang("Chinese"), "zh-CN");
+        assert_eq!(google_target_lang("anything-else"), "zh-CN");
+    }
+
+    #[test]
+    fn parse_google_response_joins_segments_and_preserves_newlines() {
+        let body = r#"[[["第一行。\n","First line.\n",null,null,3],["第二行。","Second line.",null,null,3]],null,"en"]"#;
+        let parsed = parse_google_response(body.as_bytes()).unwrap();
+        assert_eq!(parsed, "第一行。\n第二行。");
+    }
+
+    #[test]
+    fn parse_google_response_rejects_missing_segments() {
+        assert!(parse_google_response(br#"null"#).is_err());
+        assert!(parse_google_response(br#"[]"#).is_err());
     }
 
     #[test]

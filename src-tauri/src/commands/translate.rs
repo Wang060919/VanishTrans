@@ -3,7 +3,7 @@ use tauri::Emitter;
 
 use crate::error::{code, CommandError};
 use crate::history::HistoryStore;
-use crate::translate::{do_translate_async, ApiConfig};
+use crate::translate::{do_free_translate_async, do_translate_unified, ApiConfig};
 use serde::Deserialize;
 
 #[derive(Clone, Serialize)]
@@ -50,7 +50,7 @@ pub async fn translate(
     target_lang: String,
 ) -> Result<String, CommandError> {
     let seq = state.next_request_seq();
-    let result = do_translate_async(&state, &text, &source_lang, &target_lang)
+    let result = do_translate_unified(&state, &text, &source_lang, &target_lang)
         .await
         .map_err(CommandError::api)?;
     if !state.is_current_request(seq) {
@@ -84,7 +84,7 @@ pub async fn translate_with_direction(
         }
     }
 
-    let result = do_translate_async(&state, &text, "auto", target)
+    let result = do_translate_unified(&state, &text, "auto", target)
         .await
         .map_err(CommandError::api)?;
     if !state.is_current_request(seq) {
@@ -137,6 +137,34 @@ pub async fn translate_stream(
             history.add(&text, &cached, &direction);
             return Ok(cached);
         }
+    }
+
+    // Free Google provider has no streaming endpoint — resolve the full result
+    // and emit it as a single chunk so the frontend streaming flow stays intact.
+    if state.free_translation() {
+        let result = do_free_translate_async(&state, &text, target)
+            .await
+            .map_err(CommandError::api)?;
+        if !state.is_current_request(seq) {
+            return Err(CommandError::cancelled());
+        }
+        let _ = window.emit(
+            "translate-stream-chunk",
+            StreamChunkEvent {
+                request_id,
+                chunk: result.clone(),
+            },
+        );
+        let _ = window.emit(
+            "translate-stream-done",
+            StreamDoneEvent {
+                request_id,
+                full_text: result.clone(),
+            },
+        );
+        tm.store_in_context(&text, &result, "auto", target, &context_hash);
+        history.add(&text, &result, &direction);
+        return Ok(result);
     }
 
     let window_clone = window.clone();
@@ -230,6 +258,23 @@ pub async fn translate_batch(
 
     let combined = join_segments(&segments);
     let target = crate::translate::resolve_target_lang(&combined, &direction);
+
+    // The free Google provider does not understand the segment-break marker, so
+    // translate each segment individually instead of sending one batched prompt.
+    if state.free_translation() {
+        let mut translated = Vec::with_capacity(segments.len());
+        for segment in &segments {
+            let text = do_free_translate_async(&state, segment, target)
+                .await
+                .map_err(CommandError::api)?;
+            if !state.is_current_request(seq) {
+                return Err(CommandError::cancelled());
+            }
+            translated.push(text);
+        }
+        return Ok(translated);
+    }
+
     let result = crate::translate::do_translate_async(&state, &combined, "auto", target)
         .await
         .map_err(CommandError::api)?;

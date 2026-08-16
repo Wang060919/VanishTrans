@@ -39,14 +39,16 @@ export function useConfig() {
   const [hotkeys, setHotkeys] = useState<HotkeyEntry[]>(DEFAULT_HOTKEYS);
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
   const [loggingEnabled, setLoggingEnabled] = useState(true);
+  const [freeTranslation, setFreeTranslationState] = useState(false);
 
   useEffect(() => {
-    invoke<{ baseUrl: string; hasApiKey: boolean; model: string; glossary: [string, string][]; hotkeys: [string, string][]; profiles: ServiceProfile[] }>("get_api_config")
+    invoke<{ baseUrl: string; hasApiKey: boolean; model: string; glossary: [string, string][]; hotkeys: [string, string][]; profiles: ServiceProfile[]; freeTranslation: boolean }>("get_api_config")
       .then((cfg) => {
         setBaseUrl(cfg.baseUrl);
         setHasStoredApiKey(cfg.hasApiKey);
         setModel(cfg.model);
         setProfiles(cfg.profiles ?? []);
+        setFreeTranslationState(cfg.freeTranslation ?? false);
         if (cfg.glossary) {
           setGlossary(cfg.glossary.map(([source, target]) => ({ source, target })));
         }
@@ -122,6 +124,11 @@ export function useConfig() {
     setLoggingEnabled(enabled);
   };
 
+  const setFreeTranslation = async (enabled: boolean) => {
+    await invoke("set_free_translation", { enabled });
+    setFreeTranslationState(enabled);
+  };
+
   return {
     baseUrl, setBaseUrl,
     model, setModel,
@@ -134,5 +141,6 @@ export function useConfig() {
     profiles, saveProfile, deleteProfile, applyProfile,
     testConnection,
     loggingEnabled, setLogging,
+    freeTranslation, setFreeTranslation,
   };
 }

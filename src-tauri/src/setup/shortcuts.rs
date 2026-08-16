@@ -473,7 +473,7 @@ fn handle_alt_r(app: tauri::AppHandle) {
             match app
                 .state::<AppState>()
                 .runtime
-                .block_on(translate::do_translate_async(
+                .block_on(translate::do_translate_unified(
                     &api_config,
                     &cleaned,
                     "auto",
