@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { logFrontendMessage } from '../services/tauriBridge';
 
 export type LogLevel = "info" | "warn" | "error";
 
@@ -30,5 +30,5 @@ export function logError(context: string, message: string, detail?: unknown): vo
   const serialized = serializeDetail(detail);
   const line = `[${context}] ${message}${serialized ? `: ${serialized}` : ""}`;
   console.error(line);
-  void invoke("log_frontend_message", { level: "error", message: line }).catch(() => {});
+  void logFrontendMessage({ level: "error", message: line }).catch(() => {});
 }

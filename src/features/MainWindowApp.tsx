@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { frontendReady, getStartupWarnings, getPinState, togglePin } from '../services/tauriBridge';
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -105,14 +105,14 @@ export default function MainWindowApp({
 
     void (async () => {
       try {
-        await invoke("frontend_ready");
-        const warnings = await invoke<string[]>("get_startup_warnings");
+        await frontendReady();
+        const warnings = await getStartupWarnings();
         addNotices(warnings ?? []);
       } catch (error) {
         logError("app", "frontend initialization failed", error);
       }
     })();
-    invoke<boolean>("get_pin_state")
+    getPinState()
       .then((nextPinned) => {
         if (typeof nextPinned !== "boolean") return;
         setPinned(nextPinned);
@@ -133,7 +133,7 @@ export default function MainWindowApp({
 
   const handlePin = useCallback(async () => {
     try {
-      const nextPinned = await invoke<boolean>("toggle_pin");
+      const nextPinned = await togglePin();
       setPinned(nextPinned);
       onPinChange?.(nextPinned);
     } catch (error) {

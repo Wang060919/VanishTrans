@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow, monitorFromPoint } from "@tauri-apps/api/window";
@@ -8,6 +7,13 @@ import { flushSync } from "react-dom";
 import { useThemeSync } from "../hooks/useTheme";
 import { errorMessage } from "../lib/errors";
 import { logError } from "../lib/logger";
+import {
+  saveBallPosition as saveBallPositionCmd,
+  setBallWindowBounds as setBallWindowBoundsCmd,
+  startScreenshotFromBall,
+  toggleBallShowMain,
+  translateClipboardFromBall,
+} from "../services/tauriBridge";
 import {
   chooseDockSide,
   getExpandedX,
@@ -63,13 +69,25 @@ export function normalizeTranslationActivity(payload: unknown): IslandPhase | "i
   return null;
 }
 
+const COMMAND_MAP: Record<string, () => Promise<void>> = {
+  translate_clipboard_from_ball: translateClipboardFromBall,
+  start_screenshot_from_ball: startScreenshotFromBall,
+  toggle_ball_show_main: toggleBallShowMain,
+};
+
+async function invokeCommand(command: string) {
+  const fn = COMMAND_MAP[command];
+  if (fn) return fn();
+  throw new Error(`未知命令: ${command}`);
+}
+
 async function setBallWindowBounds(bounds: {
   x: number;
   y: number;
   width: number;
   height: number;
 }) {
-  await invoke("set_ball_window_bounds", bounds);
+  await setBallWindowBoundsCmd(bounds);
 }
 
 async function saveBallPosition(
@@ -77,7 +95,7 @@ async function saveBallPosition(
   reposition = true,
 ) {
   try {
-    const saved = await invoke<[number, number] | undefined>("save_ball_position", {
+    const saved = await saveBallPositionCmd({
       ...position,
       reposition,
     });
@@ -514,7 +532,7 @@ export function useBallWindow() {
     busyActionRef.current = action;
     setBusyAction(action);
     try {
-      await invoke(command);
+      await invokeCommand(command);
       if (expectsTranslationState) {
         if (expectingTranslationRef.current) {
           expectedActivityTimerRef.current = setTimeout(() => {

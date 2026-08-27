@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { quickFrontendReady, hideQuickWindow, writeClipboardSafe, cleanupClipboardText, translateStream, showMainWithText } from '../services/tauriBridge';
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -49,17 +49,15 @@ export default function QuickTranslateWindow() {
     broadcastActivity("working");
 
     try {
-      const cleaned = await invoke<string>("cleanup_clipboard_text", { text: rawText });
+      const cleaned = await cleanupClipboardText({ text: rawText });
       if (requestId !== requestIdRef.current) return;
       if (!cleaned.trim()) throw new Error("未读取到可翻译的文字");
       sourceRef.current = cleaned;
       setSource(cleaned);
-      const result = await invoke<string>("translate_stream", {
-        request: {
-          text: cleaned,
-          direction: "auto",
-          requestId,
-        },
+      const result = await translateStream({
+        text: cleaned,
+        direction: "auto",
+        requestId,
       });
       if (requestId === requestIdRef.current && result) {
         setOutput((current) => current || result);
@@ -119,7 +117,7 @@ export default function QuickTranslateWindow() {
           return;
         }
         cleanups.push(...registered);
-        await invoke("quick_frontend_ready");
+        await quickFrontendReady();
       } catch (error) {
         logError("quick", "setup error", error);
       }
@@ -150,7 +148,7 @@ export default function QuickTranslateWindow() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") void invoke("hide_quick_window");
+      if (event.key === "Escape") void hideQuickWindow();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -158,7 +156,7 @@ export default function QuickTranslateWindow() {
 
   const handleCopy = useCallback(async () => {
     if (!output) return;
-    await invoke("write_clipboard_safe", { text: output });
+    await writeClipboardSafe({ text: output });
     setCopied(true);
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => setCopied(false), 1100);
@@ -166,7 +164,7 @@ export default function QuickTranslateWindow() {
 
   const handleExpand = useCallback(() => {
     if (!sourceRef.current) return;
-    void invoke("show_main_with_text", { text: sourceRef.current });
+    void showMainWithText({ text: sourceRef.current });
   }, []);
 
   const handleDrag = useCallback((event: React.MouseEvent) => {
@@ -192,7 +190,7 @@ export default function QuickTranslateWindow() {
           <button type="button" onClick={handleExpand} disabled={!source} aria-label="在主窗口中打开" title="展开">
             <Expand size={14} />
           </button>
-          <button type="button" onClick={() => invoke("hide_quick_window")} aria-label="关闭迷你翻译" title="关闭">
+          <button type="button" onClick={() => hideQuickWindow()} aria-label="关闭迷你翻译" title="关闭">
             <X size={15} />
           </button>
         </div>

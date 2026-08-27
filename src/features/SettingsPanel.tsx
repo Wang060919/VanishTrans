@@ -2,7 +2,7 @@ import { Check, KeyRound, Plus, Server, Shield, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import HotkeyEditor from "../components/HotkeyEditor";
 import SettingInput from "../components/SettingInput";
-import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../hooks/useConfig";
+import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../types";
 import { errorMessage } from "../lib/errors";
 import TmPanel from "./TmPanel";
 

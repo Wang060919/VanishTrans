@@ -1,22 +1,15 @@
-import { invoke } from "@tauri-apps/api/core";
 import { appDataDir } from "@tauri-apps/api/path";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  clearTm,
+  deleteTmEntry,
+  exportTm,
+  getTmStats,
+  importTmContent,
+  searchTm,
+} from "../services/tauriBridge";
+import type { TmEntry, TmStats } from "../types";
 import { errorMessage } from "../lib/errors";
-
-interface TmEntry {
-  id: number;
-  source: string;
-  target: string;
-  source_lang: string;
-  target_lang: string;
-  created_at: number;
-  hit_count: number;
-}
-
-interface TmStats {
-  total_entries: number;
-  total_hits: number;
-}
 
 interface TmPanelProps {
   searchQuery: string;
@@ -29,12 +22,12 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadEntries = useCallback(async (query?: string) => {
-    const result = await invoke<TmEntry[]>("tm_search", { query: query || null });
+    const result = await searchTm({ query });
     setEntries(result ?? []);
   }, []);
 
   const loadStats = useCallback(async () => {
-    const s = await invoke<TmStats>("tm_stats");
+    const s = await getTmStats();
     setStats(s ?? { total_entries: 0, total_hits: 0 });
   }, []);
 
@@ -51,14 +44,14 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
   useEffect(() => { loadStats(); }, [loadStats]);
 
   const handleDelete = useCallback(async (id: number) => {
-    await invoke("tm_delete", { id });
+    await deleteTmEntry({ id });
     await loadEntries(searchQuery || undefined);
     await loadStats();
   }, [searchQuery, loadEntries, loadStats]);
 
   const handleClear = useCallback(async () => {
     if (!window.confirm("确定清空所有翻译记忆？")) return;
-    await invoke("tm_clear");
+    await clearTm();
     await loadEntries();
     await loadStats();
   }, [loadEntries, loadStats]);
@@ -67,7 +60,7 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
     try {
       const dir = await appDataDir();
       const path = `${dir}/translation_memory.csv`;
-      const count = await invoke<number>("tm_export", { path });
+      const count = await exportTm({ path });
       window.alert(`已导出 ${count} 条翻译记忆到:\n${path}`);
     } catch (e: unknown) {
       window.alert(`导出失败: ${errorMessage(e)}`);
@@ -99,7 +92,7 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
             return;
           }
 
-          const count = await invoke<number>("tm_import_content", { content: text });
+          const count = await importTmContent({ content: text });
           await loadEntries(searchQuery || undefined);
           await loadStats();
           window.alert(`已导入 ${count} 条翻译记忆`);

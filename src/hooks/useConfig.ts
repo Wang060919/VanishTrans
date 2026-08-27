@@ -1,22 +1,19 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import {
+  applyServiceProfile,
+  deleteServiceProfile,
+  getApiConfig,
+  getLoggingEnabled,
+  saveServiceProfile,
+  setApiConfig,
+  setFreeTranslation as setFreeTranslationCmd,
+  setGlossary,
+  setHotkeys,
+  setLoggingEnabled as setLoggingEnabledCmd,
+  testConnection,
+} from "../services/tauriBridge";
+import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../types";
 import { logError } from "../lib/logger";
-
-export interface GlossaryEntry {
-  source: string;
-  target: string;
-}
-
-export interface HotkeyEntry {
-  action: string;
-  shortcut: string;
-}
-
-export interface ServiceProfile {
-  name: string;
-  baseUrl: string;
-  model: string;
-}
 
 const DEFAULT_HOTKEYS: HotkeyEntry[] = [
   { action: "translate", shortcut: "Alt+Q" },
@@ -35,14 +32,14 @@ export function useConfig() {
   const [model, setModel] = useState("gpt-4o-mini");
   const [apiKeyUpdate, setApiKeyUpdate] = useState<string | null>(null);
   const [hasStoredApiKey, setHasStoredApiKey] = useState(false);
-  const [glossary, setGlossary] = useState<GlossaryEntry[]>([]);
-  const [hotkeys, setHotkeys] = useState<HotkeyEntry[]>(DEFAULT_HOTKEYS);
+  const [glossary, setGlossaryState] = useState<GlossaryEntry[]>([]);
+  const [hotkeys, setHotkeysState] = useState<HotkeyEntry[]>(DEFAULT_HOTKEYS);
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
   const [loggingEnabled, setLoggingEnabled] = useState(true);
   const [freeTranslation, setFreeTranslationState] = useState(false);
 
   useEffect(() => {
-    invoke<{ baseUrl: string; hasApiKey: boolean; model: string; glossary: [string, string][]; hotkeys: [string, string][]; profiles: ServiceProfile[]; freeTranslation: boolean }>("get_api_config")
+    getApiConfig()
       .then((cfg) => {
         setBaseUrl(cfg.baseUrl);
         setHasStoredApiKey(cfg.hasApiKey);
@@ -50,14 +47,14 @@ export function useConfig() {
         setProfiles(cfg.profiles ?? []);
         setFreeTranslationState(cfg.freeTranslation ?? false);
         if (cfg.glossary) {
-          setGlossary(cfg.glossary.map(([source, target]) => ({ source, target })));
+          setGlossaryState(cfg.glossary.map(([source, target]) => ({ source, target })));
         }
         if (cfg.hotkeys && cfg.hotkeys.length > 0) {
-          setHotkeys(cfg.hotkeys.map(([action, shortcut]) => ({ action, shortcut })));
+          setHotkeysState(cfg.hotkeys.map(([action, shortcut]) => ({ action, shortcut })));
         }
       })
       .catch((e) => logError("config", "failed to load", e));
-    invoke<boolean>("get_logging_enabled")
+    getLoggingEnabled()
       .then(setLoggingEnabled)
       .catch((e) => logError("config", "failed to load logging setting", e));
   }, []);
@@ -65,7 +62,7 @@ export function useConfig() {
   const saveConfig = async (forcedApiKey?: string) => {
     // Only send apiKey when user actually changed it — avoid overwriting with null
     const apiKey = forcedApiKey === undefined ? apiKeyUpdate : forcedApiKey;
-    await invoke("set_api_config", {
+    await setApiConfig({
       baseUrl,
       apiKey: apiKey !== null ? apiKey : undefined,
       model,
@@ -78,18 +75,18 @@ export function useConfig() {
 
   const saveGlossary = async (entries: GlossaryEntry[]) => {
     const pairs: [string, string][] = entries.map((e) => [e.source, e.target]);
-    await invoke("set_glossary", { glossary: pairs });
-    setGlossary(entries);
+    await setGlossary({ glossary: pairs });
+    setGlossaryState(entries);
   };
 
   const saveHotkeys = async (entries: HotkeyEntry[]) => {
     const pairs: [string, string][] = entries.map((e) => [e.action, e.shortcut]);
-    await invoke("set_hotkeys", { hotkeys: pairs });
-    setHotkeys(entries);
+    await setHotkeys({ hotkeys: pairs });
+    setHotkeysState(entries);
   };
 
-  const testConnection = async (): Promise<string> => {
-    return invoke<string>("test_connection", {
+  const testConnectionApi = async (): Promise<string> => {
+    return testConnection({
       baseUrl,
       apiKey: apiKeyUpdate !== null && apiKeyUpdate !== undefined ? apiKeyUpdate : undefined,
       model,
@@ -97,7 +94,7 @@ export function useConfig() {
   };
 
   const saveProfile = async (profile: ServiceProfile): Promise<ServiceProfile[]> => {
-    const next = await invoke<ServiceProfile[]>("save_service_profile", {
+    const next = await saveServiceProfile({
       name: profile.name,
       baseUrl: profile.baseUrl,
       model: profile.model,
@@ -107,25 +104,25 @@ export function useConfig() {
   };
 
   const deleteProfile = async (name: string): Promise<ServiceProfile[]> => {
-    const next = await invoke<ServiceProfile[]>("delete_service_profile", { name });
+    const next = await deleteServiceProfile({ name });
     setProfiles(next);
     return next;
   };
 
   const applyProfile = async (name: string): Promise<ServiceProfile> => {
-    const profile = await invoke<ServiceProfile>("apply_service_profile", { name });
+    const profile = await applyServiceProfile({ name });
     setBaseUrl(profile.baseUrl);
     setModel(profile.model);
     return profile;
   };
 
   const setLogging = async (enabled: boolean) => {
-    await invoke("set_logging_enabled", { enabled });
+    await setLoggingEnabledCmd({ enabled });
     setLoggingEnabled(enabled);
   };
 
   const setFreeTranslation = async (enabled: boolean) => {
-    await invoke("set_free_translation", { enabled });
+    await setFreeTranslationCmd({ enabled });
     setFreeTranslationState(enabled);
   };
 
@@ -139,7 +136,7 @@ export function useConfig() {
     hotkeys, saveHotkeys,
     hotkeyLabels: HOTKEY_LABELS,
     profiles, saveProfile, deleteProfile, applyProfile,
-    testConnection,
+    testConnection: testConnectionApi,
     loggingEnabled, setLogging,
     freeTranslation, setFreeTranslation,
   };
