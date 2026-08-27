@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { writeClipboardSafe, startScreenshotFromBall, hideWindow, deleteHistoryRecord, clearHistory, getHistory } from '../services/tauriBridge';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Database, History, Minimize2, Minus, Pin, ScanLine, Settings, Square, X } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -9,7 +9,7 @@ import VanishMark from "../components/brand/VanishMark";
 import HistoryPanel from "../features/HistoryPanel";
 import SettingsPanel, { type SettingsTab } from "../features/SettingsPanel";
 import TranslatePanel from "../features/TranslatePanel";
-import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../hooks/useConfig";
+import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import type { LangDirection } from "../hooks/useTranslation";
 import { logError } from "../lib/logger";
@@ -101,7 +101,7 @@ export default function MainLayout({
   useTheme();
 
   const loadHistory = useCallback(async (query?: string) => {
-    const records = await invoke<TranslationRecord[]>("get_history", { query: query || null });
+    const records = await getHistory({ query });
     setHistoryRecords(records ?? []);
   }, []);
 
@@ -127,7 +127,7 @@ export default function MainLayout({
   const copyText = useCallback(async (text: string) => {
     if (!text) return;
     try {
-      await invoke("write_clipboard_safe", { text });
+      await writeClipboardSafe({ text });
     } catch (error) {
       logError("main", "copy translation text failed", error);
     }
@@ -135,7 +135,7 @@ export default function MainLayout({
 
   const startScreenshot = useCallback(async () => {
     try {
-      await invoke("start_screenshot_from_ball");
+      await startScreenshotFromBall();
     } catch (error) {
       logError("main", "start screenshot translation failed", error);
     }
@@ -165,7 +165,7 @@ export default function MainLayout({
     try { await getCurrentWindow().toggleMaximize(); } catch (e) { logError("main.window", "maximize failed", e); }
   }, []);
   const handleClose = useCallback(async () => {
-    try { await invoke("hide_window"); } catch (e) { logError("main.window", "hide failed", e); }
+    try { await hideWindow(); } catch (e) { logError("main.window", "hide failed", e); }
   }, []);
 
   // Drag: use startDragging() with permission, fallback to data-tauri-drag-region
@@ -265,9 +265,9 @@ export default function MainLayout({
           records={historyRecords}
           search={historySearch}
           onSearch={handleHistorySearch}
-          onCopy={(text) => invoke("write_clipboard_safe", { text })}
-          onDelete={async (id) => { await invoke("delete_history_record", { id }); await loadHistory(historySearch || undefined); }}
-          onClear={async () => { await invoke("clear_history"); await loadHistory(); }}
+          onCopy={(text) => writeClipboardSafe({ text })}
+          onDelete={async (id) => { await deleteHistoryRecord({ id }); await loadHistory(historySearch || undefined); }}
+          onClear={async () => { await clearHistory(); await loadHistory(); }}
         />
       </OverlayDrawer>
 

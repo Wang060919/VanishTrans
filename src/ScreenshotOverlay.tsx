@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { finishOcr, cancelScreenshot as cancelScreenshotCmd, getScreenshotPayload, runOcrOnCrop } from './services/tauriBridge';
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -69,7 +69,7 @@ export default function ScreenshotOverlay() {
   }, []);
 
   const fetchLatest = useCallback(() => {
-    invoke<ScreenshotPayload>("get_screenshot_payload")
+    getScreenshotPayload()
       .then((payload) => loadNewImage(payload))
       .catch(() => setStatus("截图加载失败，点击重试"));
   }, [loadNewImage]);
@@ -182,14 +182,14 @@ export default function ScreenshotOverlay() {
     const cropW = Math.round(w * scaleX);
     const cropH = Math.round(h * scaleY);
     try {
-      const result = await invoke<{ text: string }>("run_ocr_on_crop", {
+      const result = await runOcrOnCrop({
         x: cropX, y: cropY, w: cropW, h: cropH,
       });
       if (session !== sessionRef.current) return;
       const text = result.text;
       if (text.trim()) {
         setStatus("");
-        await invoke("finish_ocr", { text });
+        await finishOcr({ text });
       } else {
         setStatus("未识别到文字，点击任意位置重试");
         drawingRef.current = false;
@@ -282,7 +282,7 @@ export default function ScreenshotOverlay() {
     rectRef.current = null;
     setStatus("");
     try {
-      await invoke("cancel_screenshot");
+      await cancelScreenshotCmd();
     } catch {
       await getCurrentWindow().hide();
     }
