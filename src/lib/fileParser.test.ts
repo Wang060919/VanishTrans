@@ -6,7 +6,6 @@ import {
   rebuildJson,
   detectFileType,
   type SrtBlock,
-  type JsonSegment,
 } from "./fileParser";
 
 // ══════════════════════════════════════════════════════════════
@@ -566,9 +565,7 @@ describe("JSON round-trip", () => {
       farewell: "Goodbye",
     });
 
-    const segments = parseJson(original);
-
-    // Simulate translation
+    // Parse and prepare translations
     const translations = new Map([
       ["/greeting", "Hola"],
       ["/farewell", "Adiós"],

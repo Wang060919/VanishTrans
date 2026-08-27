@@ -12,7 +12,6 @@ import {
   isCurrentRequest,
   generateTranslationKey,
   invalidateCurrentRequest,
-  markRequestCompleted,
 } from "../lib/translationState";
 import { useFileTranslation } from "./useFileTranslation";
 import { useStreamHandlers } from "./useStreamHandlers";
