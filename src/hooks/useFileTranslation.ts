@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { translateBatch, translateWithDirection } from "../services/tauriBridge";
 import { errorMessage, isSegmentCountMismatch } from "../lib/errors";
 import {
