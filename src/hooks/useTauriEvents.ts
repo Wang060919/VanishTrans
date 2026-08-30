@@ -1,5 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { frontendReady as frontendReadyCmd } from "../services/tauriBridge";
+import { logError } from "../lib/logger";
 
 export type TranslationRequestEvent =
   | { type: "text"; text: string }
@@ -46,6 +48,7 @@ export function useTauriEvents({
   onStreamChunk,
   onStreamDone,
 }: TauriEventsOptions) {
+  const [listenersReady, setListenersReady] = useState(false);
   // Keep refs to the latest callbacks so event listeners never go stale
   const callbacksRef = useRef({
     onClipboardTranslate,
@@ -67,6 +70,7 @@ export function useTauriEvents({
   };
 
   useEffect(() => {
+    setListenersReady(false);
     let cancelled = false;
     const cleanups: (() => void)[] = [];
 
@@ -76,6 +80,11 @@ export function useTauriEvents({
     };
 
     const setup = async () => {
+      try {
+        await frontendReadyCmd(false);
+      } catch {
+        // Keep listener registration usable in browser-only preview/test runs.
+      }
       const u1 = await listen<unknown>("shortcut-translate", (event) => {
         const request = normalizeTranslationRequest(event.payload);
         if (request) callbacksRef.current.onClipboardTranslate(request);
@@ -125,14 +134,25 @@ export function useTauriEvents({
       });
       if (cancelled) { conflictCleanup(); return; }
       addCleanup(conflictCleanup);
+      if (!cancelled) setListenersReady(true);
 
     };
 
-    void setup();
+    void setup().catch((error: unknown) => {
+      cleanups.splice(0).forEach((cleanup) => cleanup());
+      if (!cancelled) {
+        setListenersReady(false);
+        void frontendReadyCmd(false).catch(() => {});
+      }
+      logError("tauri-events", "failed to register event listeners", error);
+    });
 
     return () => {
       cancelled = true;
-      cleanups.forEach((fn) => fn());
+      setListenersReady(false);
+      cleanups.splice(0).forEach((fn) => fn());
+      void frontendReadyCmd(false).catch(() => {});
     };
   }, []);
+  return listenersReady;
 }

@@ -21,29 +21,31 @@ src-tauri/src/               # Backend
 ```
 
 ## Tauri Commands (52 total)
-**Config**: `get_api_config`, `set_api_config`, `get_logging_enabled`, `set_logging_enabled`, `log_frontend_message`, `set_hotkeys`, `set_glossary`, `set_free_translation`, `set_max_records`, `get_startup_warnings`, `frontend_ready`
+<!-- BEGIN TAURI_COMMANDS -->
+**Config**: `frontend_ready`, `get_startup_warnings`, `get_api_config`, `set_api_config`, `get_logging_enabled`, `set_logging_enabled`, `log_frontend_message`, `set_hotkeys`, `set_glossary`, `set_free_translation`, `set_max_records`
+
+**Clipboard**: `read_clipboard_safe`, `write_clipboard_safe`, `cleanup_clipboard_text`
 
 **Profile**: `list_service_profiles`, `save_service_profile`, `delete_service_profile`, `apply_service_profile`, `test_connection`
 
-**Translation**: `translate`, `translate_with_direction`, `translate_stream`, `translate_batch`, `cancel_translation`
+**Translation**: `translate`, `translate_with_direction`, `translate_stream`, `cancel_translation`, `translate_batch`
 
 **History**: `get_history`, `delete_history_record`, `clear_history`
 
-**TM**: `tm_search`, `tm_stats`, `tm_delete`, `tm_clear`, `tm_export`, `tm_import_content`
+**TM**: `tm_search`, `tm_delete`, `tm_clear`, `tm_stats`, `tm_export`, `tm_import`, `tm_import_content`
 
-**Window**: `show_main_window`, `hide_window`, `get_pin_state`, `toggle_pin`, `hide_quick_window`, `show_main_with_text`, `quick_frontend_ready`, `write_clipboard_safe`
+**Window**: `hide_window`, `toggle_pin`, `get_pin_state`, `set_ball_window_bounds`, `show_main_window`, `hide_quick_window`, `show_main_with_text`, `quick_frontend_ready`
 
-**Ball**: `toggle_ball`, `toggle_ball_show_main`, `set_ball_window_bounds`, `save_ball_position`, `get_ball_position`, `translate_clipboard_from_ball`, `start_screenshot_from_ball`
+**Ball**: `translate_clipboard_from_ball`, `start_screenshot_from_ball`, `toggle_ball_show_main`, `toggle_ball`, `save_ball_position`, `get_ball_position`
 
-**OCR**: `get_screenshot_payload`, `run_ocr_on_crop`, `finish_ocr`, `cancel_screenshot`, `cleanup_clipboard_text`
-
-**Utility**: `open_config_dir`, `open_log_dir`, `open_export_dialog`, `open_import_dialog`
+**OCR**: `get_screenshot_payload`, `cancel_screenshot`, `run_ocr_on_crop`, `finish_ocr`
+<!-- END TAURI_COMMANDS -->
 
 ## Hard Constraints
 1. **NO direct `invoke()` in React components** → All IPC via `src/services/tauriBridge.ts`
 2. **File size limit**: ≤200 lines per TS/Rust file (bridge exception: 374 lines)
 3. **Strict TypeScript**: NO `any` types in production code
-4. **Rust errors**: Use `Result<T, AppError>` + serde JSON serialization
+4. **Rust errors**: Tauri commands return `Result<T, CommandError>` with stable `code` and `message` fields
 5. **Naming conflicts**: Import bridge functions `as XxxCmd` when local functions have same name
 
 ## Wire Format

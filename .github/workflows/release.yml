@@ -4,9 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -20,6 +22,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+
+      - name: Verify CI gate for tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          SHA="$(git rev-parse HEAD)"
+          for attempt in $(seq 1 60); do
+            RUN_ID="$(gh run list --workflow ci.yml --commit "$SHA" --limit 20 --json databaseId --jq '.[0].databaseId')"
+            if [ -n "$RUN_ID" ]; then
+              echo "Waiting for CI run $RUN_ID for $SHA"
+              gh run watch "$RUN_ID" --exit-status
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "No successful CI gate found for $SHA" >&2
+          exit 1
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:

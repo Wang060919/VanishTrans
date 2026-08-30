@@ -10,6 +10,7 @@ import {
 } from "../services/tauriBridge";
 import type { TmEntry, TmStats } from "../types";
 import { errorMessage } from "../lib/errors";
+import { logError } from "../lib/logger";
 
 interface TmPanelProps {
   searchQuery: string;
@@ -20,15 +21,34 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
   const [entries, setEntries] = useState<TmEntry[]>([]);
   const [stats, setStats] = useState<TmStats>({ total_entries: 0, total_hits: 0 });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchRequestRef = useRef(0);
+  const statsRequestRef = useRef(0);
 
   const loadEntries = useCallback(async (query?: string) => {
-    const result = await searchTm({ query });
-    setEntries(result ?? []);
+    const request = ++searchRequestRef.current;
+    try {
+      const result = await searchTm({ query });
+      if (request === searchRequestRef.current) setEntries(result ?? []);
+    } catch (error: unknown) {
+      if (request === searchRequestRef.current) {
+        setEntries([]);
+        logError("tm", `搜索翻译记忆失败: ${errorMessage(error)}`, error);
+      }
+    }
   }, []);
 
   const loadStats = useCallback(async () => {
-    const s = await getTmStats();
-    setStats(s ?? { total_entries: 0, total_hits: 0 });
+    const request = ++statsRequestRef.current;
+    try {
+      const s = await getTmStats();
+      if (request === statsRequestRef.current) {
+        setStats(s ?? { total_entries: 0, total_hits: 0 });
+      }
+    } catch (error: unknown) {
+      if (request === statsRequestRef.current) {
+        logError("tm", `加载翻译记忆统计失败: ${errorMessage(error)}`, error);
+      }
+    }
   }, []);
 
   // Debounced search (200ms)
@@ -44,16 +64,24 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
   useEffect(() => { loadStats(); }, [loadStats]);
 
   const handleDelete = useCallback(async (id: number) => {
-    await deleteTmEntry({ id });
-    await loadEntries(searchQuery || undefined);
-    await loadStats();
+    try {
+      await deleteTmEntry({ id });
+      await loadEntries(searchQuery || undefined);
+      await loadStats();
+    } catch (error: unknown) {
+      window.alert(`删除失败: ${errorMessage(error)}`);
+    }
   }, [searchQuery, loadEntries, loadStats]);
 
   const handleClear = useCallback(async () => {
     if (!window.confirm("确定清空所有翻译记忆？")) return;
-    await clearTm();
-    await loadEntries();
-    await loadStats();
+    try {
+      await clearTm();
+      await loadEntries();
+      await loadStats();
+    } catch (error: unknown) {
+      window.alert(`清空失败: ${errorMessage(error)}`);
+    }
   }, [loadEntries, loadStats]);
 
   const handleExport = useCallback(async () => {

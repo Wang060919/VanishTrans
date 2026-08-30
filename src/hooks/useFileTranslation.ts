@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { translateBatch, translateWithDirection } from "../services/tauriBridge";
 import { errorMessage, isSegmentCountMismatch } from "../lib/errors";
 import {
@@ -42,8 +42,16 @@ export function useFileTranslation({
 }: UseFileTranslationProps) {
   const [fileStatus, setFileStatus] = useState<string | null>(null);
 
+  const operationRef = useRef(0);
   const doTranslateFile = useCallback(
     async (filename: string, content: string) => {
+      const operationId = ++operationRef.current;
+      const reqId = createRequestId(requestIdRef);
+      const isCurrentOperation = () => operationRef.current === operationId;
+      // A new file operation supersedes any in-flight text or file translation.
+      setLoading(false);
+      setStreaming(false);
+      setGlowActive(false);
       const fileType = detectFileType(filename);
       const contentLength = countChars(content);
 
@@ -60,12 +68,11 @@ export function useFileTranslation({
         }
         setFileStatus(`${filename} 翻译中...`);
         await doTranslateStream(content);
-        setFileStatus(null);
+        if (isCurrentOperation()) setFileStatus(null);
         return;
       }
 
       // Structured files (SRT/JSON): batch translation
-      const reqId = createRequestId(requestIdRef);
       const statusTimeoutRef: { current: ReturnType<typeof setTimeout> | null } = { current: null };
 
       setFileStatus(`正在解析 ${filename}...`);
@@ -84,12 +91,15 @@ export function useFileTranslation({
             setFileStatus(null);
             return;
           }
-          segments = blocks.map((b) => b.text);
+          const translatableBlocks = blocks.filter((block) => block.text.trim());
+          segments = translatableBlocks.map((block) => block.text);
           reassemble = (translated) => {
-            const newBlocks = blocks.map((b, i) => ({
-              ...b,
-              text: translated[i] ?? b.text,
-            }));
+            let translatedIndex = 0;
+            const newBlocks = blocks.map((block) => {
+              if (!block.text.trim()) return block;
+              const nextText = translated[translatedIndex++] ?? block.text;
+              return { ...block, text: nextText };
+            });
             return rebuildSrt(newBlocks);
           };
           setFileStatus(`解析到 ${segments.length} 条字幕，翻译中...`);

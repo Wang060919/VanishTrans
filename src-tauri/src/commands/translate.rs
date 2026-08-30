@@ -3,7 +3,7 @@ use tauri::Emitter;
 
 use crate::error::{code, CommandError};
 use crate::history::HistoryStore;
-use crate::translate::{do_free_translate_async, do_translate_unified, ApiConfig};
+use crate::translate::{do_translate_unified_scoped, ApiConfig};
 use serde::Deserialize;
 
 #[derive(Clone, Serialize)]
@@ -31,6 +31,28 @@ pub struct TranslateStreamRequest {
     pub force_refresh: Option<bool>,
 }
 
+fn map_translation_error(error: String) -> CommandError {
+    if error == "CANCELLED" {
+        CommandError::cancelled()
+    } else {
+        CommandError::api(error)
+    }
+}
+
+fn persist_translation(
+    tm: &crate::tm::TranslationMemory,
+    history: &HistoryStore,
+    source: &str,
+    target: &str,
+    direction: &str,
+    target_lang: &str,
+    context_hash: &str,
+) -> Result<(), CommandError> {
+    tm.store_in_context(source, target, "auto", target_lang, context_hash)
+        .map_err(CommandError::io)?;
+    history.add(source, target, direction);
+    Ok(())
+}
 // -----------------------------------------------------------
 // Translation commands
 // -----------------------------------------------------------
@@ -38,22 +60,30 @@ pub struct TranslateStreamRequest {
 /// Cancel the current main-window translation. The active request observes
 /// the sequence change and returns the structured `CANCELLED` error.
 #[tauri::command]
-pub fn cancel_translation(state: tauri::State<'_, ApiConfig>) {
-    state.cancel_current_request();
+pub fn cancel_translation(window: tauri::WebviewWindow, state: tauri::State<'_, ApiConfig>) {
+    state.cancel_current_request(window.label());
 }
 
 #[tauri::command]
 pub async fn translate(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ApiConfig>,
     text: String,
     source_lang: String,
     target_lang: String,
 ) -> Result<String, CommandError> {
-    let seq = state.next_request_seq();
-    let result = do_translate_unified(&state, &text, &source_lang, &target_lang)
-        .await
-        .map_err(CommandError::api)?;
-    if !state.is_current_request(seq) {
+    let seq = state.next_request_seq(window.label());
+    let result = do_translate_unified_scoped(
+        &state,
+        &text,
+        &source_lang,
+        &target_lang,
+        window.label(),
+        seq,
+    )
+    .await
+    .map_err(map_translation_error)?;
+    if !state.is_current_request(window.label(), seq) {
         // A newer request superseded this one — silently drop the result
         return Err(CommandError::cancelled());
     }
@@ -62,6 +92,7 @@ pub async fn translate(
 
 #[tauri::command]
 pub async fn translate_with_direction(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ApiConfig>,
     history: tauri::State<'_, HistoryStore>,
     tm: tauri::State<'_, crate::tm::TranslationMemory>,
@@ -70,29 +101,42 @@ pub async fn translate_with_direction(
     force_refresh: Option<bool>,
 ) -> Result<String, CommandError> {
     let target = crate::translate::resolve_target_lang(&text, &direction);
-    let seq = state.next_request_seq();
+    let scope = window.label();
+    let seq = state.next_request_seq(scope);
     let context_hash = state.translation_context_hash();
 
     // Check Translation Memory first
     if force_refresh != Some(true) {
         if let Some(cached) = tm.lookup_in_context(&text, "auto", target, &context_hash) {
-            if !state.is_current_request(seq) {
+            if state
+                .with_current_request(scope, seq, || history.add(&text, &cached, &direction))
+                .is_none()
+            {
                 return Err(CommandError::cancelled());
             }
-            history.add(&text, &cached, &direction);
             return Ok(cached);
         }
     }
 
-    let result = do_translate_unified(&state, &text, "auto", target)
+    let result = do_translate_unified_scoped(&state, &text, "auto", target, scope, seq)
         .await
-        .map_err(CommandError::api)?;
-    if !state.is_current_request(seq) {
-        return Err(CommandError::cancelled());
+        .map_err(map_translation_error)?;
+    let committed = state.with_current_request(scope, seq, || {
+        persist_translation(
+            &tm,
+            &history,
+            &text,
+            &result,
+            &direction,
+            target,
+            &context_hash,
+        )
+    });
+    match committed {
+        Some(Ok(())) => {}
+        Some(Err(error)) => return Err(error),
+        None => return Err(CommandError::cancelled()),
     }
-    // Store in TM and history
-    tm.store_in_context(&text, &result, "auto", target, &context_hash);
-    history.add(&text, &result, &direction);
     Ok(result)
 }
 
@@ -111,13 +155,17 @@ pub async fn translate_stream(
         force_refresh,
     } = request;
     let target = crate::translate::resolve_target_lang(&text, &direction);
-    let seq = state.next_request_seq();
+    let scope = window.label();
+    let seq = state.next_request_seq(scope);
     let context_hash = state.translation_context_hash();
 
     // Check Translation Memory first
     if force_refresh != Some(true) {
         if let Some(cached) = tm.lookup_in_context(&text, "auto", target, &context_hash) {
-            if !state.is_current_request(seq) {
+            if state
+                .with_current_request(scope, seq, || history.add(&text, &cached, &direction))
+                .is_none()
+            {
                 return Err(CommandError::cancelled());
             }
             let _ = window.emit(
@@ -134,7 +182,6 @@ pub async fn translate_stream(
                     full_text: cached.clone(),
                 },
             );
-            history.add(&text, &cached, &direction);
             return Ok(cached);
         }
     }
@@ -142,11 +189,24 @@ pub async fn translate_stream(
     // Free Google provider has no streaming endpoint — resolve the full result
     // and emit it as a single chunk so the frontend streaming flow stays intact.
     if state.free_translation() {
-        let result = do_free_translate_async(&state, &text, target)
+        let result = do_translate_unified_scoped(&state, &text, "auto", target, scope, seq)
             .await
-            .map_err(CommandError::api)?;
-        if !state.is_current_request(seq) {
-            return Err(CommandError::cancelled());
+            .map_err(map_translation_error)?;
+        let committed = state.with_current_request(scope, seq, || {
+            persist_translation(
+                &tm,
+                &history,
+                &text,
+                &result,
+                &direction,
+                target,
+                &context_hash,
+            )
+        });
+        match committed {
+            Some(Ok(())) => {}
+            Some(Err(error)) => return Err(error),
+            None => return Err(CommandError::cancelled()),
         }
         let _ = window.emit(
             "translate-stream-chunk",
@@ -162,8 +222,6 @@ pub async fn translate_stream(
                 full_text: result.clone(),
             },
         );
-        tm.store_in_context(&text, &result, "auto", target, &context_hash);
-        history.add(&text, &result, &direction);
         return Ok(result);
     }
 
@@ -175,10 +233,11 @@ pub async fn translate_stream(
         &text,
         "auto",
         target,
+        scope,
         seq,
         |chunk| {
             // Check cancellation before emitting each chunk
-            if !state_for_closure.is_current_request(seq_for_closure) {
+            if !state_for_closure.is_current_request(scope, seq_for_closure) {
                 return;
             }
             let _ = window_clone.emit(
@@ -188,12 +247,24 @@ pub async fn translate_stream(
         },
     )
     .await
-    .map_err(CommandError::api)?;
+    .map_err(map_translation_error)?;
 
-    if !state.is_current_request(seq) {
-        return Err(CommandError::cancelled());
+    let committed = state.with_current_request(scope, seq, || {
+        persist_translation(
+            &tm,
+            &history,
+            &text,
+            &result,
+            &direction,
+            target,
+            &context_hash,
+        )
+    });
+    match committed {
+        Some(Ok(())) => {}
+        Some(Err(error)) => return Err(error),
+        None => return Err(CommandError::cancelled()),
     }
-
     let _ = window.emit(
         "translate-stream-done",
         StreamDoneEvent {
@@ -201,9 +272,6 @@ pub async fn translate_stream(
             full_text: result.clone(),
         },
     );
-    // Store in TM and history
-    tm.store_in_context(&text, &result, "auto", target, &context_hash);
-    history.add(&text, &result, &direction);
     Ok(result)
 }
 
@@ -213,18 +281,49 @@ const SEGMENT_MARKER: &str = "\n\n===SEGMENT_BREAK===\n\n";
 /// Marker used to split the model's batched response back into segments.
 const SEGMENT_SPLIT_MARKER: &str = "===SEGMENT_BREAK===";
 
-/// Join segments into one request payload, separated by an unambiguous marker.
+fn choose_segment_marker(segments: &[String]) -> String {
+    if segments
+        .iter()
+        .all(|segment| !segment.contains(SEGMENT_SPLIT_MARKER))
+    {
+        return SEGMENT_MARKER.to_string();
+    }
+    for index in 1..=1000 {
+        let marker = format!("\n\n===VANISHTRANS_SEGMENT_{}===\n\n", index);
+        if segments
+            .iter()
+            .all(|segment| !segment.contains(marker.trim()))
+        {
+            return marker;
+        }
+    }
+    // This is practically unreachable, but keeps the fallback deterministic.
+    format!("\n\n===VANISHTRANS_SEGMENT_{}===\n\n", segments.len())
+}
+
+/// Join segments with a marker that cannot already occur in the source.
+fn join_segments_with_marker(segments: &[String], marker: &str) -> String {
+    segments.join(marker)
+}
+
+/// Join segments into one request payload.
+#[cfg(test)]
 fn join_segments(segments: &[String]) -> String {
-    segments.join(SEGMENT_MARKER)
+    let marker = choose_segment_marker(segments);
+    join_segments_with_marker(segments, &marker)
 }
 
 /// Split a batched translation result back into segments, trimming surrounding
 /// whitespace the model may have introduced. Returns `SEGMENT_COUNT_MISMATCH`
 /// when the model merged or dropped segments, so the caller can fall back to
 /// showing raw text instead of a broken reassembly.
-fn split_translated(result: &str, expected_len: usize) -> Result<Vec<String>, CommandError> {
+fn split_translated_with_marker(
+    result: &str,
+    expected_len: usize,
+    marker: &str,
+) -> Result<Vec<String>, CommandError> {
     let translated: Vec<String> = result
-        .split(SEGMENT_SPLIT_MARKER)
+        .split(marker.trim())
         .map(|segment| segment.trim().to_string())
         .collect();
     if translated.len() != expected_len {
@@ -234,6 +333,11 @@ fn split_translated(result: &str, expected_len: usize) -> Result<Vec<String>, Co
         ));
     }
     Ok(translated)
+}
+
+#[cfg(test)]
+fn split_translated(result: &str, expected_len: usize) -> Result<Vec<String>, CommandError> {
+    split_translated_with_marker(result, expected_len, SEGMENT_MARKER)
 }
 
 /// Batch translate multiple text segments in a single API call.
@@ -246,6 +350,7 @@ fn split_translated(result: &str, expected_len: usize) -> Result<Vec<String>, Co
 /// (`translate_with_direction` / `translate_stream`) remains the cache-backed path.
 #[tauri::command]
 pub async fn translate_batch(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, ApiConfig>,
     segments: Vec<String>,
     direction: String,
@@ -254,9 +359,11 @@ pub async fn translate_batch(
         return Ok(Vec::new());
     }
 
-    let seq = state.next_request_seq();
+    let scope = window.label();
+    let seq = state.next_request_seq(scope);
 
-    let combined = join_segments(&segments);
+    let marker = choose_segment_marker(&segments);
+    let combined = join_segments_with_marker(&segments, &marker);
     let target = crate::translate::resolve_target_lang(&combined, &direction);
 
     // The free Google provider does not understand the segment-break marker, so
@@ -264,10 +371,10 @@ pub async fn translate_batch(
     if state.free_translation() {
         let mut translated = Vec::with_capacity(segments.len());
         for segment in &segments {
-            let text = do_free_translate_async(&state, segment, target)
+            let text = do_translate_unified_scoped(&state, segment, "auto", target, scope, seq)
                 .await
-                .map_err(CommandError::api)?;
-            if !state.is_current_request(seq) {
+                .map_err(map_translation_error)?;
+            if !state.is_current_request(scope, seq) {
                 return Err(CommandError::cancelled());
             }
             translated.push(text);
@@ -275,15 +382,15 @@ pub async fn translate_batch(
         return Ok(translated);
     }
 
-    let result = crate::translate::do_translate_async(&state, &combined, "auto", target)
+    let result = do_translate_unified_scoped(&state, &combined, "auto", target, scope, seq)
         .await
-        .map_err(CommandError::api)?;
+        .map_err(map_translation_error)?;
 
-    if !state.is_current_request(seq) {
+    if !state.is_current_request(scope, seq) {
         return Err(CommandError::cancelled());
     }
 
-    split_translated(&result, segments.len())
+    split_translated_with_marker(&result, segments.len(), &marker)
 }
 
 #[cfg(test)]
@@ -296,6 +403,21 @@ mod tests {
             join_segments(&["a".to_string(), "b".to_string()]),
             "a\n\n===SEGMENT_BREAK===\n\nb"
         );
+    }
+
+    #[test]
+    fn batch_marker_avoids_source_collisions() {
+        let segments = vec![
+            format!("before {} after", SEGMENT_SPLIT_MARKER),
+            "second".to_string(),
+        ];
+        let marker = choose_segment_marker(&segments);
+        assert!(!segments
+            .iter()
+            .any(|segment| segment.contains(marker.trim())));
+        let joined = join_segments_with_marker(&segments, &marker);
+        let translated = split_translated_with_marker(&joined, 2, &marker).unwrap();
+        assert_eq!(translated, segments);
     }
 
     #[test]
@@ -314,5 +436,12 @@ mod tests {
     fn split_translated_reports_a_segment_count_mismatch() {
         let error = split_translated("only one segment", 2).unwrap_err();
         assert_eq!(error.code, code::SEGMENT_COUNT_MISMATCH);
+    }
+
+    #[test]
+    fn cancellation_errors_keep_the_stable_code() {
+        let error = map_translation_error("CANCELLED".to_string());
+        assert_eq!(error.code, code::CANCELLED);
+        assert_eq!(error.message, "请求已取消");
     }
 }

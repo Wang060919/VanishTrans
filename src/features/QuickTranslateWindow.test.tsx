@@ -64,7 +64,7 @@ describe("QuickTranslateWindow", () => {
   it("registers listeners before reporting that the compact window is ready", async () => {
     render(<QuickTranslateWindow />);
 
-    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("quick_frontend_ready"));
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("quick_frontend_ready", { ready: true }));
     expect(listeners["quick-translate"]).toBeDefined();
     expect(listeners["translate-stream-chunk"]).toBeDefined();
     expect(listeners["translate-stream-done"]).toBeDefined();

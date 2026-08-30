@@ -303,7 +303,12 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                 if *sc == esc {
                     if let Some(w) = app.get_webview_window("screenshot") {
                         if w.is_visible().unwrap_or(false) {
-                            crate::commands::dismiss_screenshot(app);
+                            if let Some(session_id) = app
+                                .state::<crate::ocr::ScreenshotBuffer>()
+                                .active_session_id()
+                            {
+                                crate::commands::dismiss_screenshot(app, session_id);
+                            }
                         }
                     }
                     return;
@@ -489,7 +494,7 @@ fn handle_alt_r(app: tauri::AppHandle) {
                     if let Some(w) = app.get_webview_window("ball") {
                         let _ = w.show();
                         let _ = w.emit("expand-main-window", ());
-                        let _ = w.emit("ocr-translate", format!("❌ Alt+R 失败: {}", e));
+                        let _ = w.emit("screenshot-error", format!("❌ Alt+R 失败: {}", e));
                     }
                     return;
                 }
@@ -541,17 +546,18 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
             log::info!("[screenshot] A capture session is already active");
             return;
         };
-        let (payload, raw_image) = match crate::ocr::capture_screenshot() {
+        let (mut payload, raw_image) = match crate::ocr::capture_screenshot() {
             Some(d) => d,
             None => {
                 log::error!("[screenshot] Capture failed");
-                crate::commands::dismiss_screenshot(&app);
+                crate::commands::dismiss_screenshot(&app, session_id);
                 if let Some(w) = app.get_webview_window("ball") {
                     let _ = w.emit("screenshot-error", "截图失败，请检查屏幕录制权限");
                 }
                 return;
             }
         };
+        payload.session_id = session_id;
         {
             let sb = app.state::<crate::ocr::ScreenshotBuffer>();
             if !sb.store(session_id, payload.clone(), raw_image) {
@@ -573,7 +579,7 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
             let _ = w.emit("screenshot-ready", payload);
             if let Err(error) = w.show().and_then(|_| w.set_focus()) {
                 log::error!("[screenshot] Failed to show overlay: {}", error);
-                crate::commands::dismiss_screenshot(&app);
+                crate::commands::dismiss_screenshot(&app, session_id);
             }
         } else {
             let window = tauri::WebviewWindowBuilder::new(
@@ -608,7 +614,7 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
                     let _ = w.emit("screenshot-ready", payload);
                     if let Err(error) = w.show().and_then(|_| w.set_focus()) {
                         log::error!("[screenshot] Failed to show overlay: {}", error);
-                        crate::commands::dismiss_screenshot(&app);
+                        crate::commands::dismiss_screenshot(&app, session_id);
                         if let Some(ball) = app.get_webview_window("ball") {
                             let _ = ball.emit("screenshot-error", "无法打开截图窗口");
                         }
@@ -616,7 +622,7 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
                 }
                 Err(error) => {
                     log::error!("[screenshot] Failed to create overlay: {}", error);
-                    crate::commands::dismiss_screenshot(&app);
+                    crate::commands::dismiss_screenshot(&app, session_id);
                     if let Some(ball) = app.get_webview_window("ball") {
                         let _ = ball.emit("screenshot-error", "无法打开截图窗口");
                     }

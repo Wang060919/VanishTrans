@@ -27,11 +27,16 @@ pub struct HistoryStore {
 
 impl HistoryStore {
     pub fn load_or_default_with_max(config_dir: std::path::PathBuf, max_records: usize) -> Self {
+        let max_records = max_records.clamp(50, 1000);
         let path = config_dir.join("history.json");
-        let records: Vec<TranslationRecord> = std::fs::read_to_string(&path)
+        let mut records: Vec<TranslationRecord> = std::fs::read_to_string(&path)
             .ok()
             .and_then(|d| serde_json::from_str(&d).ok())
             .unwrap_or_default();
+        if records.len() > max_records {
+            let keep_from = records.len() - max_records;
+            records.drain(..keep_from);
+        }
         let next_id = records.iter().map(|r| r.id).max().unwrap_or(0) + 1;
         Self {
             records: Mutex::new(records),
@@ -43,6 +48,7 @@ impl HistoryStore {
     }
 
     pub fn set_max_records(&self, max: usize) {
+        let max = max.clamp(50, 1000);
         self.max_records.store(max, Ordering::Relaxed);
         // Trim existing records if new limit is lower
         let mut records = self.records.lock_recover();

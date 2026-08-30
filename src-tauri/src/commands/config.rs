@@ -46,19 +46,27 @@ pub fn set_api_config(
         return Err(CommandError::validation("模型名称不能为空"));
     }
 
-    if let Some(api_key) = api_key {
-        let mut key_guard = state.api_key.lock_recover();
-        let previous_key = key_guard.clone();
-        *key_guard = api_key;
-        drop(key_guard);
-        if let Err(error) = state.save_api_key() {
-            *state.api_key.lock_recover() = previous_key;
-            return Err(CommandError::io(error));
-        }
+    let _write_guard = state.lock_for_write();
+    let snapshot = state.snapshot();
+    if let Some(new_key) = api_key.as_ref() {
+        *state.api_key.lock_recover() = new_key.clone();
     }
     *state.base_url.lock_recover() = base_url;
     *state.model.lock_recover() = model;
-    state.save_to_disk().map_err(CommandError::io)
+
+    if let Err(error) = state.save_to_disk() {
+        state.restore(&snapshot);
+        return Err(CommandError::io(error));
+    }
+    if api_key.is_some() {
+        if let Err(error) = state.save_api_key() {
+            state.restore(&snapshot);
+            let _ = state.save_to_disk();
+            let _ = state.save_api_key();
+            return Err(CommandError::io(error));
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -67,17 +75,23 @@ pub fn set_hotkeys(
     state: tauri::State<'_, ApiConfig>,
     hotkeys: Vec<(String, String)>,
 ) -> Result<(), CommandError> {
-    let previous = state.hotkeys.lock_recover().clone();
+    let _write_guard = state.lock_for_write();
+    let snapshot = state.snapshot();
     *state.hotkeys.lock_recover() = hotkeys;
-    // Re-register global shortcuts with the new bindings
     if let Err(error) = crate::setup::sync_shortcuts(&app) {
-        *state.hotkeys.lock_recover() = previous;
+        state.restore(&snapshot);
+        let _ = crate::setup::sync_shortcuts(&app);
         return Err(CommandError::validation(format!(
             "快捷键更新失败: {}",
             error
         )));
     }
-    state.save_to_disk().map_err(CommandError::io)
+    if let Err(error) = state.save_to_disk() {
+        state.restore(&snapshot);
+        let _ = crate::setup::sync_shortcuts(&app);
+        return Err(CommandError::io(error));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -85,8 +99,14 @@ pub fn set_glossary(
     state: tauri::State<'_, ApiConfig>,
     glossary: Vec<(String, String)>,
 ) -> Result<(), CommandError> {
+    let _write_guard = state.lock_for_write();
+    let snapshot = state.snapshot();
     *state.glossary.lock_recover() = glossary;
-    state.save_to_disk().map_err(CommandError::io)
+    if let Err(error) = state.save_to_disk() {
+        state.restore(&snapshot);
+        return Err(CommandError::io(error));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -106,11 +126,16 @@ pub fn set_max_records(
     max_records: usize,
 ) -> Result<(), CommandError> {
     let max = max_records.clamp(50, 1000);
+    let _write_guard = state.lock_for_write();
+    let snapshot = state.snapshot();
     state
         .max_records
         .store(max, std::sync::atomic::Ordering::Relaxed);
-    state.save_to_disk().map_err(CommandError::io)?;
-    // Update HistoryStore limit
+    if let Err(error) = state.save_to_disk() {
+        state.restore(&snapshot);
+        return Err(CommandError::io(error));
+    }
+    // Update HistoryStore limit only after the config is durable.
     app.state::<HistoryStore>().set_max_records(max);
     Ok(())
 }

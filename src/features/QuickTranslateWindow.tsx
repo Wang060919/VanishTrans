@@ -87,13 +87,19 @@ export default function QuickTranslateWindow() {
     let cancelled = false;
     const cleanups: Array<() => void> = [];
 
+    let readyReported = false;
     void (async () => {
       try {
-        const registered = await Promise.all([
-          listen<string>("quick-translate", (event) => {
+        try {
+          await quickFrontendReady(false);
+        } catch {
+          // Browser-only previews do not expose Tauri commands.
+        }
+        const results = await Promise.allSettled([
+          Promise.resolve().then(() => listen<string>("quick-translate", (event) => {
             void translateText(event.payload);
-          }),
-          listen<string>("quick-translate-error", (event) => {
+          })),
+          Promise.resolve().then(() => listen<string>("quick-translate-error", (event) => {
             requestIdRef.current += 1;
             sourceRef.current = "";
             setSource("");
@@ -101,23 +107,35 @@ export default function QuickTranslateWindow() {
             setLoading(false);
             setError(event.payload);
             broadcastActivity("error");
-          }),
-          listen<StreamChunk>("translate-stream-chunk", (event) => {
+          })),
+          Promise.resolve().then(() => listen<StreamChunk>("translate-stream-chunk", (event) => {
             if (event.payload.requestId !== requestIdRef.current) return;
             setOutput((current) => current + event.payload.chunk);
-          }),
-          listen<StreamDone>("translate-stream-done", (event) => {
+          })),
+          Promise.resolve().then(() => listen<StreamDone>("translate-stream-done", (event) => {
             if (event.payload.requestId !== requestIdRef.current) return;
             setOutput(event.payload.fullText);
             setLoading(false);
-          }),
+          })),
         ]);
+        const registered = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+        const failed = results.find((result) => result.status === "rejected");
+        if (failed?.status === "rejected") {
+          registered.forEach((cleanup) => cleanup());
+          throw failed.reason;
+        }
         if (cancelled) {
           registered.forEach((cleanup) => cleanup());
           return;
         }
         cleanups.push(...registered);
-        await quickFrontendReady();
+        await quickFrontendReady(true);
+        if (cancelled) {
+          cleanups.splice(0).forEach((cleanup) => cleanup());
+          await quickFrontendReady(false).catch(() => {});
+          return;
+        }
+        readyReported = true;
       } catch (error) {
         logError("quick", "setup error", error);
       }
@@ -125,7 +143,8 @@ export default function QuickTranslateWindow() {
 
     return () => {
       cancelled = true;
-      cleanups.forEach((cleanup) => cleanup());
+      cleanups.splice(0).forEach((cleanup) => cleanup());
+      if (readyReported) void quickFrontendReady(false).catch(() => {});
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       broadcastActivity("idle");
     };

@@ -190,7 +190,8 @@ impl TranslationMemory {
     /// Store a translation in the TM (UPSERT).
     #[cfg(test)]
     pub fn store(&self, source: &str, target: &str, source_lang: &str, target_lang: &str) {
-        self.store_in_context(source, target, source_lang, target_lang, "");
+        self.store_in_context(source, target, source_lang, target_lang, "")
+            .expect("test TM write should succeed");
     }
 
     pub fn store_in_context(
@@ -200,18 +201,21 @@ impl TranslationMemory {
         source_lang: &str,
         target_lang: &str,
         context_hash: &str,
-    ) {
+    ) -> Result<(), String> {
         let conn = self.conn.lock_recover();
-        if let Err(e) = Self::store_inner(
+        Self::store_inner(
             &conn,
             source,
             target,
             source_lang,
             target_lang,
             context_hash,
-        ) {
-            log::error!("[tm] Failed to store translation: {}", e);
-        }
+        )
+        .map_err(|error| {
+            log::error!("[tm] Failed to store translation: {}", error);
+            format!("写入翻译记忆失败: {}", error)
+        })
+        .map(|_| ())
     }
 
     /// Search TM entries by source or target text.
@@ -223,7 +227,7 @@ impl TranslationMemory {
         } else {
             "SELECT id, source, target, source_lang, target_lang, created_at, hit_count
              FROM translation_memory
-             WHERE source LIKE ?1 OR target LIKE ?1
+             WHERE source LIKE ?1 ESCAPE '!' OR target LIKE ?1 ESCAPE '!'
              ORDER BY hit_count DESC, created_at DESC LIMIT 200"
         };
 
@@ -235,7 +239,7 @@ impl TranslationMemory {
         let pattern = if query.is_empty() {
             String::new()
         } else {
-            format!("%{}%", query)
+            format!("%{}%", escape_like_pattern(query))
         };
 
         let rows = if query.is_empty() {
@@ -440,6 +444,13 @@ impl TranslationMemory {
     }
 }
 
+fn escape_like_pattern(query: &str) -> String {
+    query
+        .replace('!', "!!")
+        .replace('%', "!%")
+        .replace('_', "!_")
+}
+
 fn escape_spreadsheet_formula(value: &str) -> String {
     if value
         .chars()
@@ -526,7 +537,8 @@ mod tests {
     #[test]
     fn cache_entries_are_scoped_to_the_translation_context() {
         let (tm, dir) = temp_tm();
-        tm.store_in_context("hello", "你好", "auto", "Chinese", "provider-a");
+        tm.store_in_context("hello", "你好", "auto", "Chinese", "provider-a")
+            .unwrap();
 
         assert_eq!(
             tm.lookup_in_context("hello", "auto", "Chinese", "provider-a")
@@ -537,6 +549,39 @@ mod tests {
             tm.lookup_in_context("hello", "auto", "Chinese", "provider-b"),
             None
         );
+
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn store_reports_sqlite_write_failures() {
+        let (tm, dir) = temp_tm();
+        tm.conn
+            .lock_recover()
+            .execute_batch(
+                "CREATE TRIGGER block_tm_insert BEFORE INSERT ON translation_memory
+                 BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+            )
+            .unwrap();
+
+        let error = tm
+            .store_in_context("hello", "你好", "auto", "Chinese", "")
+            .unwrap_err();
+        assert!(error.contains("写入翻译记忆失败"));
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn search_treats_like_wildcards_as_literals() {
+        let (tm, dir) = temp_tm();
+        tm.store("100% complete", "百分比", "auto", "Chinese");
+        tm.store("under_score", "下划线", "auto", "Chinese");
+
+        assert_eq!(tm.search("100%").len(), 1);
+        assert_eq!(tm.search("_").len(), 1);
+        assert_eq!(tm.search("under_score").len(), 1);
 
         drop(tm);
         let _ = std::fs::remove_dir_all(dir);
@@ -595,7 +640,8 @@ mod tests {
             tm.lookup("legacy", "auto", "Chinese").as_deref(),
             Some("旧数据")
         );
-        tm.store_in_context("legacy", "新数据", "auto", "Chinese", "new-context");
+        tm.store_in_context("legacy", "新数据", "auto", "Chinese", "new-context")
+            .unwrap();
         assert_eq!(
             tm.lookup_in_context("legacy", "auto", "Chinese", "new-context")
                 .as_deref(),

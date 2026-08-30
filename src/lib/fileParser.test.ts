@@ -94,7 +94,7 @@ Valid`;
     expect(result[0].index).toBe(2);
   });
 
-  it("should skip blocks with empty text", () => {
+  it("should preserve blocks with empty text", () => {
     const input = `1
 00:00:01,000 --> 00:00:03,000
 
@@ -105,8 +105,13 @@ Valid text`;
 
     const result = parseSrt(input);
 
-    expect(result).toHaveLength(1);
-    expect(result[0].index).toBe(2);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      index: 1,
+      timecode: "00:00:01,000 --> 00:00:03,000",
+      text: "",
+    });
+    expect(result[1].index).toBe(2);
   });
 
   it("should handle empty input", () => {

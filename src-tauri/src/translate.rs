@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -200,13 +201,10 @@ pub struct ApiConfig {
     pub model: Mutex<String>,
     pub client: Mutex<reqwest::Client>,
     config_path: std::path::PathBuf,
-    /// Monotonically increasing counter — each new translation request
-    /// increments this. In-flight requests check the value after the HTTP
-    /// round-trip and silently discard their result if it no longer matches.
-    pub request_seq: AtomicU64,
-    /// Independent cancellation domain for Alt+R replacement. Splitting this
-    /// from `request_seq` keeps a background replacement from cancelling an
-    /// in-flight main-window translation and vice versa.
+    write_lock: Mutex<()>,
+    /// Monotonically increasing translation sequences, isolated by webview label.
+    pub request_seq: Mutex<HashMap<String, u64>>,
+    /// Independent cancellation domain for Alt+R replacement.
     pub replace_request_seq: AtomicU64,
     /// Hotkey bindings stored as (action, shortcut_string).
     /// Actions: "translate", "screenshot", "replace".
@@ -235,6 +233,18 @@ struct PersistedConfig {
     #[serde(default)]
     profiles: Vec<ServiceProfile>,
     #[serde(default)]
+    free_translation: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct ConfigSnapshot {
+    base_url: String,
+    api_key: String,
+    model: String,
+    hotkeys: Vec<(String, String)>,
+    glossary: Vec<(String, String)>,
+    max_records: usize,
+    profiles: Vec<ServiceProfile>,
     free_translation: bool,
 }
 
@@ -281,7 +291,7 @@ impl ApiConfig {
                     c.model,
                     c.hotkeys,
                     c.glossary,
-                    c.max_records,
+                    c.max_records.clamp(50, 1000),
                     c.profiles,
                     c.free_translation,
                     true,
@@ -317,7 +327,8 @@ impl ApiConfig {
             model: Mutex::new(model),
             client: Mutex::new(client),
             config_path,
-            request_seq: AtomicU64::new(0),
+            write_lock: Mutex::new(()),
+            request_seq: Mutex::new(HashMap::new()),
             replace_request_seq: AtomicU64::new(0),
             hotkeys: Mutex::new(if hotkeys.is_empty() {
                 Self::default_hotkeys()
@@ -344,6 +355,36 @@ impl ApiConfig {
             String::new(),
             "gpt-4o-mini".into(),
         )
+    }
+
+    pub(crate) fn lock_for_write(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.write_lock.lock_recover()
+    }
+
+    pub(crate) fn snapshot(&self) -> ConfigSnapshot {
+        ConfigSnapshot {
+            base_url: self.base_url.lock_recover().clone(),
+            api_key: self.api_key.lock_recover().clone(),
+            model: self.model.lock_recover().clone(),
+            hotkeys: self.hotkeys.lock_recover().clone(),
+            glossary: self.glossary.lock_recover().clone(),
+            max_records: self.max_records.load(Ordering::Relaxed),
+            profiles: self.profiles.lock_recover().clone(),
+            free_translation: self.free_translation(),
+        }
+    }
+
+    pub(crate) fn restore(&self, snapshot: &ConfigSnapshot) {
+        *self.base_url.lock_recover() = snapshot.base_url.clone();
+        *self.api_key.lock_recover() = snapshot.api_key.clone();
+        *self.model.lock_recover() = snapshot.model.clone();
+        *self.hotkeys.lock_recover() = snapshot.hotkeys.clone();
+        *self.glossary.lock_recover() = snapshot.glossary.clone();
+        self.max_records
+            .store(snapshot.max_records, Ordering::Relaxed);
+        *self.profiles.lock_recover() = snapshot.profiles.clone();
+        self.free_translation
+            .store(snapshot.free_translation, Ordering::Relaxed);
     }
 
     pub fn default_hotkeys() -> Vec<(String, String)> {
@@ -408,27 +449,47 @@ impl ApiConfig {
 
     /// Toggle the free Google Translate provider and persist the change.
     pub fn set_free_translation(&self, enabled: bool) -> Result<(), String> {
-        self.free_translation
-            .store(enabled, std::sync::atomic::Ordering::Relaxed);
-        self.save_to_disk()
+        let _write_guard = self.lock_for_write();
+        let snapshot = self.snapshot();
+        self.free_translation.store(enabled, Ordering::Relaxed);
+        if let Err(error) = self.save_to_disk() {
+            self.restore(&snapshot);
+            return Err(error);
+        }
+        Ok(())
     }
 
-    /// Claim a new translation sequence number. The caller stores this and
-    /// checks it after the HTTP response to decide whether to keep the result.
-    pub fn next_request_seq(&self) -> u64 {
-        self.request_seq.fetch_add(1, Ordering::SeqCst) + 1
+    /// Claim a request sequence within one webview scope.
+    pub fn next_request_seq(&self, scope: &str) -> u64 {
+        let mut sequences = self.request_seq.lock_recover();
+        let sequence = sequences.entry(scope.to_string()).or_insert(0);
+        *sequence += 1;
+        *sequence
     }
 
-    /// Invalidate the current main-window translation request. Streaming
-    /// callers observe the sequence change between chunks and stop promptly.
-    pub fn cancel_current_request(&self) {
-        self.next_request_seq();
+    /// Invalidate only the current request in one webview scope.
+    pub fn cancel_current_request(&self, scope: &str) {
+        self.next_request_seq(scope);
     }
 
-    /// Returns true if `seq` is still the latest request (i.e., has not been
-    /// superseded by a newer translation).
-    pub fn is_current_request(&self, seq: u64) -> bool {
-        self.request_seq.load(Ordering::SeqCst) == seq
+    /// Returns true if `seq` is still the latest request in `scope`.
+    pub fn is_current_request(&self, scope: &str, seq: u64) -> bool {
+        self.request_seq.lock_recover().get(scope).copied() == Some(seq)
+    }
+
+    /// Run a side effect only while this request is still current.
+    /// Sequence claims wait for the same lock, so the check and commit are atomic.
+    pub(crate) fn with_current_request<T>(
+        &self,
+        scope: &str,
+        seq: u64,
+        commit: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let sequences = self.request_seq.lock_recover();
+        if sequences.get(scope).copied() != Some(seq) {
+            return None;
+        }
+        Some(commit())
     }
 
     /// Claim a new Alt+R replacement sequence number.
@@ -441,8 +502,9 @@ impl ApiConfig {
         self.replace_request_seq.load(Ordering::SeqCst) == seq
     }
 
-    /// Replace the saved profile with the same name, or append it.
     pub fn upsert_profile(&self, profile: ServiceProfile) -> Result<(), String> {
+        let _write_guard = self.lock_for_write();
+        let snapshot = self.snapshot();
         let mut profiles = self.profiles.lock_recover();
         if let Some(existing) = profiles
             .iter_mut()
@@ -453,29 +515,44 @@ impl ApiConfig {
             profiles.push(profile);
         }
         drop(profiles);
-        self.save_to_disk()
+        if let Err(error) = self.save_to_disk() {
+            self.restore(&snapshot);
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub fn delete_profile(&self, name: &str) -> Result<(), String> {
+        let _write_guard = self.lock_for_write();
+        let snapshot = self.snapshot();
         let mut profiles = self.profiles.lock_recover();
         profiles.retain(|profile| profile.name != name);
         drop(profiles);
-        self.save_to_disk()
+        if let Err(error) = self.save_to_disk() {
+            self.restore(&snapshot);
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Apply a saved profile's base URL and model to the active configuration.
     pub fn apply_profile(&self, name: &str) -> Result<(), String> {
-        let profiles = self.profiles.lock_recover();
-        let profile = profiles
+        let _write_guard = self.lock_for_write();
+        let snapshot = self.snapshot();
+        let profile = self
+            .profiles
+            .lock_recover()
             .iter()
             .find(|profile| profile.name == name)
+            .cloned()
             .ok_or_else(|| format!("找不到服务档案: {}", name))?;
-        let base_url = profile.base_url.clone();
-        let model = profile.model.clone();
-        drop(profiles);
-        *self.base_url.lock_recover() = base_url;
-        *self.model.lock_recover() = model;
-        self.save_to_disk()
+        *self.base_url.lock_recover() = profile.base_url;
+        *self.model.lock_recover() = profile.model;
+        if let Err(error) = self.save_to_disk() {
+            self.restore(&snapshot);
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Fingerprint every setting that can change a translation result.
@@ -808,6 +885,12 @@ pub async fn do_free_translate_async(
 
 /// Unified translation entry point: routes to the free Google provider when
 /// enabled, otherwise to the configured OpenAI-compatible API.
+async fn wait_for_request_superseded(state: &ApiConfig, scope: &str, seq: u64) {
+    while state.is_current_request(scope, seq) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 pub async fn do_translate_unified(
     state: &ApiConfig,
     text: &str,
@@ -821,6 +904,20 @@ pub async fn do_translate_unified(
     }
 }
 
+/// Unified translation that can be cancelled by a request in the same scope.
+pub async fn do_translate_unified_scoped(
+    state: &ApiConfig,
+    text: &str,
+    source_lang: &str,
+    target_lang: &str,
+    scope: &str,
+    seq: u64,
+) -> Result<String, String> {
+    tokio::select! {
+        result = do_translate_unified(state, text, source_lang, target_lang) => result,
+        _ = wait_for_request_superseded(state, scope, seq) => Err("CANCELLED".into()),
+    }
+}
 /// Verify connectivity against the configured service with a minimal request.
 /// Returns a human-readable success message on success.
 pub async fn test_connection_async(
@@ -904,8 +1001,14 @@ struct StreamChoice {
 }
 
 #[derive(Deserialize)]
-struct StreamChunk {
-    choices: Vec<StreamChoice>,
+struct StreamErrorInfo {
+    message: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StreamEnvelope {
+    choices: Option<Vec<StreamChoice>>,
+    error: Option<StreamErrorInfo>,
 }
 
 fn process_sse_line(
@@ -928,19 +1031,40 @@ fn process_sse_line(
         return Ok(true);
     }
 
-    if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-        if let Some(content) = chunk
-            .choices
-            .first()
-            .and_then(|choice| choice.delta.content.as_ref())
-        {
-            if !content.is_empty() {
-                full_text.push_str(content);
-                on_chunk(content.clone());
-            }
+    let envelope = serde_json::from_str::<StreamEnvelope>(data)
+        .map_err(|e| format!("流响应 JSON 格式异常: {}", e))?;
+    if let Some(error) = envelope.error {
+        return Err(format!(
+            "API 流式响应错误: {}",
+            error
+                .message
+                .unwrap_or_else(|| "provider 返回未知错误".to_string())
+        ));
+    }
+
+    let choices = envelope
+        .choices
+        .ok_or_else(|| "API 流响应格式异常：缺少 choices".to_string())?;
+    let choice = choices
+        .first()
+        .ok_or_else(|| "API 流响应格式异常：choices 为空".to_string())?;
+    if let Some(content) = choice.delta.content.as_ref() {
+        if !content.is_empty() {
+            full_text.push_str(content);
+            on_chunk(content.clone());
         }
     }
     Ok(false)
+}
+
+fn finalize_stream_result(full_text: String, saw_done: bool) -> Result<String, String> {
+    if !saw_done {
+        return Err("流响应在收到 [DONE] 前提前结束".into());
+    }
+    if full_text.trim().is_empty() {
+        return Err("API 流响应未返回翻译文本".into());
+    }
+    Ok(full_text)
 }
 
 /// Streaming translation — emits text chunks via `on_chunk` callback.
@@ -950,6 +1074,7 @@ pub async fn do_translate_stream_async(
     text: &str,
     source_lang: &str,
     target_lang: &str,
+    scope: &str,
     seq: u64,
     on_chunk: impl Fn(String),
 ) -> Result<String, String> {
@@ -964,18 +1089,24 @@ pub async fn do_translate_stream_async(
 
     // 4. Send streaming request
     let client = state.client.lock_recover().clone();
-    let resp = tokio::time::timeout(
-        Duration::from_secs(TIMEOUT_SECS),
-        client
-            .post(&config.chat_url)
-            .header("Authorization", format!("Bearer {}", config.api_key))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send(),
-    )
-    .await
-    .map_err(|_| format!("请求超时（{}秒），请检查网络或稍后重试", TIMEOUT_SECS))?
-    .map_err(map_http_error(&config.base_url))?;
+    let resp = tokio::select! {
+        result = tokio::time::timeout(
+            Duration::from_secs(TIMEOUT_SECS),
+            client
+                .post(&config.chat_url)
+                .header("Authorization", format!("Bearer {}", config.api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send(),
+        ) => {
+            result
+                .map_err(|_| format!("请求超时（{}秒），请检查网络或稍后重试", TIMEOUT_SECS))?
+                .map_err(map_http_error(&config.base_url))?
+        }
+        _ = wait_for_request_superseded(state, scope, seq) => {
+            return Err("CANCELLED".into());
+        }
+    };
 
     // 5. Handle response status
     let status = resp.status();
@@ -997,20 +1128,26 @@ pub async fn do_translate_stream_async(
     let mut buffer: Vec<u8> = Vec::new();
     let mut response_bytes = 0usize;
 
-    loop {
+    let mut saw_done = false;
+    'stream: loop {
         // Check if a newer request has superseded this one — abort early to free the connection
-        if !state.is_current_request(seq) {
+        if !state.is_current_request(scope, seq) {
             return Err("CANCELLED".into());
         }
 
-        let next_chunk = tokio::time::timeout(Duration::from_secs(TIMEOUT_SECS), stream.next())
-            .await
-            .map_err(|_| {
-                format!(
-                    "流式响应空闲超时（{}秒），请检查网络或 API 服务状态",
-                    TIMEOUT_SECS
-                )
-            })?;
+        let next_chunk = tokio::select! {
+            result = tokio::time::timeout(Duration::from_secs(TIMEOUT_SECS), stream.next()) => {
+                result.map_err(|_| {
+                    format!(
+                        "流式响应空闲超时（{}秒），请检查网络或 API 服务状态",
+                        TIMEOUT_SECS
+                    )
+                })?
+            }
+            _ = wait_for_request_superseded(state, scope, seq) => {
+                return Err("CANCELLED".into());
+            }
+        };
         let Some(chunk_result) = next_chunk else {
             break;
         };
@@ -1028,21 +1165,60 @@ pub async fn do_translate_stream_async(
         while let Some(line_end) = buffer.iter().position(|byte| *byte == b'\n') {
             let line: Vec<u8> = buffer.drain(..=line_end).collect();
             if process_sse_line(&line, &mut full_text, &on_chunk)? {
-                return Ok(full_text);
+                saw_done = true;
+                break 'stream;
             }
         }
     }
 
-    if !buffer.is_empty() {
-        let _ = process_sse_line(&buffer, &mut full_text, &on_chunk)?;
+    if !saw_done && !buffer.is_empty() {
+        saw_done = process_sse_line(&buffer, &mut full_text, &on_chunk)?;
     }
-
-    Ok(full_text)
+    finalize_stream_result(full_text, saw_done)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_sequences_are_isolated_by_scope() {
+        let dir = std::env::temp_dir().join(format!("vt_request_scope_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let config = ApiConfig::load_or_default(dir.clone());
+
+        let main_request = config.next_request_seq("main");
+        let quick_request = config.next_request_seq("quick");
+        assert!(config.is_current_request("main", main_request));
+        assert!(config.is_current_request("quick", quick_request));
+
+        let next_quick = config.next_request_seq("quick");
+        assert!(config.is_current_request("main", main_request));
+        assert!(!config.is_current_request("quick", quick_request));
+        assert!(config.is_current_request("quick", next_quick));
+
+        config.cancel_current_request("main");
+        assert!(!config.is_current_request("main", main_request));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn stale_request_cannot_run_commit_side_effect() {
+        let dir = std::env::temp_dir().join(format!("vt_request_commit_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let config = ApiConfig::load_or_default(dir.clone());
+        let first = config.next_request_seq("main");
+        let second = config.next_request_seq("main");
+        let mut committed = false;
+        assert!(config
+            .with_current_request("main", second, || committed = true)
+            .is_some());
+        assert!(config
+            .with_current_request("main", first, || committed = true)
+            .is_none());
+        assert!(committed);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn zh2en_always_targets_english() {
@@ -1137,6 +1313,66 @@ mod tests {
         assert!(!done);
         assert_eq!(full_text, "你好");
         assert_eq!(*chunks.lock_recover(), vec!["你好"]);
+    }
+
+    #[test]
+    fn sse_provider_error_is_returned() {
+        let mut full_text = String::new();
+        let error = process_sse_line(
+            br#"data:{"error":{"message":"quota exceeded"}}"#,
+            &mut full_text,
+            &|_| {},
+        )
+        .unwrap_err();
+        assert!(error.contains("quota exceeded"));
+    }
+
+    #[test]
+    fn sse_malformed_json_is_returned() {
+        let mut full_text = String::new();
+        let error = process_sse_line(b"data:{bad-json}", &mut full_text, &|_| {}).unwrap_err();
+        assert!(error.contains("JSON"));
+    }
+
+    #[test]
+    fn sse_missing_choices_is_returned() {
+        let mut full_text = String::new();
+        let error = process_sse_line(b"data:{}", &mut full_text, &|_| {}).unwrap_err();
+        assert!(error.contains("choices"));
+    }
+
+    #[test]
+    fn stream_result_requires_done_and_text() {
+        assert!(finalize_stream_result("partial".to_string(), false).is_err());
+        assert!(finalize_stream_result("   ".to_string(), true).is_err());
+        assert_eq!(
+            finalize_stream_result("done".to_string(), true).unwrap(),
+            "done"
+        );
+    }
+
+    #[test]
+    fn failed_config_save_restores_in_memory_state() {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "vt_config_rollback_{}_{}",
+            std::process::id(),
+            suffix
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let config = ApiConfig::load_or_default(dir.clone());
+        let original = config.free_translation();
+        let config_path = dir.join("config.json");
+        std::fs::remove_file(&config_path).unwrap();
+        std::fs::create_dir(&config_path).unwrap();
+
+        let result = config.set_free_translation(!original);
+        assert!(result.is_err());
+        assert_eq!(config.free_translation(), original);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

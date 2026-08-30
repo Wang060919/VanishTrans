@@ -74,23 +74,20 @@ fn restore_windows_after_ocr(app: &tauri::AppHandle, windows: ScreenshotWindowSt
 #[tauri::command]
 pub fn run_ocr_on_crop(
     state: tauri::State<'_, ScreenshotBuffer>,
+    session_id: u64,
     x: u32,
     y: u32,
     w: u32,
     h: u32,
 ) -> Result<OcrOutput, CommandError> {
-    // Use the stored DynamicImage directly — no JPEG decode needed
-    let img = {
-        let guard = state
-            .image
-            .lock()
-            .map_err(|_| CommandError::internal("截图缓冲区状态异常"))?;
-        guard
-            .as_ref()
-            .ok_or_else(|| CommandError::not_found("没有截图数据，请先截屏 (Alt+W)"))?
-            .clone()
-    };
-
+    // Validate the session and clone its image under one session guard.
+    let img = state.image_for_session(session_id).ok_or_else(|| {
+        if state.is_active(session_id) {
+            CommandError::not_found("没有截图数据，请先截屏 (Alt+W)")
+        } else {
+            CommandError::not_found("截图会话已过期，请重新截屏")
+        }
+    })?;
     let (img_w, img_h) = (img.width(), img.height());
     log::info!(
         "[ocr] image: {}x{}, crop request: ({},{}) {}x{}",
@@ -124,34 +121,46 @@ pub fn run_ocr_on_crop(
     let enhanced_png = crate::ocr::encode_ocr_png(&enhanced)?;
     let enhanced_output = crate::ocr::native_ocr_on_png(&enhanced_png)?;
     if !enhanced_output.text.trim().is_empty() {
+        if !state.is_active(session_id) {
+            return Err(CommandError::cancelled());
+        }
         return Ok(enhanced_output);
     }
 
     log::info!("[ocr] enhanced pass was empty, retrying with original colors");
     let original = crate::ocr::prepare_original_ocr_image(&crop, max_dimension);
     let original_png = crate::ocr::encode_ocr_png(&original).map_err(CommandError::io)?;
-    crate::ocr::native_ocr_on_png(&original_png).map_err(CommandError::io)
+    let output = crate::ocr::native_ocr_on_png(&original_png).map_err(CommandError::io)?;
+    if !state.is_active(session_id) {
+        return Err(CommandError::cancelled());
+    }
+    Ok(output)
 }
 
-pub(crate) fn dismiss_screenshot(app: &tauri::AppHandle) {
-    let windows = app.state::<ScreenshotBuffer>().cancel();
+pub(crate) fn dismiss_screenshot(app: &tauri::AppHandle, session_id: u64) {
+    let Some(windows) = app.state::<ScreenshotBuffer>().cancel(session_id) else {
+        return;
+    };
     if let Some(w) = app.get_webview_window("screenshot") {
         let _ = w.hide();
     }
-    if let Some(windows) = windows {
-        restore_windows_after_cancel(app, windows);
-    }
+    restore_windows_after_cancel(app, windows);
 }
 
 #[tauri::command]
-pub fn cancel_screenshot(app: tauri::AppHandle) {
-    dismiss_screenshot(&app);
+pub fn cancel_screenshot(app: tauri::AppHandle, session_id: u64) -> Result<(), CommandError> {
+    dismiss_screenshot(&app, session_id);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn finish_ocr(app: tauri::AppHandle, text: String) -> Result<(), CommandError> {
-    let Some(windows) = app.state::<ScreenshotBuffer>().complete() else {
-        return Ok(());
+pub fn finish_ocr(
+    app: tauri::AppHandle,
+    session_id: u64,
+    text: String,
+) -> Result<(), CommandError> {
+    let Some(windows) = app.state::<ScreenshotBuffer>().complete(session_id) else {
+        return Err(CommandError::cancelled());
     };
     if let Some(w) = app.get_webview_window("screenshot") {
         let _ = w.hide();

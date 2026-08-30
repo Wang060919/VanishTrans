@@ -4,18 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "新版本号（不带 v，例如 0.2.0）"
+        description: "新版本号（可带或不带 v，例如 0.2.0）"
         required: true
         type: string
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   bump:
     name: Bump version and tag
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -25,19 +26,40 @@ jobs:
           node-version: 22
 
       - name: Bump version across manifests
-        run: node scripts/bump-version.mjs "${{ inputs.version }}"
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          node scripts/bump-version.mjs "$VERSION"
 
-      # The tag push below triggers the `release` workflow, which builds the
-      # installer and publishes the GitHub Release.
+      # The version commit is gated by CI before the release tag is created.
+      # The release workflow is dispatched explicitly because pushes made with
+      # GITHUB_TOKEN do not trigger another workflow.
       - name: Commit and push tag
         env:
           VERSION: ${{ inputs.version }}
           BRANCH: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION="${VERSION#v}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
           git commit -m "chore: bump version to ${VERSION}"
-          git tag "v${VERSION}"
           git push origin "HEAD:refs/heads/${BRANCH}"
-          git push origin "v${VERSION}"
+          gh workflow run ci.yml --ref "${BRANCH}"
+          SHA="$(git rev-parse HEAD)"
+          export SHA
+          for attempt in $(seq 1 60); do
+            RUN_ID="$(gh run list --workflow ci.yml --limit 20 --json databaseId,headSha --jq ".[] | select(.headSha == \"${SHA}\") | .databaseId" | head -n 1)"
+            if [ -n "$RUN_ID" ]; then
+              echo "Waiting for CI run $RUN_ID for $SHA"
+              gh run watch "$RUN_ID" --exit-status
+              git tag "v${VERSION}"
+              git push origin "v${VERSION}"
+              gh workflow run release.yml --ref "v${VERSION}"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for CI run for $SHA" >&2
+          exit 1

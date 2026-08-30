@@ -1,8 +1,8 @@
 import { ClipboardPaste, Eraser, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback } from "react";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { readClipboardSafe } from "../../services/tauriBridge";
 import CharCounter from "../../components/CharCounter";
-import { formatNumber } from "../../lib/textUtils";
+import { countChars, formatNumber, truncateText } from "../../lib/textUtils";
 
 const MAX_INPUT_CHARS = 10_000;
 
@@ -31,8 +31,8 @@ export default function InputSection({
 }: InputSectionProps) {
   const handlePaste = useCallback(async () => {
     try {
-      const text = await readText();
-      if (text) onInputChange(text);
+      const text = await readClipboardSafe();
+      if (text) onInputChange(truncateText(text, MAX_INPUT_CHARS));
       inputRef.current?.focus();
     } catch {
       inputRef.current?.focus();
@@ -48,7 +48,7 @@ export default function InputSection({
         <div className="section-heading">
           <span id="source-title">原文</span>
           {inputText && (
-            <span className="section-meta">{formatNumber(inputText.length)} 字</span>
+            <span className="section-meta">{formatNumber(countChars(inputText))} 字</span>
           )}
         </div>
         <div className="section-actions">
@@ -82,8 +82,7 @@ export default function InputSection({
           ref={inputRef}
           value={inputText}
           disabled={loading}
-          maxLength={MAX_INPUT_CHARS}
-          onChange={(event) => onInputChange(event.target.value)}
+          onChange={(event) => onInputChange(truncateText(event.target.value, MAX_INPUT_CHARS))}
           placeholder="输入、粘贴或拖入文件"
           spellCheck={false}
           onKeyDown={(event) => {
@@ -94,7 +93,7 @@ export default function InputSection({
           }}
         />
         <div className="editor-footer">
-          <CharCounter current={inputText.length} max={MAX_INPUT_CHARS} compact />
+          <CharCounter current={countChars(inputText)} max={MAX_INPUT_CHARS} compact />
           <div className="editor-footer-actions">
             <button
               type="button"

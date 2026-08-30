@@ -34,6 +34,7 @@ pub struct SmartSelectionRegion {
 #[serde(rename_all = "camelCase")]
 pub struct ScreenshotPayload {
     pub data_uri: String,
+    pub session_id: u64,
     pub image_width: u32,
     pub image_height: u32,
     pub monitor_x: i32,
@@ -98,17 +99,44 @@ impl ScreenshotBuffer {
         true
     }
 
-    pub fn cancel(&self) -> Option<ScreenshotWindowState> {
-        self.end_session()
+    pub fn active_session_id(&self) -> Option<u64> {
+        self.session
+            .lock_recover()
+            .as_ref()
+            .map(|session| session.id)
     }
 
-    pub fn complete(&self) -> Option<ScreenshotWindowState> {
-        self.end_session()
+    pub fn is_active(&self, session_id: u64) -> bool {
+        self.session
+            .lock_recover()
+            .as_ref()
+            .is_some_and(|session| session.id == session_id)
     }
 
-    fn end_session(&self) -> Option<ScreenshotWindowState> {
+    /// Clone the image only while holding the session guard, so an old OCR
+    /// request cannot pass validation and then read a newer session's image.
+    pub fn image_for_session(&self, session_id: u64) -> Option<image::DynamicImage> {
+        let session = self.session.lock_recover();
+        if session.as_ref().map(|active| active.id) != Some(session_id) {
+            return None;
+        }
+        self.image.lock_recover().as_ref().cloned()
+    }
+
+    pub fn cancel(&self, session_id: u64) -> Option<ScreenshotWindowState> {
+        self.end_session(session_id)
+    }
+
+    pub fn complete(&self, session_id: u64) -> Option<ScreenshotWindowState> {
+        self.end_session(session_id)
+    }
+
+    fn end_session(&self, session_id: u64) -> Option<ScreenshotWindowState> {
         let mut session = self.session.lock_recover();
-        let windows = session.take().map(|session| session.windows);
+        if session.as_ref().map(|active| active.id) != Some(session_id) {
+            return None;
+        }
+        let windows = session.take().map(|active| active.windows);
         *self.payload.lock_recover() = None;
         *self.image.lock_recover() = None;
         windows
@@ -326,6 +354,7 @@ pub fn capture_screenshot() -> Option<(ScreenshotPayload, image::DynamicImage)> 
     log::info!("[capture] JPEG: {} bytes", bytes.len());
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
     let payload = ScreenshotPayload {
+        session_id: 0,
         data_uri: format!("data:image/jpeg;base64,{}", b64),
         image_width: w,
         image_height: h,
@@ -422,6 +451,7 @@ pub fn native_ocr_on_png(_png_data: &[u8]) -> Result<OcrOutput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::GenericImageView;
 
     #[test]
     fn prepared_images_stay_within_the_ocr_dimension_limit() {
@@ -495,6 +525,7 @@ mod tests {
     #[test]
     fn screenshot_payload_uses_frontend_camel_case_fields() {
         let payload = ScreenshotPayload {
+            session_id: 42,
             data_uri: "data:image/jpeg;base64,AAA".into(),
             image_width: 3840,
             image_height: 2160,
@@ -525,6 +556,7 @@ mod tests {
 
     fn payload() -> ScreenshotPayload {
         ScreenshotPayload {
+            session_id: 0,
             data_uri: "data:image/jpeg;base64,AAA".into(),
             image_width: 1,
             image_height: 1,
@@ -543,7 +575,7 @@ mod tests {
         let session = buffer.begin(window_state()).unwrap();
         assert!(buffer.begin(ScreenshotWindowState::default()).is_none());
         assert!(buffer.store(session, payload(), image::DynamicImage::new_rgba8(1, 1)));
-        assert_eq!(buffer.complete(), Some(window_state()));
+        assert_eq!(buffer.complete(session), Some(window_state()));
         assert!(buffer.payload.lock_recover().is_none());
         assert!(buffer.image.lock_recover().is_none());
     }
@@ -552,7 +584,38 @@ mod tests {
     fn cancelled_capture_cannot_store_a_late_screenshot() {
         let buffer = ScreenshotBuffer::new();
         let session = buffer.begin(window_state()).unwrap();
-        assert_eq!(buffer.cancel(), Some(window_state()));
+        assert_eq!(buffer.cancel(session), Some(window_state()));
         assert!(!buffer.store(session, payload(), image::DynamicImage::new_rgba8(1, 1)));
+    }
+
+    #[test]
+    fn stale_session_cannot_complete_or_clear_new_capture() {
+        let buffer = ScreenshotBuffer::new();
+        let first = buffer.begin(window_state()).unwrap();
+        assert_eq!(buffer.cancel(first), Some(window_state()));
+        let second = buffer.begin(window_state()).unwrap();
+
+        assert_eq!(buffer.complete(first), None);
+        assert!(!buffer.store(first, payload(), image::DynamicImage::new_rgba8(1, 1)));
+        assert!(buffer.store(second, payload(), image::DynamicImage::new_rgba8(1, 1)));
+        assert_eq!(buffer.complete(first), None);
+        assert_eq!(buffer.complete(second), Some(window_state()));
+    }
+
+    #[test]
+    fn image_lookup_rejects_stale_session_ids() {
+        let buffer = ScreenshotBuffer::new();
+        let first = buffer.begin(window_state()).unwrap();
+        assert!(buffer.store(first, payload(), image::DynamicImage::new_rgba8(1, 1)));
+        assert!(buffer.image_for_session(first).is_some());
+        assert_eq!(buffer.cancel(first), Some(window_state()));
+
+        let second = buffer.begin(window_state()).unwrap();
+        assert!(buffer.store(second, payload(), image::DynamicImage::new_rgba8(2, 3)));
+        assert!(buffer.image_for_session(first).is_none());
+        assert_eq!(
+            buffer.image_for_session(second).unwrap().dimensions(),
+            (2, 3)
+        );
     }
 }

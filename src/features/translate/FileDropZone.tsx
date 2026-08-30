@@ -7,6 +7,7 @@ interface FileDropZoneProps {
   children: React.ReactNode;
 }
 
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 /**
  * FileDropZone - handles file drag-and-drop overlay.
  * Single responsibility: file drop interaction and parsing.
@@ -51,6 +52,11 @@ export default function FileDropZone({ onDrop, disabled = false, children }: Fil
     const file = event.dataTransfer.files[0];
     if (!file) return;
 
+
+    if (file.size > MAX_FILE_BYTES) {
+      window.alert(`文件过大：${(file.size / 1024 / 1024).toFixed(1)} MB，最多支持 10 MB。`);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const content = reader.result as string;

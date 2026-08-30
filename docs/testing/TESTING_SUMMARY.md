@@ -1,6 +1,6 @@
-# VanishTrans 测试套件总结
+# VanishTrans 测试状态与覆盖边界
 
-## 🎯 测试覆盖完整性报告
+## 🎯 测试覆盖与验证边界
 
 ### ✅ 前端测试 (Frontend Tests)
 
@@ -14,9 +14,14 @@
 |--------------------------------|-----------|------|------------------------|
 | `src/lib/textUtils.test.ts`   | 16        | ✅   | 字符统计、格式化、验证 |
 | `src/lib/fileParser.test.ts`  | 42        | ✅   | SRT/JSON 解析和重建    |
-| **其他测试文件**               | 93        | ✅   | 组件、服务、工具       |
-| **总计**                       | **151**   | ✅   | 全面覆盖               |
+| **其他测试文件**               | 107       | ✅   | Windows `pnpm check` 已覆盖；包含组件、服务、工具和并发回归 |
+| **总计**                       | **165**   | ✅   | Windows `pnpm check`：19 个文件、165/165；WSL runner 仍有环境稳定性问题 |
 
+#### 最新重点回归执行
+- `App.test.tsx`: 14/14；`QuickTranslateWindow.test.tsx`: 4/4；`ScreenshotOverlay.test.tsx`: 6/6
+- `tauriBridge.test.ts`: 4/4；`useConfig.test.ts`: 2/2；`useFileTranslation.test.ts`: 1/1；`useTauriEvents.test.tsx`: 2/2
+- 以上均使用 `vmThreads` 单 worker、`--no-file-parallelism`；Rust 全量为 91/91。
+- Windows 实际 `pnpm check`：19/19 测试文件、165/165 测试通过。
 ---
 
 ### 📋 textUtils.test.ts 详细覆盖 (16 个测试)
@@ -61,7 +66,7 @@
 - ✅ 规范化换行符 (CRLF 和 CR)
 - ✅ 跳过无效索引的块
 - ✅ 跳过缺少时间码箭头的块
-- ✅ 跳过空文本的块
+- ✅ 保留合法但为空文本的字幕块并保存时间轴
 - ✅ 处理空输入
 - ✅ 处理单个字幕块
 - ✅ 处理块之间的额外空行
@@ -103,7 +108,7 @@
 - ✅ 处理多个点的文件名
 - ✅ 大小写不敏感
 
-#### 集成测试 (Integration - 2 tests)
+#### 解析器往返测试 (2 tests)
 - ✅ SRT 解析和重建往返保留内容
 - ✅ JSON 解析和重建往返保留结构
 
@@ -115,7 +120,7 @@
 - **工具**: Rust 内置测试框架 (`#[test]`)
 - **数据库**: SQLite `:memory:` (内存数据库)
 
-#### tm.rs - 翻译记忆测试 (5+ tests)
+#### tm.rs - 翻译记忆测试 (6 tests)
 | 测试用例                                                   | 状态 | 覆盖功能                      |
 |-----------------------------------------------------------|------|------------------------------|
 | `export_includes_entries_beyond_search_limit`             | ✅   | 导出超出搜索限制的条目        |
@@ -123,7 +128,7 @@
 | `cache_entries_are_scoped_to_the_translation_context`     | ✅   | 上下文作用域缓存              |
 | `csv_export_neutralizes_formulas_and_import_restores_text`| ✅   | CSV 公式安全化和恢复          |
 | `opening_an_legacy_database_migrates_it_without_losing`   | ✅   | 旧数据库迁移不丢失数据        |
-
+| `store_reports_sqlite_write_failures`                     | ✅   | TM 写入失败可观察             |
 #### history.rs - 历史记录测试 (10+ tests)
 | 测试用例                                               | 状态 | 覆盖功能                 |
 |-------------------------------------------------------|------|-------------------------|
@@ -144,22 +149,20 @@
 
 ### 前端测试
 ```
-✅ Test Files: 14 passed (14)
-✅ Tests: 151 passed (151)
-⏱️ Duration: ~75 seconds
-```
+✅ Test Files: 19 个测试文件（按文件隔离运行）
+✅ Windows `pnpm check`: 19/19 个测试文件、165/165 个测试通过；WSL 多文件全量运行仍存在 worker/mock 污染
+⏱️ Duration: 单文件运行时间受 WSL/jsdom worker 启动影响
 
 ### 后端测试 (Rust)
-```
-✅ tm.rs: 5+ tests (翻译记忆)
-✅ history.rs: 10+ tests (历史记录)
-⏱️ Duration: 需要 cargo 环境运行
+```text
+✅ cargo test: 91 passed; 0 failed
+✅ 覆盖 SSE、请求序列、OCR session、配置回滚和 TM 写入失败回归
 ```
 
 ### 总计
-- **前端测试**: 151 个测试 ✅
-- **后端测试**: 15+ 个测试 ✅
-- **总覆盖**: **166+ 个测试** ✅
+- **前端测试清单**: 19 个文件、165 个展开测试；Windows `pnpm check` 全部通过 ✅
+- **后端测试**: 91 个测试 ✅
+- **全量前端门禁**: Windows `pnpm check` 已通过 19/19 文件、165/165 测试；WSL runner 仍不稳定
 
 ---
 
@@ -198,19 +201,18 @@
 
 ### 前端测试
 ```bash
-# 运行所有测试
-npm test
+# 运行所有测试（WSL 下建议按文件隔离运行）
+pnpm test
 
 # 运行特定文件
-npm test -- src/lib/textUtils.test.ts
-npm test -- src/lib/fileParser.test.ts
+pnpm exec vitest run --pool=vmThreads --maxWorkers=1 --no-file-parallelism src/lib/textUtils.test.ts
+pnpm exec vitest run --pool=vmThreads --maxWorkers=1 --no-file-parallelism src/lib/fileParser.test.ts
 
-# 监听模式 (开发中)
-npm test -- --watch
+# 监听模式（开发中）
+pnpm test:watch
 
-# 覆盖率报告
-npm test -- --coverage
-```
+# 覆盖率报告（需显式安装/配置覆盖率 provider）
+pnpm test -- --coverage
 
 ### 后端测试
 ```bash
@@ -236,11 +238,11 @@ cargo test -- --test-threads=4
 
 | 模块                  | 当前覆盖率 | 目标覆盖率 | 状态 |
 |-----------------------|-----------|-----------|------|
-| `textUtils.ts`        | 100%      | 100%      | ✅   |
-| `fileParser.ts`       | 100%      | 100%      | ✅   |
-| `translationState.ts` | 0%        | 80%+      | ⚠️   |
-| `tm.rs`               | 90%+      | 90%+      | ✅   |
-| `history.rs`          | 90%+      | 90%+      | ✅   |
+| `textUtils.ts`        | 未测量      | 100%      | ⚠️   |
+| `fileParser.ts`       | 未测量      | 100%      | ⚠️   |
+| `translationState.ts` | 未测量      | 80%+      | ⚠️   |
+| `tm.rs`               | 未测量      | 90%+      | ⚠️   |
+| `history.rs`          | 未测量      | 90%+      | ⚠️   |
 
 ---
 
@@ -254,28 +256,27 @@ cargo test -- --test-threads=4
 5. ⏸️ `useTranslation.test.ts` - Hook 集成测试
 
 ### 后端
-- ✅ 所有核心模块已有完整测试
+- ⚠️ 核心模块已有单元回归；真实 Windows/OCR/剪贴板和跨窗口流程仍需集成测试
 
 ---
 
 ## ✅ 测试质量保证
 
 ### 测试特性
-- ✅ **隔离性**: 每个测试独立运行，使用内存数据库或临时目录
-- ✅ **确定性**: 无随机性，结果可复现
-- ✅ **快速**: 前端测试 < 75 秒，后端测试 < 5 秒
+- ✅ **隔离性**: 关键测试按文件隔离运行，Rust 使用内存数据库或临时目录
+- ⚠️ **可复现性**: 单文件运行可复现；WSL 多文件 runner 仍有 worker/mock/DOM 状态污染
+- ⚠️ **耗时**: Rust 测试较快，前端耗时受 WSL/jsdom worker 启动影响
 - ✅ **清理**: 测试后自动清理临时文件和数据
-- ✅ **边界覆盖**: 空输入、极端值、错误情况全覆盖
-- ✅ **集成测试**: 往返测试验证完整流程
-
-### CI/CD 就绪
+- ⚠️ **边界覆盖**: 已覆盖列出的空输入、极端值和错误路径，未宣称全部场景
+- ⚠️ **集成范围**: 当前主要是解析器往返和模块级回归，非完整 IPC/端到端测试
+### CI/CD 配置范围
 ```yaml
 # GitHub Actions 示例
 - name: Run Frontend Tests
-  run: npm test -- --run
+  run: pnpm test
 
 - name: Run Backend Tests
-  run: cd src-tauri && cargo test
+  run: cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 ---
@@ -283,24 +284,23 @@ cargo test -- --test-threads=4
 ## 🎉 总结
 
 ### 完成情况
-1. ✅ **前端测试**: 151 个测试全部通过
-   - `textUtils.ts`: 16 个测试 ✅
-   - `fileParser.ts`: 42 个测试 ✅
-   - 其他模块: 93 个测试 ✅
+1. ⚠️ **前端测试清单**: 19 个文件、165 个参数展开测试
+   - 关键回归文件已按单文件隔离运行通过（App、ScreenshotOverlay、QuickTranslateWindow、BallWindow、Bridge、配置、文件翻译和事件生命周期）
+   - 多文件全量运行在当前 WSL/jsdom worker 环境仍出现启动/共享状态问题，不能标记为无条件全绿
 
-2. ✅ **后端测试**: 15+ 个 Rust 测试
-   - `tm.rs`: 5+ 个测试 ✅
-   - `history.rs`: 10+ 个测试 ✅
+2. ✅ **后端测试**: 91 个 Rust 测试全部通过
+   - 覆盖 TM 写入失败、SSE 错误、OCR stale session、请求取消和配置回滚
 
-3. ✅ **边界覆盖**: 空文件、损坏格式、极端长文本、Unicode 全覆盖
+3. ✅ **边界覆盖**: 空文件、损坏格式、极端长文本、Unicode 和关键并发边界已增加回归
 
-4. ✅ **内存数据库**: Rust 测试使用 `:memory:` SQLite 隔离
+4. ✅ **内存数据库**: Rust 测试使用临时数据库或内存数据库隔离
+
 
 ### 质量指标
-- **测试通过率**: 100% (151/151)
-- **代码覆盖率**: textUtils 100%, fileParser 100%
-- **运行速度**: < 75 秒 (前端)
-- **隔离性**: 完全隔离，无副作用
+- **前端执行证据**: Windows `pnpm check` 19/19 文件、165/165 测试通过；WSL 多文件 runner 仅存在环境稳定性问题
+- **Rust 执行证据**: 91/91
+- **代码覆盖率**: 未运行覆盖率工具，不宣称百分比
+- **构建**: Windows `pnpm tauri build` 已成功生成 `VanishTrans_0.1.1_x64-setup.exe`
 
 ### 提示词符合度
 | 要求                                    | 状态 |
@@ -313,10 +313,10 @@ cargo test -- --test-threads=4
 | Rust history.rs 单元测试                | ✅   |
 | 内存 SQLite 数据库                      | ✅   |
 | 插入、模糊搜索、去重、分页测试          | ✅   |
-| 所有测试绿灯通过                        | ✅   |
+| 所有测试绿灯通过（Windows 本地门禁）      | ✅（原生集成和远程 CI 待验证） |
 
 ---
 
-**测试完成日期**: 2026-08-27  
-**测试覆盖率**: 前端 100% (核心模块), 后端 90%+  
-**质量评估**: Production-ready ⭐⭐⭐⭐⭐
+**测试状态更新时间**: 2026-08-27 复核后更新
+**测试覆盖率**: 未运行覆盖率工具；仅记录已执行的测试结果
+**质量评估**: Windows 本地代码门禁已通过；Production Ready 仍需真实 Windows 原生集成和远程 CI/release 证据

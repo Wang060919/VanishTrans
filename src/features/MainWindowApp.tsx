@@ -56,7 +56,7 @@ export default function MainWindowApp({
     setTranslationErrorRef.current = translation.setTranslationError;
   }, [translation.doTranslateStream, translation.setOutputText, translation.setInputText, translation.setLoading, translation.setTranslationError]);
 
-  useTauriEvents({
+  const listenersReady = useTauriEvents({
     onClipboardTranslate: useCallback((request: TranslationRequestEvent) => {
       requestExpand();
       if (request.type === "error") {
@@ -70,6 +70,12 @@ export default function MainWindowApp({
 
     onOcrTranslate: useCallback((text: string) => {
       requestExpand();
+      if (text.startsWith("❌ Alt+R 失败:")) {
+        setOutputTextRef.current("");
+        setTranslationErrorRef.current(text);
+        setLoadingRef.current(false);
+        return;
+      }
       setOutputTextRef.current("");
       setInputTextRef.current("");
       setTranslationErrorRef.current(null);
@@ -100,12 +106,13 @@ export default function MainWindowApp({
   });
 
   useEffect(() => {
+    if (!listenersReady) return;
     const label = getCurrentWindow().label;
     if (label !== "main" && label !== "ball") return;
 
     void (async () => {
       try {
-        await frontendReady();
+        await frontendReady(true);
         const warnings = await getStartupWarnings();
         addNotices(warnings ?? []);
       } catch (error) {
@@ -119,7 +126,7 @@ export default function MainWindowApp({
         onPinChange?.(nextPinned);
       })
       .catch((error) => logError("app", "get_pin_state failed", error));
-  }, [addNotices, onPinChange]);
+  }, [addNotices, listenersReady, onPinChange]);
 
   useEffect(() => {
     const listener = listen<boolean>("pin-state-changed", (event) => {

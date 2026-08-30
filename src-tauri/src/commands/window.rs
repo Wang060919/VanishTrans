@@ -86,11 +86,16 @@ pub(crate) fn show_without_activation<R: tauri::Runtime>(window: &tauri::Webview
     let _ = window.show();
 }
 
-pub(crate) fn wait_for_frontend(ready: &AtomicBool) {
+pub(crate) fn wait_for_frontend(ready: &AtomicBool) -> Result<(), CommandError> {
     let mut waited = 0u32;
-    while !ready.load(std::sync::atomic::Ordering::SeqCst) && waited < 500 {
+    while !ready.load(std::sync::atomic::Ordering::SeqCst) && waited < 5000 {
         std::thread::sleep(std::time::Duration::from_millis(10));
         waited += 10;
+    }
+    if ready.load(std::sync::atomic::Ordering::SeqCst) {
+        Ok(())
+    } else {
+        Err(CommandError::internal("前端监听器尚未就绪"))
     }
 }
 
@@ -113,7 +118,7 @@ pub(crate) fn show_quick_translation(
     window
         .set_focus()
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    wait_for_frontend(&QUICK_FRONTEND_READY);
+    wait_for_frontend(&QUICK_FRONTEND_READY)?;
     window
         .emit("quick-translate", text)
         .map_err(|error| CommandError::internal(error.to_string()))
@@ -130,7 +135,7 @@ pub(crate) fn show_quick_error(app: &tauri::AppHandle, message: &str) -> Result<
     window
         .set_focus()
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    wait_for_frontend(&QUICK_FRONTEND_READY);
+    wait_for_frontend(&QUICK_FRONTEND_READY)?;
     window
         .emit("quick-translate-error", message)
         .map_err(|error| CommandError::internal(error.to_string()))
@@ -148,7 +153,7 @@ pub fn show_main_window(app: tauri::AppHandle) -> Result<(), CommandError> {
     window
         .show()
         .map_err(|e| CommandError::internal(e.to_string()))?;
-    wait_for_frontend(&FRONTEND_READY);
+    wait_for_frontend(&FRONTEND_READY)?;
     window
         .emit("expand-main-window", ())
         .map_err(|e| CommandError::internal(e.to_string()))?;
@@ -178,7 +183,7 @@ pub fn show_main_with_text(app: tauri::AppHandle, text: String) -> Result<(), Co
     window
         .set_focus()
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    wait_for_frontend(&FRONTEND_READY);
+    wait_for_frontend(&FRONTEND_READY)?;
     window
         .emit("expand-main-window", ())
         .map_err(|error| CommandError::internal(error.to_string()))?;
@@ -213,7 +218,7 @@ pub fn toggle_ball_show_main(app: tauri::AppHandle) -> Result<(), CommandError> 
     window
         .show()
         .map_err(|error| CommandError::internal(error.to_string()))?;
-    wait_for_frontend(&FRONTEND_READY);
+    wait_for_frontend(&FRONTEND_READY)?;
     window
         .emit("toggle-main-window", ())
         .map_err(|error| CommandError::internal(error.to_string()))?;

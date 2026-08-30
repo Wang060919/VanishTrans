@@ -44,6 +44,9 @@ export function useTheme() {
 export function useThemeSync() {
   useEffect(() => {
     let cancelled = false;
+    const mode = readInitialTheme();
+    document.documentElement.dataset.themeMode = mode;
+    document.documentElement.dataset.theme = mode === "system" ? resolveSystemTheme() : mode;
     let cleanup: (() => void) | null = null;
     void (async () => {
       if (cancelled) return;

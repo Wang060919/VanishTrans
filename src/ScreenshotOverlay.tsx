@@ -12,6 +12,7 @@ interface Rect {
 }
 
 interface ScreenshotPayload {
+  sessionId: number;
   dataUri: string;
   imageWidth: number;
   imageHeight: number;
@@ -45,8 +46,9 @@ export default function ScreenshotOverlay() {
   const payloadRef = useRef<ScreenshotPayload | null>(null);
   const sessionRef = useRef(0);
   const ocrPendingRef = useRef(false);
-
+  const payloadRequestRef = useRef(0);
   const loadNewImage = useCallback((payload: ScreenshotPayload) => {
+    payloadRequestRef.current += 1;
     sessionRef.current += 1;
     payloadRef.current = payload;
     ocrPendingRef.current = false;
@@ -69,9 +71,14 @@ export default function ScreenshotOverlay() {
   }, []);
 
   const fetchLatest = useCallback(() => {
+    const requestId = ++payloadRequestRef.current;
     getScreenshotPayload()
-      .then((payload) => loadNewImage(payload))
-      .catch(() => setStatus("截图加载失败，点击重试"));
+      .then((payload) => {
+        if (requestId === payloadRequestRef.current) loadNewImage(payload);
+      })
+      .catch(() => {
+        if (requestId === payloadRequestRef.current) setStatus("截图加载失败，点击重试");
+      });
   }, [loadNewImage]);
 
   useEffect(() => {
@@ -183,13 +190,14 @@ export default function ScreenshotOverlay() {
     const cropH = Math.round(h * scaleY);
     try {
       const result = await runOcrOnCrop({
+        sessionId: payload.sessionId,
         x: cropX, y: cropY, w: cropW, h: cropH,
       });
       if (session !== sessionRef.current) return;
       const text = result.text;
       if (text.trim()) {
         setStatus("");
-        await finishOcr({ text });
+        await finishOcr({ sessionId: payload.sessionId, text });
       } else {
         setStatus("未识别到文字，点击任意位置重试");
         drawingRef.current = false;
@@ -272,6 +280,7 @@ export default function ScreenshotOverlay() {
   }, [doOcr]);
 
   const cancelScreenshot = useCallback(async () => {
+    const sessionId = payloadRef.current?.sessionId;
     sessionRef.current += 1;
     payloadRef.current = null;
     ocrPendingRef.current = false;
@@ -282,7 +291,11 @@ export default function ScreenshotOverlay() {
     rectRef.current = null;
     setStatus("");
     try {
-      await cancelScreenshotCmd();
+      if (sessionId !== undefined) {
+        await cancelScreenshotCmd({ sessionId });
+      } else {
+        await getCurrentWindow().hide();
+      }
     } catch {
       await getCurrentWindow().hide();
     }

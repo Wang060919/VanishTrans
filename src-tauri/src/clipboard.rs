@@ -137,6 +137,19 @@ pub fn restore_clipboard(app: &tauri::AppHandle, mut backup: ClipboardBackup) ->
     }
 
     if backup.text.is_none() && !backup.was_empty {
+        // If native rich formats could not be restored, never leave the temporary
+        // selection text on the user's clipboard. Clearing is the least surprising
+        // fallback available when no text backup exists.
+        for attempt in 0..5 {
+            if app.clipboard().clear().is_ok() {
+                mark_restored_clipboard(app, None);
+                log::warn!("[clipboard] Native clipboard restore unavailable; clipboard cleared");
+                return true;
+            }
+            if attempt < 4 {
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
         return false;
     }
     for attempt in 0..5 {

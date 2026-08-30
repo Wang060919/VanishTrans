@@ -35,10 +35,11 @@ pub fn write_clipboard_safe(
     guard: tauri::State<'_, ClipboardGuard>,
     text: String,
 ) -> Result<(), CommandError> {
-    guard.mark_written(&text);
     app.clipboard()
-        .write_text(text)
-        .map_err(|e| CommandError::io(format!("写入剪贴板失败: {}", e)))
+        .write_text(text.clone())
+        .map_err(|e| CommandError::io(format!("写入剪贴板失败: {}", e)))?;
+    guard.mark_written(&text);
+    Ok(())
 }
 
 // -----------------------------------------------------------

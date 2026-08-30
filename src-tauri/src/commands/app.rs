@@ -12,8 +12,8 @@ pub static FRONTEND_READY: AtomicBool = AtomicBool::new(false);
 pub static QUICK_FRONTEND_READY: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
-pub fn frontend_ready() {
-    FRONTEND_READY.store(true, std::sync::atomic::Ordering::SeqCst);
+pub fn frontend_ready(ready: bool) {
+    FRONTEND_READY.store(ready, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[tauri::command]
@@ -22,8 +22,8 @@ pub fn get_startup_warnings(warnings: tauri::State<'_, crate::StartupWarnings>) 
 }
 
 #[tauri::command]
-pub fn quick_frontend_ready() {
-    QUICK_FRONTEND_READY.store(true, std::sync::atomic::Ordering::SeqCst);
+pub fn quick_frontend_ready(ready: bool) {
+    QUICK_FRONTEND_READY.store(ready, std::sync::atomic::Ordering::SeqCst);
 }
 
 // -----------------------------------------------------------

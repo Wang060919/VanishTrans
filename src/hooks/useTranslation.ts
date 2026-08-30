@@ -156,6 +156,7 @@ export function useTranslation() {
           setStreaming(false);
           broadcastTranslationActivity("idle");
         } else {
+          setOutputText("");
           setTranslationError(errorMessage(e) || "翻译失败，请重试");
           setStreaming(false);
           broadcastTranslationActivity("error");

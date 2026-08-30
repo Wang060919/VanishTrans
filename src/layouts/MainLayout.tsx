@@ -98,13 +98,21 @@ export default function MainLayout({
   const [historySearch, setHistorySearch] = useState("");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("api");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyRequestRef = useRef(0);
   useTheme();
 
   const loadHistory = useCallback(async (query?: string) => {
-    const records = await getHistory({ query });
-    setHistoryRecords(records ?? []);
+    const request = ++historyRequestRef.current;
+    try {
+      const records = await getHistory({ query });
+      if (request === historyRequestRef.current) setHistoryRecords(records ?? []);
+    } catch (error: unknown) {
+      if (request === historyRequestRef.current) {
+        setHistoryRecords([]);
+        logError("history", "load history failed", error);
+      }
+    }
   }, []);
-
   const openHistory = useCallback(async () => {
     if (activePanel === "history") {
       setActivePanel(null);
@@ -130,6 +138,7 @@ export default function MainLayout({
       await writeClipboardSafe({ text });
     } catch (error) {
       logError("main", "copy translation text failed", error);
+      throw error;
     }
   }, []);
 
@@ -147,6 +156,24 @@ export default function MainLayout({
     debounceRef.current = setTimeout(() => loadHistory(query || undefined), 200);
   }, [loadHistory]);
 
+
+  const handleHistoryDelete = useCallback(async (id: number) => {
+    try {
+      await deleteHistoryRecord({ id });
+      await loadHistory(historySearch || undefined);
+    } catch (error: unknown) {
+      logError("history", "delete history record failed", error);
+    }
+  }, [historySearch, loadHistory]);
+
+  const handleHistoryClear = useCallback(async () => {
+    try {
+      await clearHistory();
+      await loadHistory();
+    } catch (error: unknown) {
+      logError("history", "clear history failed", error);
+    }
+  }, [loadHistory]);
   // Cleanup debounce timer on unmount
   useEffect(() => {
     return () => {
@@ -236,10 +263,10 @@ export default function MainLayout({
       <footer className="app-footer">
         {embedded ? (
           <nav className="workspace-footer-actions" aria-label="翻译操作">
-            <button type="button" disabled={!inputText} onClick={() => void copyText(inputText)}>
+            <button type="button" disabled={!inputText} onClick={() => { void copyText(inputText).catch(() => {}); }}>
               <Copy size={13} aria-hidden="true" /><span>复制原文</span>
             </button>
-            <button type="button" disabled={!outputText || outputText.startsWith("❌")} onClick={() => void copyText(outputText)}>
+            <button type="button" disabled={!outputText || outputText.startsWith("❌")} onClick={() => { void copyText(outputText).catch(() => {}); }}>
               <Copy size={13} aria-hidden="true" /><span>复制译文</span>
             </button>
             <button type="button" onClick={() => void startScreenshot()}>
@@ -266,8 +293,8 @@ export default function MainLayout({
           search={historySearch}
           onSearch={handleHistorySearch}
           onCopy={(text) => writeClipboardSafe({ text })}
-          onDelete={async (id) => { await deleteHistoryRecord({ id }); await loadHistory(historySearch || undefined); }}
-          onClear={async () => { await clearHistory(); await loadHistory(); }}
+          onDelete={handleHistoryDelete}
+          onClear={handleHistoryClear}
         />
       </OverlayDrawer>
 

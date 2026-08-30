@@ -42,6 +42,7 @@ export type TmExportRequest = { path: string };
 export type TmImportRequest = { path: string };
 export type TmImportContentRequest = { content: string };
 export interface ScreenshotPayload {
+  sessionId: number;
   dataUri: string;
   imageWidth: number;
   imageHeight: number;
@@ -52,9 +53,10 @@ export interface ScreenshotPayload {
   scaleFactor: number;
   smartRegions?: Array<{ x: number; y: number; width: number; height: number; }>;
 }
-export type RunOcrOnCropRequest = { x: number; y: number; w: number; h: number };
+export type RunOcrOnCropRequest = { sessionId: number; x: number; y: number; w: number; h: number };
 export interface OcrOutput { text: string; }
-export type FinishOcrRequest = { text: string };
+export type FinishOcrRequest = { sessionId: number; text: string };
+export type CancelScreenshotRequest = { sessionId: number };
 export type SetBallWindowBoundsRequest = { x: number; y: number; width: number; height: number };
 export type ShowMainWithTextRequest = { text: string };
 export type SaveBallPositionRequest = { x: number; y: number; reposition?: boolean };
@@ -161,8 +163,8 @@ function toServiceProfiles(profiles: ServiceProfileWire[]): ServiceProfile[] {
   return profiles.map(toServiceProfile);
 }
 
-export async function frontendReady(): Promise<void> {
-  return invokeCommand<void>("frontend_ready");
+export async function frontendReady(ready = true): Promise<void> {
+  return invokeCommand<void>("frontend_ready", { ready });
 }
 
 export async function getStartupWarnings(): Promise<StartupWarningsResponse> {
@@ -170,8 +172,8 @@ export async function getStartupWarnings(): Promise<StartupWarningsResponse> {
 }
 
 
-export async function quickFrontendReady(): Promise<void> {
-  return invokeCommand<void>("quick_frontend_ready");
+export async function quickFrontendReady(ready = true): Promise<void> {
+  return invokeCommand<void>("quick_frontend_ready", { ready });
 }
 
 export async function logFrontendMessage(request: LogFrontendMessageRequest): Promise<void> {
@@ -315,8 +317,8 @@ export async function runOcrOnCrop(request: RunOcrOnCropRequest): Promise<OcrOut
   return invokeCommand<OcrOutput>("run_ocr_on_crop", request);
 }
 
-export async function cancelScreenshot(): Promise<void> {
-  return invokeCommand<void>("cancel_screenshot");
+export async function cancelScreenshot(request: CancelScreenshotRequest): Promise<void> {
+  return invokeCommand<void>("cancel_screenshot", request);
 }
 
 export async function finishOcr(request: FinishOcrRequest): Promise<void> {

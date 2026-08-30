@@ -7,7 +7,7 @@ interface HistoryPanelProps {
   records: TranslationRecord[];
   search: string;
   onSearch: (q: string) => void;
-  onCopy: (text: string) => void;
+  onCopy: (text: string) => void | Promise<void>;
   onDelete: (id: number) => void;
   onClear: () => void;
 }
@@ -34,10 +34,14 @@ export default function HistoryPanel({ records, search, onSearch, onCopy, onDele
     return Array.from(grouped.entries());
   }, [records]);
 
-  const copyRecord = (record: TranslationRecord) => {
-    onCopy(record.translated);
-    setCopiedId(record.id);
-    setTimeout(() => setCopiedId((current) => current === record.id ? null : current), 1000);
+  const copyRecord = async (record: TranslationRecord) => {
+    try {
+      await onCopy(record.translated);
+      setCopiedId(record.id);
+      setTimeout(() => setCopiedId((current) => current === record.id ? null : current), 1000);
+    } catch {
+      setCopiedId(null);
+    }
   };
 
   return (
@@ -75,7 +79,7 @@ export default function HistoryPanel({ records, search, onSearch, onCopy, onDele
                   </div>
                   <div className="history-actions">
                     <SignalBurst active={copiedId === record.id}>
-                      <button type="button" aria-label="复制译文" onClick={() => copyRecord(record)}>
+                      <button type="button" aria-label="复制译文" onClick={() => { void copyRecord(record); }}>
                         {copiedId === record.id ? <Check size={14} /> : <Copy size={14} />}
                       </button>
                     </SignalBurst>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   applyServiceProfile,
   deleteServiceProfile,
@@ -38,6 +38,13 @@ export function useConfig() {
   const [loggingEnabled, setLoggingEnabled] = useState(true);
   const [freeTranslation, setFreeTranslationState] = useState(false);
 
+
+  const writeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueueWrite = <T,>(operation: () => Promise<T>): Promise<T> => {
+    const queued = writeQueueRef.current.catch(() => undefined).then(operation);
+    writeQueueRef.current = queued.then(() => undefined, () => undefined);
+    return queued;
+  };
   useEffect(() => {
     getApiConfig()
       .then((cfg) => {
@@ -62,11 +69,12 @@ export function useConfig() {
   const saveConfig = async (forcedApiKey?: string) => {
     // Only send apiKey when user actually changed it — avoid overwriting with null
     const apiKey = forcedApiKey === undefined ? apiKeyUpdate : forcedApiKey;
-    await setApiConfig({
+    const request = {
       baseUrl,
       apiKey: apiKey !== null ? apiKey : undefined,
       model,
-    });
+    };
+    await enqueueWrite(() => setApiConfig(request));
     if (apiKey !== null) {
       setHasStoredApiKey(apiKey.length > 0);
       setApiKeyUpdate(null);
@@ -75,13 +83,13 @@ export function useConfig() {
 
   const saveGlossary = async (entries: GlossaryEntry[]) => {
     const pairs: [string, string][] = entries.map((e) => [e.source, e.target]);
-    await setGlossary({ glossary: pairs });
+    await enqueueWrite(() => setGlossary({ glossary: pairs }));
     setGlossaryState(entries);
   };
 
   const saveHotkeys = async (entries: HotkeyEntry[]) => {
     const pairs: [string, string][] = entries.map((e) => [e.action, e.shortcut]);
-    await setHotkeys({ hotkeys: pairs });
+    await enqueueWrite(() => setHotkeys({ hotkeys: pairs }));
     setHotkeysState(entries);
   };
 
@@ -94,35 +102,35 @@ export function useConfig() {
   };
 
   const saveProfile = async (profile: ServiceProfile): Promise<ServiceProfile[]> => {
-    const next = await saveServiceProfile({
+    const next = await enqueueWrite(() => saveServiceProfile({
       name: profile.name,
       baseUrl: profile.baseUrl,
       model: profile.model,
-    });
+    }));
     setProfiles(next);
     return next;
   };
 
   const deleteProfile = async (name: string): Promise<ServiceProfile[]> => {
-    const next = await deleteServiceProfile({ name });
+    const next = await enqueueWrite(() => deleteServiceProfile({ name }));
     setProfiles(next);
     return next;
   };
 
   const applyProfile = async (name: string): Promise<ServiceProfile> => {
-    const profile = await applyServiceProfile({ name });
+    const profile = await enqueueWrite(() => applyServiceProfile({ name }));
     setBaseUrl(profile.baseUrl);
     setModel(profile.model);
     return profile;
   };
 
   const setLogging = async (enabled: boolean) => {
-    await setLoggingEnabledCmd({ enabled });
+    await enqueueWrite(() => setLoggingEnabledCmd({ enabled }));
     setLoggingEnabled(enabled);
   };
 
   const setFreeTranslation = async (enabled: boolean) => {
-    await setFreeTranslationCmd({ enabled });
+    await enqueueWrite(() => setFreeTranslationCmd({ enabled }));
     setFreeTranslationState(enabled);
   };
 

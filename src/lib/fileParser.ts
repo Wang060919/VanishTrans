@@ -30,9 +30,7 @@ export function parseSrt(content: string): SrtBlock[] {
 
     // Text is everything after the timecode line (supports multi-line subtitles)
     const text = lines.slice(2).join("\n").trim();
-    if (text) {
-      blocks.push({ index, timecode, text });
-    }
+    blocks.push({ index, timecode, text });
   }
   return blocks;
 }

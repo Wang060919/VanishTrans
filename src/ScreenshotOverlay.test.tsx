@@ -41,6 +41,7 @@ type CanvasContextMock = {
 let canvasContext: CanvasContextMock;
 
 const screenshotPayload = {
+  sessionId: 1,
   dataUri: "data:image/png;base64,AAA",
   imageWidth: 3840,
   imageHeight: 2160,
@@ -168,12 +169,13 @@ describe("ScreenshotOverlay", () => {
 
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith("run_ocr_on_crop", {
+        sessionId: 1,
         x: 200,
         y: 100,
         w: 400,
         h: 200,
       });
-      expect(mockedInvoke).toHaveBeenCalledWith("finish_ocr", { text: "hello" });
+      expect(mockedInvoke).toHaveBeenCalledWith("finish_ocr", { sessionId: 1, text: "hello" });
     });
   });
 
@@ -204,6 +206,7 @@ describe("ScreenshotOverlay", () => {
 
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith("run_ocr_on_crop", {
+        sessionId: 1,
         x: 400,
         y: 200,
         w: 1200,
@@ -218,12 +221,16 @@ describe("ScreenshotOverlay", () => {
       return Promise.resolve(undefined);
     });
 
-    const { container } = render(<ScreenshotOverlay />);
+    const first = render(<ScreenshotOverlay />);
+    await waitFor(() => expect((first.container.querySelector("img") as HTMLImageElement).src).toContain("data:image/png;base64,AAA"));
     fireEvent.keyDown(document, { key: "Escape" });
-    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("cancel_screenshot"));
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("cancel_screenshot", { sessionId: 1 }));
 
+    first.unmount();
     mockedInvoke.mockClear();
-    fireEvent.contextMenu(container.firstElementChild as HTMLElement);
-    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("cancel_screenshot"));
+    const second = render(<ScreenshotOverlay />);
+    await waitFor(() => expect((second.container.querySelector("img") as HTMLImageElement).src).toContain("data:image/png;base64,AAA"));
+    fireEvent.contextMenu(second.container.firstElementChild as HTMLElement);
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("cancel_screenshot", { sessionId: 1 }));
   });
 });
