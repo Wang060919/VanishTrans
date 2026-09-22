@@ -1,123 +1,21 @@
-# VanishTrans Documentation
+# VanishTrans 文档入口
 
-## 📚 Documentation Structure
+## 当前维护入口
 
-### 🏗️ Architecture
-Documentation related to system architecture, design decisions, and refactoring.
+- [项目 README](../README.md)：功能、安装与开发。
+- [根 AGENTS.md](../AGENTS.md)：工程规则及 Tauri 命令清单，唯一维护入口。
+- [当前架构](architecture/ARCHITECTURE.md)：模块职责、请求状态约束、原生窗口边界和验证入口。
 
-- **[AGENTS.md](../AGENTS.md)** - Project context and agent specification (⚠️ Root directory)
-  - Tech stack overview
-  - Directory structure
-  - 52 Tauri commands catalog
-  - Hard constraints and wire format
-  - Development commands
-  - **Note**: This file is also preserved in `architecture/AGENTS.md` for reference
-- **[ARCHITECTURE.md](./architecture/ARCHITECTURE.md)** - System architecture and data flow
-  - Visual architecture diagrams
-  - Component responsibilities
-  - Data flow patterns
-  - Module dependency graph
+## 历史记录
 
-- **[REFACTORING_SUMMARY.md](./architecture/REFACTORING_SUMMARY.md)** - Refactoring overview
-  - Key changes summary
-  - Before/after comparisons
-  - Design principles applied
+以下文档保留当时的过程、计数与结论，不表示当前源码或测试状态：
 
-- **[REFACTORING_FINAL.md](./architecture/REFACTORING_FINAL.md)** - Deep refactoring report
-  - Detailed refactoring metrics
-  - File-by-file changes
-  - Code quality improvements
+- [重构概述](architecture/REFACTORING_SUMMARY.md)
+- [深度重构报告](architecture/REFACTORING_FINAL.md)
+- [测试总结](testing/TESTING_SUMMARY.md)
+- [重构检查表](testing/REFACTORING_CHECKLIST.md)
+- [四项验证记录](development/FOUR_POINTS_VERIFICATION.md)
+- [历史完成总结](development/COMPLETE_SUMMARY.md)
+- `archive/`：旧计划、设计资料和视觉参考。
 
-### 🧪 Testing
-Test suite documentation, verification checklists, and quality assurance.
-
-- **[TESTING_SUMMARY.md](./testing/TESTING_SUMMARY.md)** - Test suite summary
-  - Frontend tests (156 tests, Vitest)
-  - Backend tests (15+ tests, Rust)
-  - Edge case coverage
-  - Test execution results
-
-- **[REFACTORING_CHECKLIST.md](./testing/REFACTORING_CHECKLIST.md)** - Verification checklist
-  - Build verification steps
-  - Test verification steps
-  - Git commit suggestions
-  - Quality assurance checklist
-
-### 🚀 Development
-Completion reports, project summaries, and development guides.
-
-- **[FOUR_POINTS_VERIFICATION.md](./development/FOUR_POINTS_VERIFICATION.md)** - Four-point completion verification
-  - ✅ Project global context (AGENTS.md)
-  - ✅ IPC strong-typed bridge layer
-  - ✅ Core functionality decoupling (TranslatePanel)
-  - ✅ Lightweight test guardrails
-
-- **[COMPLETE_SUMMARY.md](./development/COMPLETE_SUMMARY.md)** - Complete project summary
-  - Full refactoring timeline
-  - Comprehensive metrics
-  - Achievement highlights
-  - Production-ready assessment
-
----
-
-## 📦 Archive
-
-Historical documentation preserved for reference:
-
-- **`archive/legacy-plans/`** - Historical development plans (19 documents)
-  - Animation optimization plans
-  - Feature implementation roadmaps
-  - Refactor handoff documents
-  - Smoke test instructions
-
-- **`archive/superpowers/`** - Feature design documents
-  - Vanishing signal redesign specs
-
-- **`archive/visuals/`** - Visual design resources
-  - UI mockups and screenshots
-
----
-
-## 📖 Quick Navigation
-
-### For New Developers
-1. Start with [Project README](../README.md)
-2. Read [AGENTS.md](./architecture/AGENTS.md) for project context
-3. Review [ARCHITECTURE.md](./architecture/ARCHITECTURE.md) for system design
-4. Check [TESTING_SUMMARY.md](./testing/TESTING_SUMMARY.md) for test suite
-
-### For Contributors
-1. Read [REFACTORING_SUMMARY.md](./architecture/REFACTORING_SUMMARY.md) for recent changes
-2. Follow [REFACTORING_CHECKLIST.md](./testing/REFACTORING_CHECKLIST.md) for quality standards
-3. Reference [AGENTS.md](./architecture/AGENTS.md) for hard constraints
-
-### For Project Management
-1. Review [FOUR_POINTS_VERIFICATION.md](./development/FOUR_POINTS_VERIFICATION.md) for completion status
-2. Check [COMPLETE_SUMMARY.md](./development/COMPLETE_SUMMARY.md) for full metrics
-3. Consult [TESTING_SUMMARY.md](./testing/TESTING_SUMMARY.md) for test coverage
-
----
-
-## 📊 Documentation Statistics
-
-| Category | Files | Size | Status |
-|----------|-------|------|--------|
-| Architecture | 4 | ~29 KB | ✅ Current |
-| Testing | 2 | ~16 KB | ✅ Current |
-| Development | 2 | ~31 KB | ✅ Current |
-| Archive | 21+ | ~100 KB | 📦 Preserved |
-| **Total** | **29+** | **~176 KB** | ✅ Complete |
-
----
-
-## 🔄 Document Update Policy
-
-- **Current documentation** (`architecture/`, `testing/`, `development/`): Keep up-to-date with codebase
-- **Archive**: Preserve for historical reference, do not modify
-- **README.md**: Update when adding new documentation
-
----
-
-**Last Updated**: 2026-08-27  
-**Documentation Version**: 1.0.0  
-**Project Status**: Production-ready ⭐⭐⭐⭐⭐
+当前验收请执行 `pnpm check` 和 `pnpm check:rust`，并按改动范围补充 Windows 桌面测试。

@@ -70,6 +70,13 @@ describe("QuickTranslateWindow", () => {
     expect(listeners["translate-stream-done"]).toBeDefined();
   });
 
+  it("keeps the native quick-window body style for the lifetime of the view", () => {
+    const { unmount } = render(<QuickTranslateWindow />);
+    expect(document.body).toHaveClass("quick-window-body");
+    unmount();
+    expect(document.body).not.toHaveClass("quick-window-body");
+  });
+
   it("streams a selected-text translation and copies the result", async () => {
     render(<QuickTranslateWindow />);
     await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());

@@ -290,12 +290,13 @@ describe("App", () => {
   });
 
   it("ignores stream chunks from a superseded request", async () => {
+    const finish: Array<(text: string) => void> = [];
     mockedInvoke.mockImplementation((cmd: string) => {
       if (cmd === "get_api_config") {
         return Promise.resolve({ baseUrl: "https://api.openai.com", hasApiKey: false, model: "gpt-4o-mini" });
       }
       if (cmd === "cleanup_clipboard_text") return Promise.resolve("hello world");
-      if (cmd === "translate_stream") return Promise.resolve("hello world");
+      if (cmd === "translate_stream") return new Promise<string>((resolve) => finish.push(resolve));
       return Promise.resolve(undefined);
     });
 
@@ -317,6 +318,11 @@ describe("App", () => {
     });
 
     await waitFor(() => expect(screen.getByText(/新结果/)).toBeInTheDocument());
+    expect(screen.queryByText(/旧结果/)).not.toBeInTheDocument();
+    await act(async () => {
+      finish[0]("旧结果");
+      finish[1]("新结果");
+    });
     expect(screen.queryByText(/旧结果/)).not.toBeInTheDocument();
   });
 

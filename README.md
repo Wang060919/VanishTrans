@@ -116,7 +116,8 @@ VanishTrans/
 │   │   ├── BallWindow.tsx        # 悬浮翻译球窗口
 │   │   └── QuickTranslateWindow.tsx # 快捷翻译窗口
 │   ├── hooks/
-│   │   ├── useTranslation.ts     # 翻译状态管理
+│   │   ├── useTranslation.ts     # 翻译流程组合
+│   │   ├── useTranslationSession.ts # 请求生命周期与翻译状态
 │   │   ├── useConfig.ts          # 配置管理
 │   │   ├── useTheme.ts           # 主题切换
 │   │   └── useTauriEvents.ts     # Tauri 事件监听
@@ -133,8 +134,10 @@ VanishTrans/
 ├── src-tauri/                    # 后端 (Rust + Tauri 2)
 │   └── src/
 │       ├── lib.rs                # 应用入口，窗口/托盘/快捷键
-│       ├── commands.rs           # Tauri 命令（IPC 接口）
-│       ├── translate.rs          # API 翻译核心 + 配置管理
+│       ├── commands/             # Tauri 命令（IPC 接口）
+│       ├── translate.rs          # 翻译提供商路由与取消
+│       ├── translate/            # 请求构造、提供商、SSE 解析
+│       ├── config/               # 配置、凭据、持久化与请求序号
 │       ├── tm.rs                 # 翻译记忆 (SQLite)
 │       ├── history.rs            # 翻译历史存储
 │       ├── ocr.rs                # Windows OCR 截图识别

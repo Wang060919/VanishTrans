@@ -12,7 +12,7 @@ const registered = [...registrationSource.slice(handlerStart, handlerEnd).matchA
 );
 
 const documented = new Map();
-for (const path of ["AGENTS.md", "docs/architecture/AGENTS.md"]) {
+for (const path of ["AGENTS.md"]) {
   const source = readFileSync(path, "utf8");
   const startMarker = "<!-- BEGIN TAURI_COMMANDS -->";
   const endMarker = "<!-- END TAURI_COMMANDS -->";

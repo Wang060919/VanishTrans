@@ -1,60 +1,17 @@
-/**
- * Translation state management utilities.
- * Handles request ID generation and validation.
- */
-
-/**
- * Monotonically increasing translation ID counter for forcing Typewriter re-mount.
- */
+/** Each window owns one lifecycle shared by text, stream and file operations. */
+export class TranslationRequestLifecycle {
+  private sequence: number;
+  private active = false;
+  constructor(initialSequence = 0) { this.sequence = initialSequence; }
+  begin(): number { this.active = true; return ++this.sequence; }
+  isCurrent(requestId: number): boolean { return requestId === this.sequence; }
+  acceptsResult(requestId: number): boolean { return this.isCurrent(requestId) && this.active; }
+  complete(requestId: number): boolean {
+    if (!this.acceptsResult(requestId)) return false;
+    this.active = false;
+    return true;
+  }
+  invalidate(): void { ++this.sequence; this.active = false; }
+}
 let translationIdCounter = 0;
-
-/**
- * Generate next translation key for component re-mounting.
- */
-export function generateTranslationKey(): number {
-  return ++translationIdCounter;
-}
-
-/**
- * Create a new request ID for tracking async operations.
- */
-export function createRequestId(currentRef: { current: number }): number {
-  return ++currentRef.current;
-}
-
-/**
- * Check if a request is still current (not superseded by newer request).
- */
-export function isCurrentRequest(
-  requestId: number,
-  currentRef: { current: number }
-): boolean {
-  return requestId === currentRef.current;
-}
-
-/**
- * Check if a request has already been marked complete.
- */
-export function isCompletedRequest(
-  requestId: number,
-  completedRef: { current: number | null }
-): boolean {
-  return requestId === completedRef.current;
-}
-
-/**
- * Mark a request as completed.
- */
-export function markRequestCompleted(
-  requestId: number,
-  completedRef: { current: number | null }
-): void {
-  completedRef.current = requestId;
-}
-
-/**
- * Invalidate current request (for cancellation).
- */
-export function invalidateCurrentRequest(currentRef: { current: number }): void {
-  ++currentRef.current;
-}
+export function generateTranslationKey(): number { return ++translationIdCounter; }

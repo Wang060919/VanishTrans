@@ -1,154 +1,28 @@
-import { quickFrontendReady, hideQuickWindow, writeClipboardSafe, cleanupClipboardText, translateStream, showMainWithText } from '../services/tauriBridge';
+import { hideQuickWindow, writeClipboardSafe, showMainWithText } from "../services/tauriBridge";
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, Copy, Expand, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import VanishMark from "../components/brand/VanishMark";
 import { useThemeSync } from "../hooks/useTheme";
-import { logError } from "../lib/logger";
-import { errorMessage, isCancelledError } from "../lib/errors";
-
-interface StreamChunk {
-  requestId: number;
-  chunk: string;
-}
-
-interface StreamDone {
-  requestId: number;
-  fullText: string;
-}
+import { useQuickTranslation } from "../hooks/useQuickTranslation";
 
 const QUICK_WIDTH = 392;
 const QUICK_MIN_HEIGHT = 132;
 const QUICK_MAX_HEIGHT = 330;
-type TranslationActivityState = "working" | "done" | "error" | "idle";
 
 export default function QuickTranslateWindow() {
   const shellRef = useRef<HTMLDivElement>(null);
-  const requestIdRef = useRef(1_000_000);
-  const sourceRef = useRef("");
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [source, setSource] = useState("");
-  const [output, setOutput] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { inputText: source, outputText: output, translationError: error, loading, translateText } = useQuickTranslation();
   useThemeSync();
-
-  const broadcastActivity = useCallback((state: TranslationActivityState) => {
-    void emit("translation-state", { state }).catch(() => {});
-  }, []);
-
-  const translateText = useCallback(async (rawText: string) => {
-    const requestId = ++requestIdRef.current;
-    setOutput("");
-    setError("");
-    setCopied(false);
-    setLoading(true);
-    broadcastActivity("working");
-
-    try {
-      const cleaned = await cleanupClipboardText({ text: rawText });
-      if (requestId !== requestIdRef.current) return;
-      if (!cleaned.trim()) throw new Error("未读取到可翻译的文字");
-      sourceRef.current = cleaned;
-      setSource(cleaned);
-      const result = await translateStream({
-        text: cleaned,
-        direction: "auto",
-        requestId,
-      });
-      if (requestId === requestIdRef.current && result) {
-        setOutput((current) => current || result);
-      }
-      if (requestId === requestIdRef.current) broadcastActivity("done");
-    } catch (reason) {
-      if (requestId !== requestIdRef.current) return;
-      if (isCancelledError(reason)) {
-        broadcastActivity("idle");
-      } else {
-        setError(errorMessage(reason));
-        broadcastActivity("error");
-      }
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [broadcastActivity]);
-
   useEffect(() => {
     document.body.classList.add("quick-window-body");
     return () => document.body.classList.remove("quick-window-body");
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const cleanups: Array<() => void> = [];
-
-    let readyReported = false;
-    void (async () => {
-      try {
-        try {
-          await quickFrontendReady(false);
-        } catch {
-          // Browser-only previews do not expose Tauri commands.
-        }
-        const results = await Promise.allSettled([
-          Promise.resolve().then(() => listen<string>("quick-translate", (event) => {
-            void translateText(event.payload);
-          })),
-          Promise.resolve().then(() => listen<string>("quick-translate-error", (event) => {
-            requestIdRef.current += 1;
-            sourceRef.current = "";
-            setSource("");
-            setOutput("");
-            setLoading(false);
-            setError(event.payload);
-            broadcastActivity("error");
-          })),
-          Promise.resolve().then(() => listen<StreamChunk>("translate-stream-chunk", (event) => {
-            if (event.payload.requestId !== requestIdRef.current) return;
-            setOutput((current) => current + event.payload.chunk);
-          })),
-          Promise.resolve().then(() => listen<StreamDone>("translate-stream-done", (event) => {
-            if (event.payload.requestId !== requestIdRef.current) return;
-            setOutput(event.payload.fullText);
-            setLoading(false);
-          })),
-        ]);
-        const registered = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-        const failed = results.find((result) => result.status === "rejected");
-        if (failed?.status === "rejected") {
-          registered.forEach((cleanup) => cleanup());
-          throw failed.reason;
-        }
-        if (cancelled) {
-          registered.forEach((cleanup) => cleanup());
-          return;
-        }
-        cleanups.push(...registered);
-        await quickFrontendReady(true);
-        if (cancelled) {
-          cleanups.splice(0).forEach((cleanup) => cleanup());
-          await quickFrontendReady(false).catch(() => {});
-          return;
-        }
-        readyReported = true;
-      } catch (error) {
-        logError("quick", "setup error", error);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      cleanups.splice(0).forEach((cleanup) => cleanup());
-      if (readyReported) void quickFrontendReady(false).catch(() => {});
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-      broadcastActivity("idle");
-    };
-  }, [broadcastActivity, translateText]);
+  useEffect(() => { if (loading) setCopied(false); }, [loading]);
+  useEffect(() => () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); }, []);
 
   useLayoutEffect(() => {
     const shell = shellRef.current;
@@ -182,9 +56,9 @@ export default function QuickTranslateWindow() {
   }, [output]);
 
   const handleExpand = useCallback(() => {
-    if (!sourceRef.current) return;
-    void showMainWithText({ text: sourceRef.current });
-  }, []);
+    if (!source) return;
+    void showMainWithText({ text: source });
+  }, [source]);
 
   const handleDrag = useCallback((event: React.MouseEvent) => {
     if ((event.target as HTMLElement).closest("button")) return;

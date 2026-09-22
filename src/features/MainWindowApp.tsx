@@ -42,27 +42,17 @@ export default function MainWindowApp({
   }, []);
 
   const doTranslateStreamRef = useRef(translation.doTranslateStream);
-  const setOutputTextRef = useRef(translation.setOutputText);
-  const setInputTextRef = useRef(translation.setInputText);
-  const setLoadingRef = useRef(translation.setLoading);
-  const setTranslationErrorRef = useRef(translation.setTranslationError);
-
-  // Keep refs in sync
+  const resetTranslationRef = useRef(translation.resetTranslation);
   useEffect(() => {
     doTranslateStreamRef.current = translation.doTranslateStream;
-    setOutputTextRef.current = translation.setOutputText;
-    setInputTextRef.current = translation.setInputText;
-    setLoadingRef.current = translation.setLoading;
-    setTranslationErrorRef.current = translation.setTranslationError;
-  }, [translation.doTranslateStream, translation.setOutputText, translation.setInputText, translation.setLoading, translation.setTranslationError]);
+    resetTranslationRef.current = translation.resetTranslation;
+  }, [translation.doTranslateStream, translation.resetTranslation]);
 
   const listenersReady = useTauriEvents({
     onClipboardTranslate: useCallback((request: TranslationRequestEvent) => {
       requestExpand();
       if (request.type === "error") {
-        setOutputTextRef.current("");
-        setTranslationErrorRef.current(request.message);
-        setLoadingRef.current(false);
+        resetTranslationRef.current(request.message);
         return;
       }
       doTranslateStreamRef.current(request.text);
@@ -71,28 +61,19 @@ export default function MainWindowApp({
     onOcrTranslate: useCallback((text: string) => {
       requestExpand();
       if (text.startsWith("❌ Alt+R 失败:")) {
-        setOutputTextRef.current("");
-        setTranslationErrorRef.current(text);
-        setLoadingRef.current(false);
+        resetTranslationRef.current(text);
         return;
       }
-      setOutputTextRef.current("");
-      setInputTextRef.current("");
-      setTranslationErrorRef.current(null);
       doTranslateStreamRef.current(text);
     }, [requestExpand]),
 
     onScreenshotStart: useCallback(() => {
-      setOutputTextRef.current("");
-      setInputTextRef.current("");
-      setTranslationErrorRef.current(null);
+      resetTranslationRef.current();
     }, []),
 
     onScreenshotError: useCallback((message: string) => {
       requestExpand();
-      setOutputTextRef.current("");
-      setTranslationErrorRef.current(message);
-      setLoadingRef.current(false);
+      resetTranslationRef.current(message);
     }, [requestExpand]),
 
     onShortcutConflicts: useCallback((conflicts) => {

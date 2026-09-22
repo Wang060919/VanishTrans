@@ -1,5 +1,7 @@
 # TranslatePanel 重构总结
 
+> 历史快照：以下路径、行数与验证结论仅代表当时状态。当前维护请阅读 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
 ## 重构目标
 将 `TranslatePanel` 与 `useTranslation` 按照**单一职责原则 (Single Responsibility Principle)** 重构为 AI 友好的架构。
 

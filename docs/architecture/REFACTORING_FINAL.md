@@ -1,5 +1,7 @@
 # VanishTrans 深度重构总结 (Final Version)
 
+> 历史快照：以下路径、行数与验证结论仅代表当时状态。当前维护请阅读 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
 ## 🎯 重构目标达成
 
 ### 原始需求

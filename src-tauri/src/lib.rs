@@ -1,5 +1,6 @@
 mod clipboard;
 mod commands;
+mod config;
 mod cursor;
 mod error;
 mod history;

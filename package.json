@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "lint": "eslint src",
     "check:commands": "node scripts/check-tauri-commands.mjs",
-    "check": "pnpm check:commands && tsc --noEmit && vitest run && eslint src",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "check": "pnpm check:architecture && pnpm check:commands && tsc --noEmit && vitest run && eslint src",
     "check:rust": "cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "bump": "node scripts/bump-version.mjs"
   },
