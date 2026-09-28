@@ -11,6 +11,7 @@ import { logError } from "../lib/logger";
 interface MainWindowAppProps {
   embedded?: boolean;
   onCollapse?: () => void | Promise<void>;
+  onScreenshot?: () => void | Promise<void>;
   onRequestExpand?: () => void | Promise<void>;
   onWindowDragStart?: () => boolean | void;
   onWindowDragEnd?: () => void;
@@ -21,6 +22,7 @@ interface MainWindowAppProps {
 export default function MainWindowApp({
   embedded = false,
   onCollapse,
+  onScreenshot,
   onRequestExpand,
   onWindowDragStart,
   onWindowDragEnd,
@@ -136,53 +138,60 @@ export default function MainWindowApp({
 
   return (
     <MainLayout
-      embedded={embedded}
-      notices={notices}
-      onDismissNotice={(message) => setNotices((current) => current.filter((item) => item !== message))}
-      onCollapse={onCollapse}
-      onWindowDragStart={onWindowDragStart}
-      onWindowDragEnd={onWindowDragEnd}
-      onWindowMoved={onWindowMoved}
-      inputText={translation.inputText}
-      onInputChange={translation.setInputText}
-      outputText={translation.outputText}
-      translationError={translation.translationError}
-      loading={translation.loading}
+      shell={{
+        embedded,
+        notices,
+        onDismissNotice: (message) => setNotices((current) => current.filter((item) => item !== message)),
+        onCollapse,
+        onScreenshot,
+        onWindowDragStart,
+        onWindowDragEnd,
+        onWindowMoved,
+      }}
       pinned={pinned}
       onPin={handlePin}
-      direction={translation.direction}
-      onDirectionChange={translation.updateDirection}
-      glowActive={translation.glowActive}
-      onClearGlow={translation.clearGlow}
-      onTranslate={handleTranslate}
-      onCancelTranslation={translation.cancelTranslation}
-      inputRef={inputRef as React.RefObject<HTMLTextAreaElement>}
-      baseUrl={config.baseUrl}
-      onBaseUrlChange={config.setBaseUrl}
-      model={config.model}
-      onModelChange={config.setModel}
-      hasStoredApiKey={config.hasStoredApiKey}
-      apiKeyUpdate={config.apiKeyUpdate}
-      onApiKeyChange={config.setApiKeyUpdate}
-      onSaveConfig={config.saveConfig}
-      glossary={config.glossary}
-      onGlossaryChange={config.saveGlossary}
-      hotkeys={config.hotkeys}
-      hotkeyLabels={config.hotkeyLabels}
-      onHotkeysChange={config.saveHotkeys}
-      profiles={config.profiles}
-      onSaveProfile={config.saveProfile}
-      onDeleteProfile={config.deleteProfile}
-      onApplyProfile={config.applyProfile}
-      onTestConnection={config.testConnection}
-      loggingEnabled={config.loggingEnabled}
-      onSetLogging={config.setLogging}
-      freeTranslation={config.freeTranslation}
-      onSetFreeTranslation={config.setFreeTranslation}
-      streaming={translation.streaming}
-      fileStatus={translation.fileStatus}
-      onTranslateFile={translation.doTranslateFile}
-      translationKey={translation.translationKey}
+      translation={{
+        inputText: translation.inputText,
+        onInputChange: translation.setInputText,
+        outputText: translation.outputText,
+        translationError: translation.translationError,
+        loading: translation.loading,
+        streaming: translation.streaming,
+        direction: translation.direction,
+        onDirectionChange: translation.updateDirection,
+        glowActive: translation.glowActive,
+        onClearGlow: translation.clearGlow,
+        onTranslate: handleTranslate,
+        onCancelTranslation: translation.cancelTranslation,
+        inputRef: inputRef as React.RefObject<HTMLTextAreaElement>,
+        fileStatus: translation.fileStatus,
+        onTranslateFile: translation.doTranslateFile,
+        translationKey: translation.translationKey,
+      }}
+      config={{
+        baseUrl: config.baseUrl,
+        onBaseUrlChange: config.setBaseUrl,
+        model: config.model,
+        onModelChange: config.setModel,
+        hasStoredApiKey: config.hasStoredApiKey,
+        apiKeyUpdate: config.apiKeyUpdate,
+        onApiKeyChange: config.setApiKeyUpdate,
+        onSaveConfig: config.saveConfig,
+        glossary: config.glossary,
+        onGlossaryChange: config.saveGlossary,
+        hotkeys: config.hotkeys,
+        hotkeyLabels: config.hotkeyLabels,
+        onHotkeysChange: config.saveHotkeys,
+        profiles: config.profiles,
+        onSaveProfile: config.saveProfile,
+        onDeleteProfile: config.deleteProfile,
+        onApplyProfile: config.applyProfile,
+        onTestConnection: config.testConnection,
+        loggingEnabled: config.loggingEnabled,
+        onSetLogging: config.setLogging,
+        freeTranslation: config.freeTranslation,
+        onSetFreeTranslation: config.setFreeTranslation,
+      }}
     />
   );
 }

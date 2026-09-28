@@ -70,6 +70,7 @@ export default function FileDropZone({ onDrop, disabled = false, children }: Fil
 
   return (
     <div
+      className="translation-drop-zone"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}

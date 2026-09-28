@@ -1,9 +1,8 @@
 import { Check, Copy, RefreshCw, Square } from "lucide-react";
-import { useCallback, useRef, useState, useEffect } from "react";
-import { writeClipboardSafe } from "../../services/tauriBridge";
 import AnimatedContent from "../../components/AnimatedContent";
 import SignalBurst from "../../components/SignalBurst";
 import VanishMark from "../../components/brand/VanishMark";
+import { useCopyFeedback } from "../../hooks/useCopyFeedback";
 import { isErrorMessage, stripErrorMarker } from "../../lib/textUtils";
 
 interface OutputSectionProps {
@@ -31,25 +30,8 @@ export default function OutputSection({
   ignoreCache,
   translationKey,
 }: OutputSectionProps) {
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    },
-    []
-  );
-
-  const handleCopyOutput = useCallback(async () => {
-    const hasError = isErrorMessage(outputText);
-    if (!outputText || hasError) return;
-
-    await writeClipboardSafe({ text: outputText });
-    setCopied(true);
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
-  }, [outputText]);
+  const { copiedKey, copy } = useCopyFeedback<string>();
+  const copied = copiedKey === "output";
 
   const hasError = isErrorMessage(outputText);
   const displayError = error ?? (hasError ? stripErrorMarker(outputText) : null);
@@ -88,7 +70,7 @@ export default function OutputSection({
               type="button"
               className="text-action"
               disabled={!copyableText}
-              onClick={handleCopyOutput}
+              onClick={() => { void copy("output", copyableText); }}
               aria-label="复制译文"
             >
               {copied ? (

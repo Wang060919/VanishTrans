@@ -73,15 +73,15 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
 
   return (
     <div ref={containerRef} className="flex items-center justify-between gap-2">
-      <span className="text-[11px] text-text-muted truncate">{label}</span>
+      <span className="text-xs text-text-muted truncate">{label}</span>
       <div className="flex items-center gap-1.5">
-        <kbd className="px-2 py-0.5 text-[10px] font-mono bg-surface-sunken border border-border-subtle rounded min-w-[60px] text-center text-text-secondary">
+        <kbd className="px-2 py-0.5 text-xs font-mono bg-surface-sunken border border-border-subtle rounded min-w-[60px] text-center text-text-secondary">
           {recording ? "按下快捷键..." : displayValue}
         </kbd>
         {recording ? (
           <button
             onClick={handleCancel}
-            className="text-[10px] text-text-ghost hover:text-danger transition-colors"
+            className="text-xs text-text-ghost hover:text-danger transition-colors"
           >
             取消
           </button>
@@ -89,13 +89,13 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
           <>
             <button
               onClick={handleSave}
-              className="text-[10px] text-primary hover:text-primary-hover font-medium transition-colors"
+              className="text-xs text-primary hover:text-primary-hover font-medium transition-colors"
             >
               保存
             </button>
             <button
               onClick={handleCancel}
-              className="text-[10px] text-text-ghost hover:text-danger transition-colors"
+              className="text-xs text-text-ghost hover:text-danger transition-colors"
             >
               ✕
             </button>
@@ -103,7 +103,7 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
         ) : (
           <button
             onClick={handleStartRecording}
-            className="text-[10px] text-text-ghost hover:text-primary transition-colors"
+            className="text-xs text-text-ghost hover:text-primary transition-colors"
           >
             修改
           </button>

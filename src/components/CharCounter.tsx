@@ -19,7 +19,7 @@ export default function CharCounter({ current, max, className, compact = false }
   }
 
   return (
-    <div className={`flex items-center gap-2 text-[10px] text-text-muted select-none ${className || ""}`}>
+    <div className={`flex items-center gap-2 text-xs text-text-muted select-none ${className || ""}`}>
       <div className="flex-1 h-[3px] rounded-full bg-border-subtle overflow-hidden">
         <div
           className="h-full rounded-full origin-left transition-transform duration-200"

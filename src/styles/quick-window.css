@@ -1,7 +1,7 @@
 /* Compact selection and screenshot translation window */
 body.quick-window-body,
 body.quick-window-body #root {
-  background: transparent !important;
+  background: transparent;
 }
 
 .quick-translate-shell {
@@ -11,27 +11,31 @@ body.quick-window-body #root {
   max-height: 330px;
   overflow: hidden;
   border: 0;
-  border-radius: 0;
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.73), rgba(0, 0, 0, 0.68)) !important;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-canvas);
   color: var(--color-ink);
-  box-shadow:
-    0 20px 52px rgba(0, 0, 0, 0.56),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    inset 0 -18px 32px rgba(0, 0, 0, 0.12);
-  backdrop-filter: saturate(138%) contrast(114%) brightness(0.7);
-  -webkit-backdrop-filter: saturate(138%) contrast(114%) brightness(0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   animation: quickWindowIn 170ms var(--ease-standard) both;
 }
 
+/* The native region follows this fixed outline; animate the content only. */
+body.quick-window-body .quick-translate-shell {
+  animation: none;
+}
+
 .quick-translate-header {
-  height: 38px;
+  height: 44px;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 7px 0 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.04));
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.055);
+  padding: 4px 14px 0 20px;
+  background: transparent;
+  box-shadow: none;
   cursor: grab;
 }
 
@@ -56,7 +60,7 @@ body.quick-window-body #root {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: rgba(225, 227, 236, 0.46);
+  color: var(--color-ink-muted);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0;
@@ -97,7 +101,7 @@ body.quick-window-body #root {
   flex: none;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 50%;
   background: transparent;
   color: rgba(225, 227, 236, 0.47);
   cursor: pointer;
@@ -127,31 +131,35 @@ body.quick-window-body #root {
   display: -webkit-box;
   max-height: 53px;
   overflow: hidden;
-  padding: 9px 13px 10px;
-  color: rgba(221, 223, 232, 0.47);
-  font-size: 11.5px;
+  flex: none;
+  padding: 4px 22px 0;
+  color: var(--color-ink-muted);
+  font-family: var(--font-content);
+  font-size: 12px;
   line-height: 1.48;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.045);
+  box-shadow: none;
 }
 
 .quick-result {
-  min-height: 93px;
-  max-height: 239px;
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
-  padding: 13px 14px 17px;
-  background: rgba(0, 0, 0, 0.025);
+  padding: 10px 22px 22px;
+  scrollbar-width: thin;
+  background: transparent;
 }
 
 .quick-result-text {
   margin: 0;
   color: rgba(250, 250, 252, 0.93);
-  font-size: 14px;
+  font-family: var(--font-content);
+  font-size: 16px;
   font-weight: 400;
-  line-height: 1.62;
+  line-height: 1.65;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   animation: quickResultIn 180ms var(--ease-standard) both;
@@ -169,7 +177,7 @@ body.quick-window-body #root {
 }
 
 .quick-loading {
-  min-height: 62px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -235,3 +243,9 @@ body.quick-window-body #root {
     animation: none !important;
   }
 }
+
+.quick-empty { margin: 0; color: var(--color-ink-muted); font-size: 12px; }
+.quick-translate-shell[data-state="done"] .quick-translate-status::before { background: #86d9b4; box-shadow: none; }
+.quick-translate-shell[data-state="error"] .quick-translate-status::before { background: #e06972; box-shadow: none; }
+.quick-translate-actions button:focus-visible,
+.quick-error button:focus-visible { outline: 1px solid var(--color-ink-muted); outline-offset: 2px; }

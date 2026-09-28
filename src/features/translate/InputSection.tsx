@@ -80,6 +80,7 @@ export default function InputSection({
       <div className="editor-frame">
         <textarea
           ref={inputRef}
+          aria-label="原文"
           value={inputText}
           disabled={loading}
           onChange={(event) => onInputChange(truncateText(event.target.value, MAX_INPUT_CHARS))}

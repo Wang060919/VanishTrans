@@ -1,10 +1,10 @@
-/* === GLOBAL RESET: strip every parent background to transparent === */
-:root, html, body, #root, #app, main, .app-shell, .translation-workspace,
-.acrylic-panel, .editor-frame, .result-frame,
-.app-header, .app-footer, .language-switcher {
-  background: transparent !important;
-  background-color: transparent !important;
-}
+/* ================================================================
+   Global base only: fonts, Tailwind, transparency, accessibility.
+   Design tokens → styles/tokens.css
+   Component styles → styles/app.css
+   Window-specific  → styles/island.css, styles/quick-window.css
+   Single dark theme: colors are tokenized for the dark canvas only.
+   ================================================================ */
 
 @tailwind base;
 @tailwind components;
@@ -19,22 +19,6 @@
 }
 
 @font-face {
-  font-family: "Source Serif 4";
-  src: url("/fonts/SourceSerif4-SemiBold.ttf") format("truetype");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Source Serif 4";
-  src: url("/fonts/SourceSerif4-Italic.ttf") format("truetype");
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
   font-family: "Noto Serif SC";
   src: url("/fonts/NotoSerifSC-Regular.ttf") format("truetype");
   font-weight: 400;
@@ -42,61 +26,12 @@
   font-display: swap;
 }
 
-@font-face {
-  font-family: "Noto Serif SC";
-  src: url("/fonts/NotoSerifSC-SemiBold.ttf") format("truetype");
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
-:root {
-  --color-canvas: #07080a;
-  --color-surface: #07080a;
-  --color-surface-raised: #0e1015;
-  --color-surface-subtle: #0a0c10;
-  --color-surface-overlay: #12151b;
-  --color-line: rgba(255, 255, 255, 0.08);
-  --color-line-strong: rgba(255, 255, 255, 0.12);
-  --color-ink: rgba(255, 255, 255, 0.88);
-  --color-ink-secondary: rgba(255, 255, 255, 0.6);
-  --color-ink-muted: rgba(255, 255, 255, 0.4);
-  --color-ink-faint: rgba(255, 255, 255, 0.28);
-  --color-signal: #7c91ff;
-  --color-signal-hover: #91a2ff;
-  --color-signal-soft: rgba(124, 145, 255, 0.12);
-  --color-signal-line: rgba(124, 145, 255, 0.3);
-  --color-success: #54b794;
-  --color-warning: #e0a64b;
-  --color-danger: #f07178;
-  --color-danger-soft: rgba(240, 113, 120, 0.12);
-  --shadow-window: 0 18px 48px rgba(0, 0, 0, 0.42);
-  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.36);
-  --shadow-popover: 0 8px 20px rgba(0, 0, 0, 0.32);
-  --duration-instant: 100ms;
-  --duration-fast: 160ms;
-  --duration-normal: 220ms;
-  --duration-slow: 360ms;
-  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
-  font-family: "Source Serif 4", "Noto Serif SC", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
-  font-size: 14px;
-  color-scheme: dark;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Single dark theme — light/system selectors are forced to same dark values */
-:root[data-theme="dark"],
-:root[data-theme="light"] {
-  color-scheme: dark;
-}
-
+/* The window background must stay transparent for the native acrylic
+   surface; nothing else in the bundle sets these backgrounds. */
 html, body, #root {
   width: 100%;
   height: 100%;
-  background: transparent !important;
-  background-color: transparent !important;
+  background: transparent;
 }
 
 body {
@@ -105,17 +40,14 @@ body {
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
-  background: transparent !important;
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-button, input, textarea, select {
-  font: inherit;
-}
-
-button {
-  color: inherit;
-}
+button, input, textarea, select { font: inherit; }
+button { color: inherit; }
 
 textarea, input, .selectable, [role="textbox"] {
   user-select: text;
@@ -135,16 +67,15 @@ textarea, input, .selectable, [role="textbox"] {
 }
 
 *:focus-visible {
-  outline: 2px solid rgba(124, 145, 255, 0.7);
+  outline: 2px solid rgba(141, 156, 255, 0.7);
   outline-offset: 2px;
 }
-
 button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:not(:focus-visible), textarea:focus:not(:focus-visible) {
   outline: none;
 }
 
 ::selection {
-  background: rgba(124, 145, 255, 0.2);
+  background: rgba(141, 156, 255, 0.2);
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -153,197 +84,9 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible), input:focus:
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
 
-.brand-lockup {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  color: #f4f4f5 !important;
-}
-
-.brand-mark {
-  width: 22px;
-  height: 20px;
-  flex: none;
-  overflow: visible;
-}
-
-.brand-mark path {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.45;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.brand-mark__signal { color: var(--color-signal); }
-.brand-mark__signal--two { opacity: 0.42; }
-.brand-mark__node { fill: var(--color-signal); }
-.brand-wordmark { font-size: 13px; font-weight: 650; letter-spacing: -0.025em; white-space: nowrap; }
-.brand-wordmark__muted { color: var(--color-ink-muted); font-weight: 540; }
-
-.brand-lockup--animated .brand-mark__signal,
-.brand-lockup--animated .brand-mark__node,
-.brand-lockup--animated .brand-wordmark {
-  animation: brandReveal var(--duration-slow) var(--ease-standard) both;
-  animation-delay: var(--brand-delay, 0ms);
-}
-
-.icon-button {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #a1a1aa !important;
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard), transform var(--duration-instant) var(--ease-standard);
-}
-
-.icon-button:hover { color: #f4f4f5 !important; background: rgba(255, 255, 255, 0.08); }
-.icon-button:active { transform: scale(0.94); }
-.icon-button:disabled { opacity: 0.38; cursor: default; transform: none; }
-.icon-button--active { color: var(--color-signal); background: var(--color-signal-soft); }
-
-.language-switcher {
-  min-height: 42px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr);
-  align-items: center;
-  padding: 5px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: transparent;
-  position: relative;
-  z-index: 25;
-  overflow: visible;
-}
-
-.language-field {
-  min-width: 0;
-  position: relative;
-}
-.language-menu-trigger {
-  width: 100%;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  padding: 0 9px;
-  background: transparent;
-  color: #f4f4f5 !important;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
-}
-.language-menu-trigger:hover:not(:disabled) { color: #fff !important; background: rgba(255, 255, 255, 0.06); }
-.language-menu-trigger:focus-visible {
-  outline: 2px solid rgba(141, 156, 255, 0.62);
-  outline-offset: 1px;
-}
-.language-menu-trigger:disabled { opacity: 0.46; cursor: default; }
-.language-menu-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.language-menu-trigger__icon { flex: none; color: var(--color-ink-muted); transition: transform var(--duration-fast) var(--ease-standard); }
-.language-menu-trigger__icon--open { transform: rotate(180deg); color: var(--color-signal); }
-.language-field--end .language-menu-trigger { justify-content: flex-end; }
-.language-menu {
-  position: absolute;
-  top: calc(100% + 5px);
-  left: 0;
-  z-index: 60;
-  min-width: 128px;
-  max-height: min(190px, calc(100vh - 100px));
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 8px;
-  background: #11131a !important;
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-.language-field--end .language-menu { right: 0; left: auto; }
-.language-menu__option {
-  width: 100%;
-  min-height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: rgba(245, 246, 250, 0.76);
-  font: inherit;
-  font-size: 11px;
-  text-align: left;
-  cursor: pointer;
-}
-.language-menu__option:hover,
-.language-menu__option:focus-visible { color: #fff; background: rgba(141, 156, 255, 0.14); outline: 0; }
-.language-menu__option--selected { color: #fff; background: rgba(141, 156, 255, 0.1); }
-.language-menu__option--selected svg { color: var(--color-signal); }
-.language-swap {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  justify-self: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--color-signal);
-  cursor: pointer;
-  transition: transform var(--duration-normal) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
-}
-.language-swap:hover:not(:disabled) { border-color: rgba(124, 145, 255, 0.3); transform: translateX(1px); }
-.language-swap:disabled { color: var(--color-ink-faint); opacity: 0.55; cursor: default; }
-
-.drawer-layer { position: absolute; inset: 44px 0 0; z-index: 30; overflow: hidden; }
-.drawer-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(0, 0, 0, 0.6); animation: fadeIn var(--duration-fast) var(--ease-standard) both; will-change: opacity; }
-.overlay-drawer { position: absolute; inset: 0 0 0 18px; display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-left: 1px solid rgba(255, 255, 255, 0.08); box-shadow: var(--shadow-overlay); animation: drawerIn var(--duration-normal) var(--ease-standard) both; will-change: transform, opacity; backface-visibility: hidden; }
-.drawer-header { height: 46px; display: flex; align-items: center; justify-content: space-between; flex: none; padding: 0 10px 0 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
-.drawer-heading, .drawer-actions { display: flex; align-items: center; gap: 8px; }
-.drawer-heading h2 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -0.015em; color: #fff; }
-.drawer-body { min-height: 0; flex: 1; overflow: hidden; }
-.signal-node { width: 6px; height: 6px; display: inline-block; border-radius: 50%; background: var(--color-signal); box-shadow: 0 0 0 4px var(--color-signal-soft); }
-
-.animated-content { animation-duration: var(--duration-normal); animation-timing-function: var(--ease-standard); animation-fill-mode: both; }
-.animated-content--fade { animation-name: fadeIn; }
-.animated-content--slide-up { animation-name: fadeSlideUp; }
-.animated-content--drawer { animation-name: drawerIn; }
-
-.signal-burst { position: relative; display: inline-flex; }
-.signal-burst__particles { position: absolute; inset: 50%; pointer-events: none; }
-.signal-burst__particles i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: var(--color-signal); opacity: 0; }
-.signal-burst--active .signal-burst__particles i { animation: signalBurst var(--duration-normal) var(--ease-standard) both; }
-.signal-burst__particles i:nth-child(1) { --burst-x: 13px; --burst-y: 0px; }
-.signal-burst__particles i:nth-child(2) { --burst-x: -12px; --burst-y: 1px; animation-delay: 20ms; }
-.signal-burst__particles i:nth-child(3) { --burst-x: 2px; --burst-y: -12px; animation-delay: 35ms; }
-.signal-burst__particles i:nth-child(4) { --burst-x: -1px; --burst-y: 12px; animation-delay: 50ms; }
-
-@keyframes brandReveal { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fadeSlideUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes drawerIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes pulseDot { 0%, 80%, 100% { opacity: 0.22; transform: scale(0.78); } 40% { opacity: 1; transform: scale(1); } }
-@keyframes signalFlow { from { transform: translateX(-18px); opacity: 0; } 35% { opacity: 1; } to { transform: translateX(18px); opacity: 0; } }
-@keyframes signalBurst { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: 0; transform: translate(calc(-50% + var(--burst-x)), calc(-50% + var(--burst-y))) scale(0.2); } }
-
-@media (max-width: 359px) {
-  .brand-wordmark { display: none; }
-  .overlay-drawer { left: 0; }
-}
-
+/* Accessibility: !important is required here to beat per-component
+   animation/transition declarations. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 1ms !important; }
   .signal-burst__particles { display: none; }
 }
-

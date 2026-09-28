@@ -1,0 +1,55 @@
+/* ================================================================
+   Design tokens — single source of truth.
+   All windows share these custom properties. Component styles live
+   in app.css; window-specific styles in island.css / quick-window.css.
+   ================================================================ */
+
+:root {
+  /* Surfaces */
+  --color-canvas: #000;
+  --color-surface: #000;
+  --color-surface-raised: rgba(255, 255, 255, 0.055);
+  --color-surface-subtle: rgba(255, 255, 255, 0.035);
+  --color-surface-overlay: #050505;
+  --color-line: rgba(255, 255, 255, 0.045);
+  --color-line-strong: rgba(255, 255, 255, 0.13);
+
+  /* Text (alpha tuned for WCAG AA on the dark canvas) */
+  --color-ink: rgba(250, 250, 252, 0.94);
+  --color-ink-secondary: rgba(235, 236, 242, 0.72);
+  --color-ink-muted: rgba(220, 222, 232, 0.58);
+  --color-ink-faint: rgba(210, 213, 224, 0.5);
+
+  /* Accent + semantic */
+  --color-signal: #8d9cff;
+  --color-signal-hover: #a3afff;
+  --color-signal-soft: rgba(141, 156, 255, 0.12);
+  --color-signal-line: rgba(141, 156, 255, 0.32);
+  --color-success: #54b794;
+  --color-warning: #e0a64b;
+  --color-danger: #f07178;
+  --color-danger-soft: rgba(240, 113, 120, 0.12);
+
+  /* Elevation */
+  --shadow-window:
+    0 32px 80px rgba(0, 0, 0, 0.64),
+    0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.36);
+  --shadow-popover: 0 8px 20px rgba(0, 0, 0, 0.32);
+
+  /* Motion */
+  --duration-instant: 100ms;
+  --duration-fast: 160ms;
+  --duration-normal: 220ms;
+  --duration-slow: 360ms;
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* System typography keeps controls and translation text visually consistent. */
+  --font-ui: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-content: var(--font-ui);
+  --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+
+  font-size: 14px;
+  color-scheme: dark;
+}

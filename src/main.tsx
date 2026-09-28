@@ -2,9 +2,9 @@ import React, { Component, ErrorInfo, ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import "./styles/app-shell.css";
+import "./styles/tokens.css";
 import "./styles/island.css";
-import "./styles/obsidian.css";
+import "./styles/app.css";
 import "./styles/quick-window.css";
 import { logError } from "./lib/logger";
 

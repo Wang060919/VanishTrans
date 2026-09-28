@@ -1,6 +1,6 @@
-import { writeClipboardSafe, startScreenshotFromBall, hideWindow, deleteHistoryRecord, clearHistory, getHistory } from '../services/tauriBridge';
+import { startScreenshotFromBall, hideWindow, deleteHistoryRecord, clearHistory, getHistory } from '../services/tauriBridge';
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Copy, Database, History, Minimize2, Minus, Pin, ScanLine, Settings, Square, X } from "lucide-react";
+import { History, Minimize2, Minus, Pin, ScanLine, Settings, Square, X } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import IconButton from "../components/IconButton";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -15,21 +15,24 @@ import type { LangDirection } from "../hooks/useTranslation";
 import { logError } from "../lib/logger";
 import type { TranslationRecord } from "../types";
 
-interface MainLayoutProps {
+interface MainLayoutShellProps {
   embedded?: boolean;
   notices?: string[];
   onDismissNotice?: (message: string) => void;
   onCollapse?: () => void | Promise<void>;
+  onScreenshot?: () => void | Promise<void>;
   onWindowDragStart?: () => boolean | void;
   onWindowDragEnd?: () => void;
   onWindowMoved?: () => void | Promise<void>;
+}
+
+interface MainLayoutTranslationProps {
   inputText: string;
   onInputChange: (v: string) => void;
   outputText: string;
   translationError?: string | null;
   loading: boolean;
-  pinned: boolean;
-  onPin: () => void;
+  streaming: boolean;
   direction: LangDirection;
   onDirectionChange: (d: LangDirection) => void;
   glowActive: boolean;
@@ -37,6 +40,12 @@ interface MainLayoutProps {
   onTranslate: (forceRefresh?: boolean) => void;
   onCancelTranslation?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement>;
+  fileStatus: string | null;
+  onTranslateFile: (filename: string, content: string) => void;
+  translationKey: number;
+}
+
+interface MainLayoutConfigProps {
   baseUrl: string;
   onBaseUrlChange: (v: string) => void;
   model: string;
@@ -59,40 +68,41 @@ interface MainLayoutProps {
   onSetLogging: (enabled: boolean) => Promise<void>;
   freeTranslation: boolean;
   onSetFreeTranslation: (enabled: boolean) => Promise<void>;
-  streaming: boolean;
-  fileStatus: string | null;
-  onTranslateFile: (filename: string, content: string) => void;
-  translationKey: number;
+}
+
+interface MainLayoutProps {
+  shell?: MainLayoutShellProps;
+  pinned: boolean;
+  onPin: () => void;
+  translation: MainLayoutTranslationProps;
+  config: MainLayoutConfigProps;
 }
 
 type ActivePanel = "settings" | "history" | null;
 
 export default function MainLayout({
-  embedded = false,
-  notices = [],
-  onDismissNotice,
-  onCollapse,
-  onWindowDragStart,
-  onWindowDragEnd,
-  onWindowMoved,
-  inputText, onInputChange,
-  outputText, translationError = null, loading,
+  shell,
   pinned, onPin,
-  direction, onDirectionChange,
-  glowActive, onClearGlow,
-  onTranslate, onCancelTranslation, inputRef,
-  baseUrl, onBaseUrlChange,
-  model, onModelChange,
-  hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSaveConfig,
-  glossary, onGlossaryChange,
-  hotkeys, hotkeyLabels, onHotkeysChange,
-  profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
-  loggingEnabled, onSetLogging,
-  freeTranslation, onSetFreeTranslation,
-  streaming,
-  fileStatus, onTranslateFile,
-  translationKey,
+  translation,
+  config,
 }: MainLayoutProps) {
+  const {
+    embedded = false, notices = [], onDismissNotice,
+    onCollapse, onScreenshot, onWindowDragStart, onWindowDragEnd, onWindowMoved,
+  } = shell ?? {};
+  const {
+    inputText, onInputChange, outputText, translationError = null, loading, streaming,
+    direction, onDirectionChange, glowActive, onClearGlow,
+    onTranslate, onCancelTranslation, inputRef,
+    fileStatus, onTranslateFile, translationKey,
+  } = translation;
+  const {
+    baseUrl, onBaseUrlChange, model, onModelChange,
+    hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSaveConfig,
+    glossary, onGlossaryChange, hotkeys, hotkeyLabels, onHotkeysChange,
+    profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
+    loggingEnabled, onSetLogging, freeTranslation, onSetFreeTranslation,
+  } = config;
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [historyRecords, setHistoryRecords] = useState<TranslationRecord[]>([]);
   const [historySearch, setHistorySearch] = useState("");
@@ -127,28 +137,14 @@ export default function MainLayout({
     setActivePanel((current) => current === "settings" ? null : "settings");
   }, []);
 
-  const openTranslationMemory = useCallback(() => {
-    setSettingsTab("tm");
-    setActivePanel("settings");
-  }, []);
-
-  const copyText = useCallback(async (text: string) => {
-    if (!text) return;
-    try {
-      await writeClipboardSafe({ text });
-    } catch (error) {
-      logError("main", "copy translation text failed", error);
-      throw error;
-    }
-  }, []);
-
   const startScreenshot = useCallback(async () => {
     try {
-      await startScreenshotFromBall();
+      if (onScreenshot) await onScreenshot();
+      else await startScreenshotFromBall();
     } catch (error) {
       logError("main", "start screenshot translation failed", error);
     }
-  }, []);
+  }, [onScreenshot]);
 
   const handleHistorySearch = useCallback((query: string) => {
     setHistorySearch(query);
@@ -213,8 +209,10 @@ export default function MainLayout({
   return (
     <div className={`app-shell ${embedded ? "app-shell--island" : ""}`}>
       <header className="app-header" onMouseDown={handleHeaderMouseDown}>
-        <div className="app-brand"><VanishMark /></div>
+        <div className="app-brand"><VanishMark compact={embedded} /></div>
+        {embedded && <LanguageSwitcher value={direction} onChange={onDirectionChange} disabled={loading} />}
         <div className="app-header-actions">
+          {embedded && <IconButton icon={<ScanLine size={15} />} label="截图翻译" onClick={() => void startScreenshot()} />}
           <IconButton icon={<Pin size={15} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />
           <IconButton icon={<History size={15} />} label="打开历史记录" active={activePanel === "history"} onClick={openHistory} />
           <IconButton icon={<Settings size={15} />} label="打开设置" active={activePanel === "settings"} onClick={openSettings} title="API 设置" />
@@ -223,7 +221,7 @@ export default function MainLayout({
               {embedded ? <Minimize2 size={13} /> : <Minus size={14} />}
             </button>
             {!embedded && <button className="window-controls__btn" onClick={handleMaximize} title="最大化"><Square size={11} /></button>}
-            <button className="window-controls__btn window-controls__btn--close" onClick={handleClose} title="关闭"><X size={14} /></button>
+            {!embedded && <button className="window-controls__btn window-controls__btn--close" onClick={handleClose} title="关闭"><X size={14} /></button>}
           </div>
         </div>
       </header>
@@ -241,7 +239,7 @@ export default function MainLayout({
         </div>
       )}
 
-      <LanguageSwitcher value={direction} onChange={onDirectionChange} disabled={loading} />
+      {!embedded && <LanguageSwitcher value={direction} onChange={onDirectionChange} disabled={loading} />}
 
       <TranslatePanel
         inputText={inputText}
@@ -260,39 +258,21 @@ export default function MainLayout({
         translationKey={translationKey}
       />
 
-      <footer className="app-footer">
-        {embedded ? (
-          <nav className="workspace-footer-actions" aria-label="翻译操作">
-            <button type="button" disabled={!inputText} onClick={() => { void copyText(inputText).catch(() => {}); }}>
-              <Copy size={13} aria-hidden="true" /><span>复制原文</span>
-            </button>
-            <button type="button" disabled={!outputText || outputText.startsWith("❌")} onClick={() => { void copyText(outputText).catch(() => {}); }}>
-              <Copy size={13} aria-hidden="true" /><span>复制译文</span>
-            </button>
-            <button type="button" onClick={() => void startScreenshot()}>
-              <ScanLine size={13} aria-hidden="true" /><span>智能选读</span>
-            </button>
-            <button type="button" onClick={openTranslationMemory}>
-              <Database size={13} aria-hidden="true" /><span>翻译记忆</span>
-            </button>
-          </nav>
-        ) : (
+      {!embedded && <footer className="app-footer">
           <div className="footer-shortcuts">
             <span><kbd>Alt+Q</kbd><b>呼出</b></span>
             <span><kbd>Alt+W</kbd><b>截图</b></span>
           </div>
-        )}
         <span className={`window-status ${pinned ? "window-status--active" : ""}`}>
           <i />{loading ? "正在翻译" : pinned ? "已置顶" : "自动隐藏"}
         </span>
-      </footer>
+      </footer>}
 
       <OverlayDrawer open={activePanel === "history"} title="翻译历史" onClose={() => setActivePanel(null)}>
         <HistoryPanel
           records={historyRecords}
           search={historySearch}
           onSearch={handleHistorySearch}
-          onCopy={(text) => writeClipboardSafe({ text })}
           onDelete={handleHistoryDelete}
           onClear={handleHistoryClear}
         />
