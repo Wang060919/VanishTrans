@@ -9,6 +9,9 @@ src-tauri/target/
 .playwright-cli/
 output/playwright/
 
+# Local assistant session notes
+.workbuddy-ai/
+
 # IDE / OS
 .DS_Store
 Thumbs.db
