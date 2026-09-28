@@ -1,4 +1,5 @@
 //! SSE decoding only; HTTP lifetime and cancellation live in streaming.rs.
+use super::request::check_finish_reason;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -8,7 +9,8 @@ struct StreamDelta {
 
 #[derive(Deserialize)]
 struct StreamChoice {
-    delta: StreamDelta,
+    delta: Option<StreamDelta>,
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -59,7 +61,15 @@ pub(super) fn process_sse_line(
     let choice = choices
         .first()
         .ok_or_else(|| "API 流响应格式异常：choices 为空".to_string())?;
-    if let Some(content) = choice.delta.content.as_ref() {
+    check_finish_reason(choice.finish_reason.as_deref())?;
+    if choice.delta.is_none() && choice.finish_reason.is_none() {
+        return Err("API 流响应格式异常：缺少 delta".to_string());
+    }
+    if let Some(content) = choice
+        .delta
+        .as_ref()
+        .and_then(|delta| delta.content.as_ref())
+    {
         if !content.is_empty() {
             full_text.push_str(content);
             on_chunk(content.clone());

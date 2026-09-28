@@ -38,3 +38,17 @@ fn stale_request_cannot_run_commit_side_effect() {
     assert!(committed);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn newer_replace_request_invalidates_the_previous_one() {
+    let dir = std::env::temp_dir().join(format!("vt_request_replace_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let config = ApiConfig::load_or_default(dir.clone());
+
+    let first = config.next_replace_request_seq();
+    assert!(config.is_current_replace_request(first));
+    let second = config.next_replace_request_seq();
+    assert!(!config.is_current_replace_request(first));
+    assert!(config.is_current_replace_request(second));
+    let _ = std::fs::remove_dir_all(dir);
+}

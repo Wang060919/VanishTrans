@@ -47,12 +47,27 @@ pub(super) struct ChatRequest {
 
 #[derive(Deserialize)]
 pub(super) struct ChatChoice {
-    pub(super) message: ChatMessageResponse,
+    pub(super) message: Option<ChatMessageResponse>,
+    pub(super) finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub(super) struct ChatMessageResponse {
-    pub(super) content: String,
+    pub(super) content: Option<String>,
+}
+
+/// Map a choice's `finish_reason` onto the existing error flow.
+///
+/// "stop", missing and null keep the current behavior for providers that
+/// never send the field. Only "length" and "content_filter" are rejected;
+/// any other value falls through unchanged, so no value gains a new success
+/// path and the rejection scope does not grow.
+pub(super) fn check_finish_reason(finish_reason: Option<&str>) -> Result<(), String> {
+    match finish_reason {
+        Some("length") => Err("译文因输出长度限制被截断，请缩短输入后重试".into()),
+        Some("content_filter") => Err("译文被内容过滤拦截，无法完成翻译".into()),
+        _ => Ok(()),
+    }
 }
 
 #[derive(Deserialize)]

@@ -651,4 +651,60 @@ mod tests {
         drop(tm);
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn import_into_one_context_leaves_other_contexts_untouched() {
+        let (tm, dir) = temp_tm();
+        tm.store_in_context("hello", "你好A", "auto", "Chinese", "context-a")
+            .unwrap();
+
+        let csv = "source,target,source_lang,target_lang\nhello,你好B,auto,Chinese\n";
+        assert_eq!(
+            tm.import_csv_content_for_context(csv, "context-b").unwrap(),
+            1
+        );
+
+        // 同键记录：A 上下文不被 B 的导入修改，B 上下文可查到导入结果。
+        assert_eq!(
+            tm.lookup_in_context("hello", "auto", "Chinese", "context-a")
+                .as_deref(),
+            Some("你好A")
+        );
+        assert_eq!(
+            tm.lookup_in_context("hello", "auto", "Chinese", "context-b")
+                .as_deref(),
+            Some("你好B")
+        );
+        assert_eq!(tm.stats().total_entries, 2);
+
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn reimport_same_key_into_same_context_updates_target() {
+        let (tm, dir) = temp_tm();
+        let first = dir.join("first.csv");
+        std::fs::write(
+            &first,
+            "source,target,source_lang,target_lang\nhello,你好,auto,Chinese\n",
+        )
+        .unwrap();
+        assert_eq!(tm.import_csv_for_context(&first, "ctx").unwrap(), 1);
+
+        let second = dir.join("second.csv");
+        std::fs::write(&second, "hello,您好,auto,Chinese\n").unwrap();
+        assert_eq!(tm.import_csv_for_context(&second, "ctx").unwrap(), 1);
+
+        // 既定冲突规则：同上下文同键更新 target，不新增重复行。
+        assert_eq!(
+            tm.lookup_in_context("hello", "auto", "Chinese", "ctx")
+                .as_deref(),
+            Some("您好")
+        );
+        assert_eq!(tm.stats().total_entries, 1);
+
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

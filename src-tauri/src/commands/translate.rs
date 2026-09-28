@@ -444,4 +444,10 @@ mod tests {
         assert_eq!(error.code, code::CANCELLED);
         assert_eq!(error.message, "请求已取消");
     }
+
+    #[test]
+    fn api_errors_keep_the_stable_code() {
+        let error = map_translation_error("译文因输出长度限制被截断，请缩短输入后重试".to_string());
+        assert_eq!(error.code, code::API);
+    }
 }

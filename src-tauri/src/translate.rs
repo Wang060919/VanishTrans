@@ -60,3 +60,6 @@ mod google_tests;
 
 #[cfg(test)]
 mod language_tests;
+
+#[cfg(test)]
+mod completion_tests;

@@ -1,8 +1,8 @@
 use super::{
     http::{map_http_error, read_response_body_limited, TIMEOUT_SECS},
     request::{
-        build_chat_request, build_translation_prompt, validate_and_get_config, ChatResponse,
-        TranslationPrompt, BASE_SYSTEM_PROMPT,
+        build_chat_request, build_translation_prompt, check_finish_reason, validate_and_get_config,
+        ChatResponse, TranslationPrompt, BASE_SYSTEM_PROMPT,
     },
 };
 use crate::config::ApiConfig;
@@ -51,14 +51,26 @@ pub async fn do_translate_async(
     }
 
     let bytes = read_response_body_limited(resp).await?;
+    parse_chat_translation(&bytes)
+}
 
+/// Parse a chat completion body, rejecting truncated or filtered output
+/// before any partial content can reach the caller.
+pub(super) fn parse_chat_translation(bytes: &[u8]) -> Result<String, String> {
     let cr: ChatResponse =
-        serde_json::from_slice(&bytes).map_err(|e| format!("解析响应 JSON 失败: {}", e))?;
-
-    cr.choices
+        serde_json::from_slice(bytes).map_err(|e| format!("解析响应 JSON 失败: {}", e))?;
+    let choice = cr
+        .choices
         .first()
-        .map(|c| c.message.content.trim().to_string())
-        .ok_or("API 返回了空翻译结果".into())
+        .ok_or_else(|| String::from("API 返回了空翻译结果"))?;
+    check_finish_reason(choice.finish_reason.as_deref())?;
+    choice
+        .message
+        .as_ref()
+        .and_then(|message| message.content.as_deref())
+        .map(str::trim)
+        .map(str::to_string)
+        .ok_or_else(|| String::from("API 返回了空翻译结果"))
 }
 
 pub async fn test_connection_async(
