@@ -1,4 +1,5 @@
 use futures_util::StreamExt;
+use std::{future::Future, time::Duration};
 
 pub(super) const MAX_INPUT_CHARS: usize = 10_000;
 
@@ -27,6 +28,42 @@ pub(super) async fn read_response_body_limited(
 
     Ok(body)
 }
+
+/// Read an error response without letting a stalled body block cancellation.
+pub(super) async fn read_error_response(
+    response: reqwest::Response,
+    timeout: Duration,
+    cancelled: impl Future<Output = ()>,
+) -> String {
+    let status = response.status();
+    let body = tokio::select! {
+        biased;
+        _ = cancelled => return "CANCELLED".into(),
+        result = tokio::time::timeout(timeout, read_response_body_limited(response)) => {
+            match result {
+                Ok(Ok(body)) => body,
+                Ok(Err(error)) => return error,
+                Err(_) => return format!(
+                    "请求超时（{}秒），请检查网络或稍后重试", timeout.as_secs()
+                ),
+            }
+        }
+    };
+    match status.as_u16() {
+        401 => "API Key 无效或已过期，请在设置中更新".into(),
+        429 => "API 请求频率超限，请稍后重试".into(),
+        500..=599 => format!("API 服务内部错误 ({})，请稍后重试", status.as_u16()),
+        _ => format!(
+            "API 错误 ({}): {}",
+            status.as_u16(),
+            String::from_utf8_lossy(&body)
+        ),
+    }
+}
+
+#[cfg(test)]
+#[path = "http_tests.rs"]
+mod tests;
 
 /// Returns a closure that maps reqwest errors to user-friendly messages.
 pub(super) fn map_http_error(base_url: &str) -> impl Fn(reqwest::Error) -> String + '_ {

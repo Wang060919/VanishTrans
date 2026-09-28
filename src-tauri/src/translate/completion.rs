@@ -11,15 +11,14 @@ use std::time::Duration;
 
 pub async fn do_translate_async(
     state: &ApiConfig,
+    snapshot: &crate::config::TranslationConfig,
     text: &str,
     source_lang: &str,
     target_lang: &str,
 ) -> Result<String, String> {
-    // 1. Validate and get configuration
-    let config = validate_and_get_config(state, text)?;
-
-    // 2. Build translation prompt
-    let prompt = build_translation_prompt(state, text, source_lang, target_lang);
+    // Use the same immutable settings for credentials, model and glossary.
+    let config = validate_and_get_config(snapshot, text)?;
+    let prompt = build_translation_prompt(snapshot, text, source_lang, target_lang);
 
     // 3. Build request body
     let body = build_chat_request(config.model, prompt, false);
@@ -69,6 +68,7 @@ pub(super) fn parse_chat_translation(bytes: &[u8]) -> Result<String, String> {
         .as_ref()
         .and_then(|message| message.content.as_deref())
         .map(str::trim)
+        .filter(|text| !text.is_empty())
         .map(str::to_string)
         .ok_or_else(|| String::from("API 返回了空翻译结果"))
 }

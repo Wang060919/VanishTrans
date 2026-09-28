@@ -1,5 +1,5 @@
 use super::{
-    http::{map_http_error, read_response_body_limited, MAX_RESPONSE_BYTES, TIMEOUT_SECS},
+    http::{map_http_error, read_error_response, MAX_RESPONSE_BYTES, TIMEOUT_SECS},
     request::{build_chat_request, build_translation_prompt, validate_and_get_config},
     sse::{finalize_stream_result, process_sse_line},
     wait_for_request_superseded,
@@ -11,18 +11,16 @@ use std::time::Duration;
 
 pub async fn do_translate_stream_async(
     state: &ApiConfig,
+    snapshot: &crate::config::TranslationConfig,
     text: &str,
-    source_lang: &str,
     target_lang: &str,
     scope: &str,
     seq: u64,
     on_chunk: impl Fn(String),
 ) -> Result<String, String> {
-    // 1. Validate and get configuration
-    let config = validate_and_get_config(state, text)?;
-
-    // 2. Build translation prompt
-    let prompt = build_translation_prompt(state, text, source_lang, target_lang);
+    // Streaming commands auto-detect the source language using one settings snapshot.
+    let config = validate_and_get_config(snapshot, text)?;
+    let prompt = build_translation_prompt(snapshot, text, "auto", target_lang);
 
     // 3. Build request body (with stream: true)
     let body = build_chat_request(config.model, prompt, true);
@@ -51,15 +49,12 @@ pub async fn do_translate_stream_async(
     // 5. Handle response status
     let status = resp.status();
     if !status.is_success() {
-        let b =
-            String::from_utf8_lossy(&read_response_body_limited(resp).await.unwrap_or_default())
-                .to_string();
-        return Err(match status.as_u16() {
-            401 => "API Key 无效或已过期，请在设置中更新".into(),
-            429 => "API 请求频率超限，请稍后重试".into(),
-            500..=599 => format!("API 服务内部错误 ({})，请稍后重试", status.as_u16()),
-            _ => format!("API 错误 ({}): {}", status.as_u16(), b),
-        });
+        return Err(read_error_response(
+            resp,
+            Duration::from_secs(TIMEOUT_SECS),
+            wait_for_request_superseded(state, scope, seq),
+        )
+        .await);
     }
 
     // 6. Process streaming response

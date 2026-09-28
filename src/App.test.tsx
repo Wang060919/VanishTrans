@@ -133,8 +133,8 @@ describe("App", () => {
       "translate_stream",
       expect.objectContaining({ request: expect.objectContaining({ text: "hello world" }) }),
     );
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "done" });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "working" }));
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "done" }));
   });
 
   it("ignores shortcut-translate when no text is provided", async () => {
@@ -346,9 +346,9 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText(/请先在设置中配置 API Key/)).toBeInTheDocument();
     });
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "error" });
-    expect(mockedEmit).not.toHaveBeenCalledWith("translation-state", { state: "done" });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "working" }));
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "error" }));
+    expect(mockedEmit).not.toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "done" }));
   });
   it("exposes the branded compact workspace through accessible controls", async () => {
     render(<App />);

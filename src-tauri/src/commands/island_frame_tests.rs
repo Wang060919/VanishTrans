@@ -113,7 +113,10 @@ fn removes_native_edges_before_first_show_without_a_transition() {
     unsafe {
         assert_eq!(GetWindowLongW(hwnd, GWL_STYLE) as u32 & frame.0, 0);
         assert_eq!(GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 & edges.0, 0);
-        assert_ne!(GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_CLIPCHILDREN.0, 0);
+        assert_ne!(
+            GetWindowLongW(hwnd, GWL_STYLE) as u32 & WS_CLIPCHILDREN.0,
+            0
+        );
         assert!(!IsWindowVisible(hwnd).as_bool());
         let mut outer = RECT::default();
         let mut client = RECT::default();
@@ -126,7 +129,10 @@ fn removes_native_edges_before_first_show_without_a_transition() {
         // Windows can clamp the initial captioned window to its minimum width.
         assert_eq!(
             (client.right, client.bottom),
-            (original.right - original.left, original.bottom - original.top)
+            (
+                original.right - original.left,
+                original.bottom - original.top
+            )
         );
     }
 }

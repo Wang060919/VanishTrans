@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { emit, listen } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { quickFrontendReady, reserveQuickRequest, revealQuickResult } from "../services/tauriBridge";
 import { logError } from "../lib/logger";
 import { useTextTranslation } from "./useTextTranslation";
@@ -7,7 +7,7 @@ import { useTranslationSession, type LangDirection } from "./useTranslationSessi
 
 /** Quick-window event registration; request semantics are shared with the main window. */
 export function useQuickTranslation() {
-  const session = useTranslationSession(1_000_000, reserveQuickRequest);
+  const session = useTranslationSession(1_000_000, reserveQuickRequest, "quick");
   const direction = useRef<LangDirection>("auto");
   const { doTranslateStream: translateText } = useTextTranslation(session, direction);
   const { reset, handleStreamChunk, handleStreamDone, applyExternalResult } = session;
@@ -58,7 +58,6 @@ export function useQuickTranslation() {
       cancelled = true;
       cleanups.splice(0).forEach((cleanup) => cleanup());
       if (readyReported) void quickFrontendReady(false).catch(() => {});
-      void emit("translation-state", { state: "idle" }).catch(() => {});
     };
   }, [applyExternalResult, handleStreamChunk, handleStreamDone, reset, translateText]);
   return { ...session, translateText };

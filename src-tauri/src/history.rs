@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::lock::LockRecover;
+use crate::persistence::{load_json, LoadSafety, LoadedJson};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TranslationRecord {
@@ -18,6 +19,7 @@ pub struct TranslationRecord {
 pub struct HistoryStore {
     records: Mutex<Vec<TranslationRecord>>,
     path: std::path::PathBuf,
+    persistence: LoadSafety,
     next_id: std::sync::atomic::AtomicU64,
     /// Tracks whether records have been added since last flush.
     dirty: AtomicBool,
@@ -27,12 +29,18 @@ pub struct HistoryStore {
 
 impl HistoryStore {
     pub fn load_or_default_with_max(config_dir: std::path::PathBuf, max_records: usize) -> Self {
-        let max_records = max_records.clamp(50, 1000);
         let path = config_dir.join("history.json");
-        let mut records: Vec<TranslationRecord> = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|d| serde_json::from_str(&d).ok())
-            .unwrap_or_default();
+        let loaded = load_json(&path, "历史记录");
+        Self::from_loaded(path, max_records, loaded)
+    }
+
+    fn from_loaded(
+        path: std::path::PathBuf,
+        max_records: usize,
+        loaded: LoadedJson<Vec<TranslationRecord>>,
+    ) -> Self {
+        let max_records = max_records.clamp(50, 1000);
+        let mut records = loaded.value.unwrap_or_default();
         if records.len() > max_records {
             let keep_from = records.len() - max_records;
             records.drain(..keep_from);
@@ -41,10 +49,15 @@ impl HistoryStore {
         Self {
             records: Mutex::new(records),
             path,
+            persistence: loaded.safety,
             next_id: std::sync::atomic::AtomicU64::new(next_id),
             dirty: AtomicBool::new(false),
             max_records: AtomicUsize::new(max_records),
         }
+    }
+
+    pub(crate) fn startup_warning(&self) -> Option<&str> {
+        self.persistence.warning.as_deref()
     }
 
     pub fn set_max_records(&self, max: usize) {
@@ -139,6 +152,7 @@ impl HistoryStore {
     }
 
     fn save_locked(&self, records: &[TranslationRecord]) -> Result<(), String> {
+        self.persistence.ensure_writable()?;
         if let Some(p) = self.path.parent() {
             std::fs::create_dir_all(p).map_err(|error| format!("创建历史目录失败: {error}"))?;
         }
@@ -153,6 +167,10 @@ impl HistoryStore {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "history_recovery_tests.rs"]
+mod recovery_tests;
 
 #[cfg(test)]
 mod tests {
@@ -299,8 +317,9 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        std::fs::write(&base, b"not a directory").unwrap();
         let store = HistoryStore::load_or_default_with_max(base.clone(), 200);
+        // A save-time failure remains retryable; a load-time failure is write-protected.
+        std::fs::write(&base, b"not a directory").unwrap();
         store.add("retry", "重试", "en2zh");
 
         assert!(store.flush().is_err());

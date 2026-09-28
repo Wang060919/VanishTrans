@@ -12,13 +12,19 @@ const initialState = {
   fileStatus: null as string | null,
 };
 type SessionState = typeof initialState;
-function broadcast(state: "working" | "done" | "error" | "idle") {
-  void emit("translation-state", { state }).catch(() => {});
-}
 
 /** Sole owner of result/error/loading state. Async callers commit with their request ID. */
-export function useTranslationSession(initialSequence = 0, reserveQuickRequest?: () => Promise<number>) {
+export function useTranslationSession(
+  initialSequence = 0, reserveQuickRequest?: () => Promise<number>, scope = "main",
+) {
   const lifecycle = useRef(new TranslationRequestLifecycle(initialSequence)).current;
+  const [sourceId] = useState(() => `${scope}:${crypto.randomUUID()}`);
+  const revision = useRef(0);
+  const broadcast = useCallback((state: "working" | "done" | "error" | "idle") => {
+    void emit("translation-state", {
+      state, sourceId, requestId: lifecycle.requestId, revision: ++revision.current,
+    }).catch(() => {});
+  }, [lifecycle, sourceId]);
   const current = useRef(initialState);
   const [state, setState] = useState(initialState);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -61,7 +67,7 @@ export function useTranslationSession(initialSequence = 0, reserveQuickRequest?:
       loading: true, streaming: kind === "stream", glowActive: false });
     broadcast("working");
     return requestId;
-  }, [claimQuick, clearStatusTimer, lifecycle, patch, reserveQuickRequest]);
+  }, [broadcast, claimQuick, clearStatusTimer, lifecycle, patch, reserveQuickRequest]);
   const complete = useCallback((requestId: number, outputText: string, fileStatus: string | null = null) => {
     // IPC return and done event can arrive in either order; only the first commits.
     if (!lifecycle.complete(requestId)) return;
@@ -73,7 +79,7 @@ export function useTranslationSession(initialSequence = 0, reserveQuickRequest?:
         if (lifecycle.isCurrent(requestId)) patch({ fileStatus: null });
       }, 3000);
     }
-  }, [lifecycle, patch]);
+  }, [broadcast, lifecycle, patch]);
   const fail = useCallback((requestId: number, reason: unknown) => {
     if (!lifecycle.complete(requestId)) return;
     const cancelled = isCancelledError(reason);
@@ -83,7 +89,7 @@ export function useTranslationSession(initialSequence = 0, reserveQuickRequest?:
         ? (current.current.outputText ? "翻译已取消，已保留部分译文" : "翻译已取消")
         : errorMessage(reason) || "翻译失败，请重试" });
     broadcast(cancelled ? "idle" : "error");
-  }, [lifecycle, patch]);
+  }, [broadcast, lifecycle, patch]);
   const cancel = useCallback(() => {
     if (reserveQuickRequest) void claimQuick().catch(() => {});
     lifecycle.invalidate();
@@ -91,14 +97,14 @@ export function useTranslationSession(initialSequence = 0, reserveQuickRequest?:
     patch({ loading: false, streaming: false, glowActive: false, fileStatus: null,
       translationError: current.current.outputText ? "翻译已取消，已保留部分译文" : "翻译已取消" });
     broadcast("idle");
-  }, [claimQuick, clearStatusTimer, lifecycle, patch, reserveQuickRequest]);
+  }, [broadcast, claimQuick, clearStatusTimer, lifecycle, patch, reserveQuickRequest]);
   const reset = useCallback((message: string | null = null) => {
     if (reserveQuickRequest) void claimQuick().catch(() => {});
     lifecycle.invalidate();
     clearStatusTimer();
     patch({ ...initialState, translationError: message });
     broadcast(message ? "error" : "idle");
-  }, [claimQuick, clearStatusTimer, lifecycle, patch, reserveQuickRequest]);
+  }, [broadcast, claimQuick, clearStatusTimer, lifecycle, patch, reserveQuickRequest]);
   const setInputText = useCallback((inputText: string) => patch({ inputText }), [patch]);
   const setFileStatus = useCallback((requestId: number, fileStatus: string) => {
     if (lifecycle.acceptsResult(requestId)) patch({ fileStatus });
@@ -125,7 +131,7 @@ export function useTranslationSession(initialSequence = 0, reserveQuickRequest?:
       translationKey: generateTranslationKey() });
     broadcast("done");
     return true;
-  }, [clearStatusTimer, lifecycle, patch]);
+  }, [broadcast, clearStatusTimer, lifecycle, patch]);
 
   const handleStreamDone = useCallback((payload: { requestId: number; fullText: string }) => {
     complete(payload.requestId, payload.fullText);
@@ -134,7 +140,8 @@ export function useTranslationSession(initialSequence = 0, reserveQuickRequest?:
   useEffect(() => () => {
     lifecycle.invalidate();
     clearStatusTimer();
-  }, [clearStatusTimer, lifecycle]);
+    broadcast("idle");
+  }, [broadcast, clearStatusTimer, lifecycle]);
   return { ...state, lifecycle, begin, waitForQuickClaim, complete, fail, cancel, reset,
     applyExternalResult,
     setInputText, setFileStatus, clearGlow, handleStreamChunk, handleStreamDone };

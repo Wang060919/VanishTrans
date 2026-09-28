@@ -133,7 +133,11 @@ pub(super) fn retain_surface(
 }
 
 pub(super) fn retain_surface_at(
-    hwnd: HWND, x: i32, y: i32, width: u32, height: u32,
+    hwnd: HWND,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
 ) -> Result<bool, CommandError> {
     ensure_frameless(hwnd)?;
     let mut outer = RECT::default();
@@ -151,9 +155,15 @@ pub(super) fn retain_surface_at(
     {
         return Err(CommandError::validation("灵动岛区域超出窗口边界"));
     }
-    super::ball_region::clip_capsule(hwnd, RECT {
-        left: left as i32, top: top as i32, right: right as i32, bottom: bottom as i32,
-    })?;
+    super::ball_region::clip_capsule(
+        hwnd,
+        RECT {
+            left: left as i32,
+            top: top as i32,
+            right: right as i32,
+            bottom: bottom as i32,
+        },
+    )?;
     Ok(true)
 }
 

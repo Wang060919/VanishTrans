@@ -3,6 +3,7 @@ export class TranslationRequestLifecycle {
   private sequence: number;
   private active = false;
   constructor(initialSequence = 0) { this.sequence = initialSequence; }
+  get requestId(): number { return this.sequence; }
   begin(): number { this.active = true; return ++this.sequence; }
   isCurrent(requestId: number): boolean { return requestId === this.sequence; }
   acceptsResult(requestId: number): boolean { return this.isCurrent(requestId) && this.active; }

@@ -1,6 +1,5 @@
 use super::http::MAX_INPUT_CHARS;
-use crate::config::ApiConfig;
-use crate::lock::LockRecover;
+use crate::config::TranslationConfig;
 use serde::{Deserialize, Serialize};
 
 pub const BASE_SYSTEM_PROMPT: &str = r#"You are a professional translation engine. Your ONLY task is to translate the user's input text.
@@ -92,10 +91,10 @@ pub(super) struct TranslationPrompt {
     pub(super) user_content: String,
 }
 
-/// Validates input and extracts configuration from ApiConfig.
+/// Validates input and extracts the immutable request configuration.
 /// Returns ValidatedConfig with the chat completions URL.
 pub(super) fn validate_and_get_config(
-    state: &ApiConfig,
+    state: &TranslationConfig,
     text: &str,
 ) -> Result<ValidatedConfig, String> {
     // 1. Validate input length
@@ -107,14 +106,12 @@ pub(super) fn validate_and_get_config(
         ));
     }
 
-    // 2. Get configuration
-    let (base_url, api_key, model) = {
-        (
-            state.base_url.lock_recover().clone(),
-            state.api_key.lock_recover().clone(),
-            state.model.lock_recover().clone(),
-        )
-    };
+    // 2. Use the same snapshot as provider routing and the TM fingerprint.
+    let (base_url, api_key, model) = (
+        state.base_url.clone(),
+        state.api_key.clone(),
+        state.model.clone(),
+    );
 
     // 3. Validate API key
     if api_key.is_empty() {
@@ -144,7 +141,7 @@ pub(super) fn validate_and_get_config(
 /// Builds the translation prompt with system and user messages.
 /// Includes glossary if available.
 pub(super) fn build_translation_prompt(
-    state: &ApiConfig,
+    state: &TranslationConfig,
     text: &str,
     source_lang: &str,
     target_lang: &str,
@@ -155,8 +152,7 @@ pub(super) fn build_translation_prompt(
         format!(" (source language: {})", source_lang)
     };
 
-    let glossary = state.glossary.lock_recover().clone();
-    let system_prompt = build_system_prompt(&glossary);
+    let system_prompt = build_system_prompt(&state.glossary);
 
     let user_content = format!(
         "Translate the following text{} to {}:\n\n{}",

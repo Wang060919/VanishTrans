@@ -1,8 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useThemeSync } from "../../hooks/useTheme";
-import { normalizeTranslationActivity } from "./ballActivity";
+import { TranslationActivityAggregator } from "./ballActivity";
 import { type BallState } from "./useBallState";
 import { type BallTransitions } from "./useBallTransitions";
 import { type BallActions } from "./useBallActions";
@@ -20,6 +20,7 @@ export function useBallEvents({
   expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef, phaseRef, phase, setPhase,
   transitionMode, scheduleStatusCollapse, clearPointerOrigin,
 }: BallEventsState) {
+  const activityAggregator = useRef(new TranslationActivityAggregator());
   const clearNoticeTimer = useCallback(() => {
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
   }, [noticeTimerRef]);
@@ -58,7 +59,7 @@ export function useBallEvents({
 
   useEffect(() => {
     const translationListener = listen<unknown>("translation-state", (event) => {
-      const activity = normalizeTranslationActivity(event.payload);
+      const activity = activityAggregator.current.accept(event.payload);
       if (!activity) return;
       expectingTranslationRef.current = false;
       if (expectedActivityTimerRef.current) {

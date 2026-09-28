@@ -8,6 +8,9 @@ mod keyboard;
 mod lock;
 mod logging;
 mod ocr;
+mod persistence;
+#[cfg(test)]
+mod persistence_test_support;
 mod selection;
 #[cfg(test)]
 mod selection_tests;
@@ -187,18 +190,18 @@ pub fn run() {
             let history_limit = api_config
                 .max_records
                 .load(std::sync::atomic::Ordering::Relaxed);
+            let mut startup_warnings = Vec::new();
+            startup_warnings.extend(api_config.startup_warning().map(str::to_owned));
             app.manage(api_config);
-            app.manage(HistoryStore::load_or_default_with_max(
-                config_dir.clone(),
-                history_limit,
-            ));
+            let history = HistoryStore::load_or_default_with_max(config_dir.clone(), history_limit);
+            startup_warnings.extend(history.startup_warning().map(str::to_owned));
+            app.manage(history);
 
             // Quick renders its own opaque surface with transparent corners.
             // Native Mica/Acrylic would fill those corners with a gray backdrop;
             // quick_frame owns the rounded outline without a second DWM surface.
 
             // Keep translation usable if persistent TM storage is unavailable.
-            let mut startup_warnings = Vec::new();
             let translation_memory = match tm::TranslationMemory::open(&config_dir) {
                 Ok(memory) => memory,
                 Err(error) => {

@@ -6,6 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::lock::LockRecover;
 
+#[path = "tm_csv.rs"]
+mod tm_csv;
+#[cfg(test)]
+#[path = "tm_csv_tests.rs"]
+mod tm_csv_tests;
+use tm_csv::escape_spreadsheet_formula;
+
 const MAX_IMPORT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_IMPORT_ROWS: usize = 100_000;
 
@@ -177,6 +184,10 @@ impl TranslationMemory {
         if let Some(row) = rows.next().ok()? {
             let id: i64 = row.get(0).ok()?;
             let target: String = row.get(1).ok()?;
+            // Older versions could cache empty completions; retry instead of replaying them.
+            if target.trim().is_empty() {
+                return None;
+            }
             let _ = conn.execute(
                 "UPDATE translation_memory SET hit_count = hit_count + 1 WHERE id = ?1",
                 params![id],
@@ -306,7 +317,7 @@ impl TranslationMemory {
         let count = entries.len();
         let mut content = String::from("\u{FEFF}");
         let mut wtr = csv::Writer::from_writer(Vec::new());
-        wtr.write_record(["source", "target", "source_lang", "target_lang"])
+        wtr.write_record(tm_csv::HEADER)
             .map_err(|e| format!("写入 CSV 表头失败: {}", e))?;
         for entry in &entries {
             wtr.serialize((
@@ -314,6 +325,7 @@ impl TranslationMemory {
                 escape_spreadsheet_formula(&entry.target),
                 escape_spreadsheet_formula(&entry.source_lang),
                 escape_spreadsheet_formula(&entry.target_lang),
+                tm_csv::ENCODING,
             ))
             .map_err(|e| format!("序列化 CSV 失败: {}", e))?;
         }
@@ -411,20 +423,9 @@ impl TranslationMemory {
                 return Err(format!("CSV 行数过多，最多支持 {MAX_IMPORT_ROWS} 行"));
             }
             let record = result.map_err(|e| format!("解析 CSV 行失败: {}", e))?;
-            if record.len() >= 2 {
-                let source = unescape_spreadsheet_formula(record[0].trim_start_matches('\u{FEFF}'));
-                let target = unescape_spreadsheet_formula(&record[1]);
-                if index == 0
-                    && source.eq_ignore_ascii_case("source")
-                    && target.eq_ignore_ascii_case("target")
-                {
-                    continue;
-                }
-                if source.is_empty() {
-                    continue;
-                }
-                let source_lang = unescape_spreadsheet_formula(record.get(2).unwrap_or(""));
-                let target_lang = unescape_spreadsheet_formula(record.get(3).unwrap_or(""));
+            if let Some([source, target, source_lang, target_lang]) =
+                tm_csv::decode_record(&record, index)
+            {
                 Self::store_inner(
                     &transaction,
                     &source,
@@ -449,33 +450,6 @@ fn escape_like_pattern(query: &str) -> String {
         .replace('!', "!!")
         .replace('%', "!%")
         .replace('_', "!_")
-}
-
-fn escape_spreadsheet_formula(value: &str) -> String {
-    if value
-        .chars()
-        .next()
-        .is_some_and(|character| matches!(character, '=' | '+' | '-' | '@' | '\t' | '\r'))
-    {
-        format!("'{value}")
-    } else {
-        value.to_string()
-    }
-}
-
-fn unescape_spreadsheet_formula(value: &str) -> String {
-    let Some(rest) = value.strip_prefix('\'') else {
-        return value.to_string();
-    };
-    if rest
-        .chars()
-        .next()
-        .is_some_and(|character| matches!(character, '=' | '+' | '-' | '@' | '\t' | '\r'))
-    {
-        rest.to_string()
-    } else {
-        value.to_string()
-    }
 }
 
 #[cfg(test)]
@@ -552,6 +526,32 @@ mod tests {
 
         drop(tm);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn empty_cached_translations_are_misses_and_can_be_replaced() {
+        let (tm, dir) = temp_tm();
+        for target in ["", " ", "\r\n\t\u{3000}"] {
+            tm.store_in_context("hello", target, "auto", "Chinese", "context")
+                .unwrap();
+            assert_eq!(
+                tm.lookup_in_context("hello", "auto", "Chinese", "context"),
+                None
+            );
+            let entries = tm.search("hello");
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].hit_count, 0);
+        }
+        tm.store_in_context("hello", "你好", "auto", "Chinese", "context")
+            .unwrap();
+        assert_eq!(
+            tm.lookup_in_context("hello", "auto", "Chinese", "context")
+                .as_deref(),
+            Some("你好")
+        );
+        assert_eq!(tm.search("hello").len(), 1);
+        drop(tm);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

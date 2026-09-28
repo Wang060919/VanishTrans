@@ -90,8 +90,8 @@ describe("QuickTranslateWindow", () => {
 
     await waitFor(() => expect(screen.getByText("hello world")).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText("你好世界")).toBeInTheDocument());
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "done" });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "working" }));
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "done" }));
     expect(mockedInvoke).toHaveBeenCalledWith("translate_stream", expect.objectContaining({
       request: expect.objectContaining({
         text: "hello world",
@@ -112,7 +112,7 @@ describe("QuickTranslateWindow", () => {
 
     expect(await screen.findByText("未读取到选中文字")).toBeInTheDocument();
     expect(mockedInvoke).not.toHaveBeenCalledWith("translate_stream", expect.anything());
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "error" });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "error" }));
   });
 
   it("reports a failed translation as an error rather than completion", async () => {
@@ -127,9 +127,9 @@ describe("QuickTranslateWindow", () => {
     await triggerAndFlush(() => dispatch("quick-translate", "hello"));
 
     expect(await screen.findByText("网络连接失败")).toBeInTheDocument();
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
-    expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "error" });
-    expect(mockedEmit).not.toHaveBeenCalledWith("translation-state", { state: "done" });
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "working" }));
+    expect(mockedEmit).toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "error" }));
+    expect(mockedEmit).not.toHaveBeenCalledWith("translation-state", expect.objectContaining({ state: "done" }));
   });
 
   it("A fallback delivers the existing translation once without an API call", async () => {

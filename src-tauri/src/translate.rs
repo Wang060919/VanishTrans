@@ -8,7 +8,7 @@ mod request;
 mod sse;
 mod streaming;
 
-pub use crate::config::{ApiConfig, ServiceProfile, CONFIG_FILE_LOCK};
+pub use crate::config::{ApiConfig, ServiceProfile};
 use completion::do_translate_async;
 pub use completion::test_connection_async;
 use google::do_free_translate_async;
@@ -30,16 +30,28 @@ pub async fn do_translate_unified(
     source_lang: &str,
     target_lang: &str,
 ) -> Result<String, String> {
-    if state.free_translation() {
+    let snapshot = state.translation_snapshot();
+    translate_with_snapshot(state, &snapshot, text, source_lang, target_lang).await
+}
+
+async fn translate_with_snapshot(
+    state: &ApiConfig,
+    snapshot: &crate::config::TranslationConfig,
+    text: &str,
+    source_lang: &str,
+    target_lang: &str,
+) -> Result<String, String> {
+    if snapshot.free_translation {
         do_free_translate_async(state, text, target_lang).await
     } else {
-        do_translate_async(state, text, source_lang, target_lang).await
+        do_translate_async(state, snapshot, text, source_lang, target_lang).await
     }
 }
 
-/// Unified translation that can be cancelled by a request in the same scope.
+/// Unified translation with one configuration snapshot and scoped cancellation.
 pub async fn do_translate_unified_scoped(
     state: &ApiConfig,
+    snapshot: &crate::config::TranslationConfig,
     text: &str,
     source_lang: &str,
     target_lang: &str,
@@ -47,7 +59,7 @@ pub async fn do_translate_unified_scoped(
     seq: u64,
 ) -> Result<String, String> {
     tokio::select! {
-        result = do_translate_unified(state, text, source_lang, target_lang) => result,
+        result = translate_with_snapshot(state, snapshot, text, source_lang, target_lang) => result,
         _ = wait_for_request_superseded(state, scope, seq) => Err("CANCELLED".into()),
     }
 }
@@ -63,3 +75,6 @@ mod language_tests;
 
 #[cfg(test)]
 mod completion_tests;
+
+#[cfg(test)]
+mod snapshot_tests;

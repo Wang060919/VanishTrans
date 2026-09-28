@@ -73,8 +73,10 @@ pub async fn translate(
     target_lang: String,
 ) -> Result<String, CommandError> {
     let seq = state.next_request_seq(window.label());
+    let snapshot = state.translation_snapshot();
     let result = do_translate_unified_scoped(
         &state,
+        &snapshot,
         &text,
         &source_lang,
         &target_lang,
@@ -103,7 +105,8 @@ pub async fn translate_with_direction(
     let target = crate::translate::resolve_target_lang(&text, &direction);
     let scope = window.label();
     let seq = state.next_request_seq(scope);
-    let context_hash = state.translation_context_hash();
+    let snapshot = state.translation_snapshot();
+    let context_hash = snapshot.context_hash();
 
     // Check Translation Memory first
     if force_refresh != Some(true) {
@@ -118,7 +121,7 @@ pub async fn translate_with_direction(
         }
     }
 
-    let result = do_translate_unified_scoped(&state, &text, "auto", target, scope, seq)
+    let result = do_translate_unified_scoped(&state, &snapshot, &text, "auto", target, scope, seq)
         .await
         .map_err(map_translation_error)?;
     let committed = state.with_current_request(scope, seq, || {
@@ -157,7 +160,8 @@ pub async fn translate_stream(
     let target = crate::translate::resolve_target_lang(&text, &direction);
     let scope = window.label();
     let seq = state.next_request_seq(scope);
-    let context_hash = state.translation_context_hash();
+    let snapshot = state.translation_snapshot();
+    let context_hash = snapshot.context_hash();
 
     // Check Translation Memory first
     if force_refresh != Some(true) {
@@ -188,10 +192,11 @@ pub async fn translate_stream(
 
     // Free Google provider has no streaming endpoint — resolve the full result
     // and emit it as a single chunk so the frontend streaming flow stays intact.
-    if state.free_translation() {
-        let result = do_translate_unified_scoped(&state, &text, "auto", target, scope, seq)
-            .await
-            .map_err(map_translation_error)?;
+    if snapshot.free_translation {
+        let result =
+            do_translate_unified_scoped(&state, &snapshot, &text, "auto", target, scope, seq)
+                .await
+                .map_err(map_translation_error)?;
         let committed = state.with_current_request(scope, seq, || {
             persist_translation(
                 &tm,
@@ -230,8 +235,8 @@ pub async fn translate_stream(
     let state_for_closure = state.inner();
     let result = crate::translate::do_translate_stream_async(
         state_for_closure,
+        &snapshot,
         &text,
-        "auto",
         target,
         scope,
         seq,
@@ -361,6 +366,7 @@ pub async fn translate_batch(
 
     let scope = window.label();
     let seq = state.next_request_seq(scope);
+    let snapshot = state.translation_snapshot();
 
     let marker = choose_segment_marker(&segments);
     let combined = join_segments_with_marker(&segments, &marker);
@@ -368,12 +374,13 @@ pub async fn translate_batch(
 
     // The free Google provider does not understand the segment-break marker, so
     // translate each segment individually instead of sending one batched prompt.
-    if state.free_translation() {
+    if snapshot.free_translation {
         let mut translated = Vec::with_capacity(segments.len());
         for segment in &segments {
-            let text = do_translate_unified_scoped(&state, segment, "auto", target, scope, seq)
-                .await
-                .map_err(map_translation_error)?;
+            let text =
+                do_translate_unified_scoped(&state, &snapshot, segment, "auto", target, scope, seq)
+                    .await
+                    .map_err(map_translation_error)?;
             if !state.is_current_request(scope, seq) {
                 return Err(CommandError::cancelled());
             }
@@ -382,9 +389,10 @@ pub async fn translate_batch(
         return Ok(translated);
     }
 
-    let result = do_translate_unified_scoped(&state, &combined, "auto", target, scope, seq)
-        .await
-        .map_err(map_translation_error)?;
+    let result =
+        do_translate_unified_scoped(&state, &snapshot, &combined, "auto", target, scope, seq)
+            .await
+            .map_err(map_translation_error)?;
 
     if !state.is_current_request(scope, seq) {
         return Err(CommandError::cancelled());

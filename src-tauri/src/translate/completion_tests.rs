@@ -44,3 +44,24 @@ fn non_stream_unknown_finish_reason_keeps_existing_behavior() {
     let body = r#"{"choices":[{"message":{"content":"你好"},"finish_reason":"end_turn"}]}"#;
     assert_eq!(parse_chat_translation(body.as_bytes()).unwrap(), "你好");
 }
+
+#[test]
+fn non_stream_rejects_empty_and_whitespace_content() {
+    for content in ["", " ", "\r\n\t", "\u{3000}"] {
+        let body = serde_json::json!({
+            "choices": [{"message": {"content": content}, "finish_reason": "stop"}]
+        });
+        let error = parse_chat_translation(&serde_json::to_vec(&body).unwrap()).unwrap_err();
+        assert_eq!(error, "API 返回了空翻译结果");
+    }
+}
+
+#[test]
+fn non_stream_rejects_null_or_missing_content() {
+    for message in [serde_json::json!({}), serde_json::json!({"content": null})] {
+        let body = serde_json::json!({
+            "choices": [{"message": message, "finish_reason": "stop"}]
+        });
+        assert!(parse_chat_translation(&serde_json::to_vec(&body).unwrap()).is_err());
+    }
+}

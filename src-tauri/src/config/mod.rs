@@ -1,5 +1,6 @@
 //! Configuration ownership: durable settings, credential storage and request scopes.
 mod context;
+pub use context::TranslationConfig;
 mod credentials;
 mod load;
 mod profiles;
@@ -19,6 +20,7 @@ pub struct ApiConfig {
     pub model: Mutex<String>,
     pub client: Mutex<reqwest::Client>,
     config_path: std::path::PathBuf,
+    persistence: crate::persistence::LoadSafety,
     write_lock: Mutex<()>,
     /// Monotonically increasing translation sequences, isolated by webview label.
     pub request_seq: Mutex<HashMap<String, u64>>,
@@ -82,3 +84,6 @@ mod request_tests;
 
 #[cfg(test)]
 mod storage_tests;
+
+#[cfg(test)]
+mod recovery_tests;
