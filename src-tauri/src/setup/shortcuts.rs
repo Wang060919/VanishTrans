@@ -656,9 +656,19 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
         if let Some(w) = app.get_webview_window("ball") {
             let _ = w.emit("screenshot-start", ());
         }
-        let Some(session_id) = crate::commands::prepare_screenshot(&app) else {
-            log::info!("[screenshot] A capture session is already active");
-            return;
+        let session_id = match crate::commands::prepare_screenshot(&app) {
+            Ok(Some(session_id)) => session_id,
+            Ok(None) => {
+                log::info!("[screenshot] A capture session is already active");
+                return;
+            }
+            Err(error) => {
+                log::error!("[screenshot] Failed to hide capture windows: {error}");
+                if let Some(w) = app.get_webview_window("ball") {
+                    let _ = w.emit("screenshot-error", "无法隐藏灵动岛，截图已取消");
+                }
+                return;
+            }
         };
         let (mut payload, raw_image) = match crate::ocr::capture_screenshot() {
             Some(d) => d,

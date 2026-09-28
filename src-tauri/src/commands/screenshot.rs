@@ -20,39 +20,35 @@ pub fn get_screenshot_payload(
     }
 }
 
-pub(crate) fn prepare_screenshot(app: &tauri::AppHandle) -> Option<u64> {
+pub(crate) fn prepare_screenshot(app: &tauri::AppHandle) -> Result<Option<u64>, CommandError> {
+    use super::screenshot_visibility::{hide_for_capture, wait_for_window_compositor};
+
     let ball = app.get_webview_window("ball");
     let windows = ScreenshotWindowState {
         ball_was_visible: ball
             .as_ref()
-            .and_then(|window| window.is_visible().ok())
+            .map(|window| window.is_visible())
+            .transpose()
+            .map_err(|e| CommandError::internal(e.to_string()))?
             .unwrap_or(false),
     };
-
-    let session_id = app.state::<ScreenshotBuffer>().begin(windows)?;
-    if let Some(window) = app.get_webview_window("screenshot") {
-        let _ = window.hide();
-    }
-    if windows.ball_was_visible {
-        if let Some(window) = ball {
-            let _ = window.hide();
+    let Some(session_id) = app.state::<ScreenshotBuffer>().begin(windows) else {
+        return Ok(None);
+    };
+    let prepared = (|| {
+        if let Some(window) = app.get_webview_window("screenshot") {
+            hide_for_capture(&window)?;
         }
+        if let Some(window) = ball {
+            hide_for_capture(&window)?;
+        }
+        wait_for_window_compositor()
+    })();
+    if let Err(error) = prepared {
+        dismiss_screenshot(app, session_id);
+        return Err(error);
     }
-    wait_for_window_compositor();
-    Some(session_id)
-}
-
-#[cfg(target_os = "windows")]
-fn wait_for_window_compositor() {
-    use windows::Win32::Graphics::Dwm::DwmFlush;
-    unsafe {
-        let _ = DwmFlush();
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn wait_for_window_compositor() {
-    std::thread::sleep(std::time::Duration::from_millis(32));
+    Ok(Some(session_id))
 }
 
 fn restore_windows_after_cancel(app: &tauri::AppHandle, windows: ScreenshotWindowState) {

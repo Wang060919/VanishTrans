@@ -15,6 +15,7 @@ pub(crate) mod island_frame;
 pub(crate) mod quick_frame;
 mod quick_result;
 mod screenshot;
+mod screenshot_visibility;
 mod tm;
 mod translate;
 mod window;
