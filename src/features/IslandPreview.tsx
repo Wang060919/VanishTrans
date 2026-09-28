@@ -1,6 +1,8 @@
 import { useRef, useState, type CSSProperties } from "react";
 import type { LangDirection } from "../hooks/useTranslation";
 import MainLayout from "../layouts/MainLayout";
+import { useIslandPreviewMotion } from "./useIslandPreviewMotion";
+import QuickTranslationView from "./QuickTranslationView";
 import TranslationIslandView from "./TranslationIslandView";
 import {
   getIslandGeometry,
@@ -23,9 +25,10 @@ function readOption<T extends string>(value: string | null, options: readonly T[
 
 export default function IslandPreview() {
   const params = new URLSearchParams(window.location.search);
-  const [mode, setMode] = useState<IslandMode>(() => (
-    readOption(params.get("mode"), MODES, "actions")
-  ));
+  const interactive = params.get("animate") === "1";
+  const { mode, setMode, phase: visualPhase } = useIslandPreviewMotion(
+    readOption(params.get("mode"), MODES, "actions"), interactive,
+  );
   const dockSide = readOption(params.get("dock"), DOCK_SIDES, "center");
   const phase = readOption(params.get("phase"), PHASES, "working");
   const busyAction = readOption<BallAction | "">(
@@ -37,22 +40,42 @@ export default function IslandPreview() {
   const notice = noticeParam === null
     ? ""
     : noticeParam || "暂时无法连接翻译服务";
-  const interactive = params.get("animate") === "1";
+  const [quickOpen, setQuickOpen] = useState(params.get("mode") === "quick");
+  const [previewCopied, setPreviewCopied] = useState(false);
   const [inputText, setInputText] = useState("");
   const [outputText, setOutputText] = useState("");
   const [direction, setDirection] = useState<LangDirection>("auto");
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const dimensions = getIslandGeometry(mode);
+  const dimensions = getIslandGeometry(interactive ? "full" : mode);
   const presentation: IslandPresentation = {
     mode,
     motion: interactive ? "animated" : "instant",
-    phase: "stable",
+    phase: visualPhase,
     generation: 0,
   };
   const frameStyle = {
     "--island-preview-width": `${dimensions.width}px`,
     "--island-preview-height": `${dimensions.height}px`,
   } as CSSProperties;
+
+  if (quickOpen) return (
+    <main className="island-preview">
+      <div style={{ width: 392 }}>
+        <QuickTranslationView
+          source="Stay focused. Let the little things flow."
+          output={params.get("length") === "long"
+            ? "专注眼前，让琐事自然流转。".repeat(60)
+            : "专注眼前，让琐事自然流转。"}
+          loading={false}
+          copied={previewCopied}
+          onCopy={() => setPreviewCopied(true)}
+          onExpand={() => { setQuickOpen(false); setMode("full"); }}
+          onClose={() => { setQuickOpen(false); setMode("idle"); }}
+          onRetry={() => {}}
+        />
+      </div>
+    </main>
+  );
 
   return (
     <main className="island-preview" data-preview-mode={mode}>
@@ -66,48 +89,54 @@ export default function IslandPreview() {
           shouldReduceMotion={!interactive}
           fullContent={(
             <MainLayout
-              embedded
-              onCollapse={() => {
-                if (interactive) setMode("idle");
+              shell={{
+                embedded: true,
+                onCollapse: () => {
+                  if (interactive) setMode("idle");
+                },
               }}
-              inputText={inputText}
-              onInputChange={setInputText}
-              outputText={outputText}
-              loading={false}
               pinned={false}
               onPin={() => {}}
-              direction={direction}
-              onDirectionChange={setDirection}
-              glowActive={false}
-              onClearGlow={() => {}}
-              onTranslate={() => setOutputText(inputText.trim())}
-              inputRef={inputRef}
-              baseUrl="https://api.openai.com"
-              onBaseUrlChange={() => {}}
-              model="gpt-4o-mini"
-              onModelChange={() => {}}
-              hasStoredApiKey={false}
-              apiKeyUpdate={null}
-              onApiKeyChange={() => {}}
-              onSaveConfig={async () => {}}
-              glossary={[]}
-              onGlossaryChange={async () => {}}
-              hotkeys={[]}
-              hotkeyLabels={{}}
-              onHotkeysChange={async () => {}}
-              profiles={[]}
-              onSaveProfile={async () => []}
-              onDeleteProfile={async () => []}
-              onApplyProfile={async () => ({ name: "", baseUrl: "", model: "" })}
-              onTestConnection={async () => ""}
-              loggingEnabled
-              onSetLogging={async () => {}}
-              freeTranslation={false}
-              onSetFreeTranslation={async () => {}}
-              streaming={false}
-              fileStatus={null}
-              onTranslateFile={(_filename, content) => setInputText(content)}
-              translationKey={0}
+              translation={{
+                inputText,
+                onInputChange: setInputText,
+                outputText,
+                loading: false,
+                streaming: false,
+                direction,
+                onDirectionChange: setDirection,
+                glowActive: false,
+                onClearGlow: () => {},
+                onTranslate: () => setOutputText(inputText.trim()),
+                inputRef,
+                fileStatus: null,
+                onTranslateFile: (_filename, content) => setInputText(content),
+                translationKey: 0,
+              }}
+              config={{
+                baseUrl: "https://api.openai.com",
+                onBaseUrlChange: () => {},
+                model: "gpt-4o-mini",
+                onModelChange: () => {},
+                hasStoredApiKey: false,
+                apiKeyUpdate: null,
+                onApiKeyChange: () => {},
+                onSaveConfig: async () => {},
+                glossary: [],
+                onGlossaryChange: async () => {},
+                hotkeys: [],
+                hotkeyLabels: {},
+                onHotkeysChange: async () => {},
+                profiles: [],
+                onSaveProfile: async () => [],
+                onDeleteProfile: async () => [],
+                onApplyProfile: async () => ({ name: "", baseUrl: "", model: "" }),
+                onTestConnection: async () => "",
+                loggingEnabled: true,
+                onSetLogging: async () => {},
+                freeTranslation: false,
+                onSetFreeTranslation: async () => {},
+              }}
             />
           )}
           onRunAction={(action) => {

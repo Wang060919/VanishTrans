@@ -1,11 +1,14 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QuickTranslateWindow from "./QuickTranslateWindow";
+import { useQuickTranslation } from "../hooks/useQuickTranslation";
 
 type Listener = (event: { payload: unknown }) => void;
 const listeners: Record<string, Listener> = {};
 const setSize = vi.fn(() => Promise.resolve());
 const startDragging = vi.fn(() => Promise.resolve());
+let quickSequence = 0;
+function startAltR() { return ++quickSequence; }
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -47,8 +50,11 @@ describe("QuickTranslateWindow", () => {
     mockedEmit.mockClear();
     setSize.mockClear();
     startDragging.mockClear();
+    quickSequence = 0;
     for (const name of Object.keys(listeners)) delete listeners[name];
-    mockedInvoke.mockImplementation((command: string, args?: { text?: string; request?: { text?: string; requestId?: number } }) => {
+    mockedInvoke.mockImplementation((command: string, args?: { text?: string; requestSeq?: number; request?: { text?: string; requestId?: number } }) => {
+      if (command === "reserve_quick_request") return Promise.resolve(++quickSequence);
+      if (command === "reveal_quick_result") return Promise.resolve(args?.requestSeq === quickSequence);
       if (command === "cleanup_clipboard_text") return Promise.resolve(args?.text?.trim() ?? "");
       if (command === "translate_stream") {
         queueMicrotask(() => {
@@ -124,5 +130,109 @@ describe("QuickTranslateWindow", () => {
     expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "working" });
     expect(mockedEmit).toHaveBeenCalledWith("translation-state", { state: "error" });
     expect(mockedEmit).not.toHaveBeenCalledWith("translation-state", { state: "done" });
+  });
+
+  it("A fallback delivers the existing translation once without an API call", async () => {
+    const a = startAltR(); // Claimed by Rust at shortcut start, before any asynchronous work.
+    render(<QuickTranslateWindow />);
+    await waitFor(() => expect(listeners["quick-translate-result"]).toBeDefined());
+
+    await triggerAndFlush(() => {
+      dispatch("quick-translate-result", { source: "A source", text: "A translated", requestSeq: a });
+      dispatch("quick-translate-result", { source: "A source", text: "A translated", requestSeq: a });
+    });
+
+    expect(screen.getByText("A source")).toBeInTheDocument();
+    expect(screen.getByText("A translated")).toBeInTheDocument();
+    expect(mockedInvoke).not.toHaveBeenCalledWith("translate_stream", expect.anything());
+    expect(mockedInvoke.mock.calls.filter(([name]) => name === "reveal_quick_result")).toHaveLength(1);
+    expect(mockedEmit.mock.calls.filter(([name, value]) =>
+      name === "translation-state" && value.state === "done")).toHaveLength(1);
+  });
+
+  it("A starts, B starts and completes, A falls back: B stays and no stale focus", async () => {
+    const a = startAltR();
+    render(<QuickTranslateWindow />);
+    await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
+    await triggerAndFlush(() => dispatch("quick-translate", "B source"));
+    await waitFor(() => expect(screen.getByText("你好世界")).toBeInTheDocument());
+
+    const before = mockedEmit.mock.calls.filter(([name, value]) =>
+      name === "translation-state" && value.state === "done").length;
+    await triggerAndFlush(() => dispatch("quick-translate-result", {
+      source: "A source", text: "A translated", requestSeq: a,
+    }));
+
+    expect(screen.getByText("B source")).toBeInTheDocument();
+    expect(screen.getByText("你好世界")).toBeInTheDocument();
+    expect(screen.queryByText("A translated")).toBeNull();
+    expect(mockedInvoke).not.toHaveBeenCalledWith("reveal_quick_result", expect.anything());
+    expect(mockedEmit.mock.calls.filter(([name, value]) =>
+      name === "translation-state" && value.state === "done")).toHaveLength(before);
+  });
+
+  it("A starts, B fails, A falls back: the failure is retained", async () => {
+    const a = startAltR();
+    mockedInvoke.mockImplementation((command: string, args?: { text?: string; requestSeq?: number }) => {
+      if (command === "reserve_quick_request") return Promise.resolve(++quickSequence);
+      if (command === "reveal_quick_result") return Promise.resolve(args?.requestSeq === quickSequence);
+      if (command === "cleanup_clipboard_text") return Promise.resolve(args?.text?.trim() ?? "");
+      if (command === "translate_stream") return Promise.reject("B failed");
+      return Promise.resolve(undefined);
+    });
+    render(<QuickTranslateWindow />);
+    await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
+    await triggerAndFlush(() => dispatch("quick-translate", "B source"));
+    expect(await screen.findByText("B failed")).toBeInTheDocument();
+
+    await triggerAndFlush(() => dispatch("quick-translate-result", {
+      source: "A source", text: "A translated", requestSeq: a,
+    }));
+    expect(screen.getByText("B failed")).toBeInTheDocument();
+    expect(screen.queryByText("A translated")).toBeNull();
+    expect(mockedInvoke).not.toHaveBeenCalledWith("reveal_quick_result", expect.anything());
+  });
+
+  it.each(["cancel", "reset"] as const)(
+    "A starts, B starts then %s, A falls back: never restores A", async (action) => {
+      const a = startAltR();
+      mockedInvoke.mockImplementation((command: string, args?: { text?: string; requestSeq?: number }) => {
+        if (command === "reserve_quick_request") return Promise.resolve(++quickSequence);
+        if (command === "reveal_quick_result") return Promise.resolve(args?.requestSeq === quickSequence);
+        if (command === "cleanup_clipboard_text") return Promise.resolve(args?.text?.trim() ?? "");
+        if (command === "translate_stream") return new Promise(() => undefined);
+        return Promise.resolve(undefined);
+      });
+      const { result } = renderHook(useQuickTranslation);
+      await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
+      await triggerAndFlush(() => dispatch("quick-translate", "B source"));
+      await act(async () => { result.current[action](); await Promise.resolve(); });
+      await triggerAndFlush(() => dispatch("quick-translate-result", {
+        source: "A source", text: "A translated", requestSeq: a,
+      }));
+      expect(result.current.outputText).toBe("");
+      expect(mockedInvoke).not.toHaveBeenCalledWith("reveal_quick_result", expect.anything());
+    },
+  );
+
+  it("rejects a fallback immediately while B's backend sequence claim is pending", async () => {
+    const a = startAltR();
+    let resolveClaim!: (value: number) => void;
+    mockedInvoke.mockImplementation((command: string, args?: { text?: string }) => {
+      if (command === "reserve_quick_request") return new Promise<number>((resolve) => {
+        resolveClaim = resolve;
+      });
+      if (command === "cleanup_clipboard_text") return Promise.resolve(args?.text?.trim() ?? "");
+      return Promise.resolve(undefined);
+    });
+    render(<QuickTranslateWindow />);
+    await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
+    await triggerAndFlush(() => dispatch("quick-translate", "B source"));
+    await triggerAndFlush(() => dispatch("quick-translate-result", {
+      source: "A source", text: "A translated", requestSeq: a,
+    }));
+    expect(screen.queryByText("A translated")).toBeNull();
+    expect(mockedInvoke).not.toHaveBeenCalledWith("reveal_quick_result", expect.anything());
+    await act(async () => { resolveClaim(++quickSequence); });
   });
 });

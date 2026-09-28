@@ -39,6 +39,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let ti = MenuItem::with_id(app, "toggle_shortcuts", "暂停热键监听", true, None::<&str>)?;
     let wi = MenuItem::with_id(app, "toggle_watch", "开启剪贴板监听", true, None::<&str>)?;
     let qi = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    app.manage(crate::PinMenuItem(pi.clone()));
     app.manage(ShortcutsMenuItem(ti.clone()));
     app.manage(WatchMenuItem(wi.clone()));
 

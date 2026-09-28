@@ -8,6 +8,9 @@ mod keyboard;
 mod lock;
 mod logging;
 mod ocr;
+mod selection;
+#[cfg(test)]
+mod selection_tests;
 mod setup;
 mod tm;
 mod translate;
@@ -15,7 +18,7 @@ mod window_regions;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 
 use tauri::{Emitter, Manager};
 
@@ -140,6 +143,7 @@ pub struct AppState {
     pub pinned: AtomicBool,
     pub shortcuts_enabled: AtomicBool,
     pub clipboard_watch_enabled: AtomicBool,
+    pub clipboard_watch_signal: (Mutex<bool>, Condvar),
     pub alt_r_lock: Mutex<()>,
     /// Shared tokio runtime for background translation (Alt+R).
     /// Avoids creating a new runtime per request.
@@ -147,6 +151,7 @@ pub struct AppState {
 }
 
 pub struct ShortcutsMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
+pub struct PinMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
 pub struct WatchMenuItem(pub tauri::menu::MenuItem<tauri::Wry>);
 pub struct StartupWarnings(pub Mutex<Vec<String>>);
 
@@ -164,6 +169,7 @@ pub fn run() {
             pinned: AtomicBool::new(false),
             shortcuts_enabled: AtomicBool::new(true),
             clipboard_watch_enabled: AtomicBool::new(false),
+            clipboard_watch_signal: (Mutex::new(false), Condvar::new()),
             alt_r_lock: Mutex::new(()),
             runtime: tokio::runtime::Runtime::new().expect("Failed to create tokio runtime"),
         })
@@ -187,50 +193,9 @@ pub fn run() {
                 history_limit,
             ));
 
-            // Use the compositor-backed Windows 11 acrylic material. Setting Mica
-            // first enables the immersive dark DWM palette; Acrylic then replaces
-            // the backdrop type while retaining that dark palette. Unlike the old
-            // blur-behind API, this remains stable while dragging and resizing.
-            #[cfg(target_os = "windows")]
-            {
-                for label in ["quick"] {
-                    let Some(glass_window) = app.get_webview_window(label) else {
-                        continue;
-                    };
-                    let _ = window_vibrancy::apply_mica(&glass_window, Some(true));
-                    let _ = window_vibrancy::apply_acrylic(&glass_window, None);
-
-                    // Windows 11 draws a one-pixel DWM outline around Acrylic
-                    // windows even when Tauri decorations are disabled. Hide only
-                    // that outline while keeping the native window shadow.
-                    if let Ok(tauri_hwnd) = glass_window.hwnd() {
-                        use windows::Win32::Foundation::HWND;
-                        use windows::Win32::Graphics::Dwm::{
-                            DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
-                            DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
-                        };
-
-                        let hwnd = HWND(tauri_hwnd.0 as _);
-                        let border_color = DWMWA_COLOR_NONE;
-                        unsafe {
-                            let _ = DwmSetWindowAttribute(
-                                hwnd,
-                                DWMWA_BORDER_COLOR,
-                                &border_color as *const u32 as *const std::ffi::c_void,
-                                std::mem::size_of::<u32>() as u32,
-                            );
-
-                            let corner_preference = DWMWCP_ROUND;
-                            let _ = DwmSetWindowAttribute(
-                                hwnd,
-                                DWMWA_WINDOW_CORNER_PREFERENCE,
-                                &corner_preference as *const _ as *const std::ffi::c_void,
-                                std::mem::size_of_val(&corner_preference) as u32,
-                            );
-                        }
-                    }
-                }
-            }
+            // Quick renders its own opaque surface with transparent corners.
+            // Native Mica/Acrylic would fill those corners with a gray backdrop;
+            // quick_frame owns the rounded outline without a second DWM surface.
 
             // Keep translation usable if persistent TM storage is unavailable.
             let mut startup_warnings = Vec::new();
@@ -259,6 +224,18 @@ pub fn run() {
                     log::error!("[history] periodic flush failed: {error}");
                 }
             });
+
+            // Install before shortcuts can reveal either transparent window.
+            #[cfg(target_os = "windows")]
+            for label in ["ball", "quick"] {
+                if let Some(window) = app.get_webview_window(label) {
+                    let hwnd = windows::Win32::Foundation::HWND(window.hwnd()?.0);
+                    commands::island_frame::install(hwnd)?;
+                    if label == "quick" {
+                        commands::quick_frame::install(hwnd)?;
+                    }
+                }
+            }
 
             setup::setup_tray(app)?;
             setup::setup_shortcuts(app)?;
@@ -346,6 +323,11 @@ pub fn run() {
                     tauri::PhysicalPosition { x, y },
                 ));
 
+                #[cfg(target_os = "windows")]
+                commands::ball_region::clip_initial(windows::Win32::Foundation::HWND(
+                    ball_w.hwnd()?.0,
+                ))?;
+
                 if let Err(error) = ball_w.show() {
                     log::error!("[ball] failed to show window on startup: {error}");
                 }
@@ -394,6 +376,8 @@ pub fn run() {
             commands::frontend_ready,
             commands::get_startup_warnings,
             commands::quick_frontend_ready,
+            commands::reserve_quick_request,
+            commands::reveal_quick_result,
             commands::log_frontend_message,
             commands::set_logging_enabled,
             commands::get_logging_enabled,
@@ -466,8 +450,10 @@ pub fn run() {
 
 fn toggle_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("ball") {
-        let _ = w.show();
+        // Decide the target while the island still owns its current mode; emitting
+        // first prevents the tray focus-loss handler from inverting the request.
         let _ = w.emit("toggle-main-window", ());
+        let _ = w.show();
         let _ = w.set_focus();
     }
 }
@@ -477,14 +463,29 @@ fn toggle_top(app: &tauri::AppHandle) {
     let pinned = !state.pinned.load(Ordering::SeqCst);
     state.pinned.store(pinned, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window("ball") {
+        if pinned {
+            let _ = window.show();
+            let _ = window.emit("expand-main-window", ());
+        }
         let _ = window.emit("pin-state-changed", pinned);
     }
+    let label = if pinned {
+        "取消保持主界面展开"
+    } else {
+        "保持主界面展开"
+    };
+    let _ = app.state::<PinMenuItem>().0.set_text(label);
 }
 
 pub fn toggle_shortcuts(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
     let enabled = !state.shortcuts_enabled.load(Ordering::SeqCst);
     state.shortcuts_enabled.store(enabled, Ordering::SeqCst);
+    if let Err(error) = crate::setup::sync_shortcuts(app) {
+        log::error!("[shortcut] failed to update paused state: {error}");
+        state.shortcuts_enabled.store(!enabled, Ordering::SeqCst);
+        return;
+    }
     let label = if enabled {
         "⏸ 暂停热键监听"
     } else {
@@ -505,6 +506,13 @@ pub fn toggle_clipboard_watch(app: &tauri::AppHandle) {
         "📋 开启剪贴板监听"
     };
     let _ = app.state::<WatchMenuItem>().0.set_text(label);
+    if enabled {
+        let (lock, signal) = &state.clipboard_watch_signal;
+        if let Ok(mut notified) = lock.lock() {
+            *notified = true;
+            signal.notify_one();
+        }
+    }
 }
 
 #[cfg(test)]

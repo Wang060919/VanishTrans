@@ -25,6 +25,7 @@ export default function BallWindow() {
         <MainWindowApp
           embedded
           onCollapse={island.collapseFull}
+          onScreenshot={() => island.runAction("screenshot", "start_screenshot_from_ball")}
           onRequestExpand={island.expandFull}
           onWindowDragStart={island.handleFullDragStart}
           onWindowDragEnd={island.handleFullDragEnd}

@@ -3,7 +3,7 @@ import { cleanupClipboardText, translateStream, translateWithDirection } from ".
 import type { LangDirection, TranslationSession } from "./useTranslationSession";
 
 export function useTextTranslation(
-  { begin, lifecycle, setInputText, complete, fail }: TranslationSession,
+  { begin, waitForQuickClaim, lifecycle, setInputText, complete, fail }: TranslationSession,
   direction: RefObject<LangDirection>,
 ) {
   const translate = useCallback(async (text: string, streaming: boolean, forceRefresh = false) => {
@@ -11,6 +11,7 @@ export function useTextTranslation(
     const requestId = begin(streaming ? "stream" : "text");
     const requestedDirection = direction.current ?? "auto";
     try {
+      if (!await waitForQuickClaim(requestId)) return;
       const cleaned = await cleanupClipboardText({ text });
       if (!lifecycle.acceptsResult(requestId)) return;
       if (!cleaned.trim()) throw new Error("未读取到可翻译的文字");
@@ -23,7 +24,7 @@ export function useTextTranslation(
     } catch (error) {
       fail(requestId, error);
     }
-  }, [begin, complete, direction, fail, lifecycle, setInputText]);
+  }, [begin, complete, direction, fail, lifecycle, setInputText, waitForQuickClaim]);
   const doTranslate = useCallback((text: string, forceRefresh = false) =>
     translate(text, false, forceRefresh), [translate]);
   const doTranslateStream = useCallback((text: string, forceRefresh = false) =>

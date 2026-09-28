@@ -1,15 +1,15 @@
 /* Floating translation island */
 body.ball-window-body,
 body.ball-window-body #root {
-  background: transparent !important;
+  background: transparent;
   overflow: hidden;
 }
 
 .translation-island {
   --island-accent: 141, 156, 255;
-  --island-shell: #08090b;
-  --island-edge: rgba(255, 255, 255, 0.09);
-  --island-highlight: rgba(255, 255, 255, 0.045);
+  --island-shell: #000;
+  --island-edge: rgba(255, 255, 255, 0.045);
+  --island-highlight: transparent;
   --island-depth: rgba(0, 0, 0, 0.48);
   --island-width: 116px;
   --island-height: 42px;
@@ -59,7 +59,7 @@ body.ball-window-body #root {
   height: var(--island-height);
   border-radius: var(--island-radius);
   background: var(--island-shell);
-  box-shadow: inset 0 -10px 20px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   isolation: isolate;
@@ -69,9 +69,9 @@ body.ball-window-body #root {
   transform: translateZ(0);
   contain: layout style paint;
   transition:
-    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-radius 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    width var(--island-surface-ms, 360ms) cubic-bezier(0.16, 1, 0.3, 1),
+    height var(--island-surface-ms, 360ms) cubic-bezier(0.16, 1, 0.3, 1),
+    border-radius var(--island-surface-ms, 360ms) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .translation-island__surface::after {
@@ -91,21 +91,6 @@ body.ball-window-body #root {
   transition: none;
 }
 
-.translation-island--idle .translation-island__surface {
-  transition:
-    width 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    height 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 220ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.translation-island--full .translation-island__surface {
-  background: var(--island-shell);
-  transition:
-    width 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    height 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    border-radius 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
 .translation-island--peek .translation-island__surface,
 .translation-island--actions .translation-island__surface,
 .translation-island--status .translation-island__surface {
@@ -122,36 +107,36 @@ body.ball-window-body #root {
   position: absolute;
   inset: 0;
   z-index: 2;
-  width: 100%;
-  height: 100%;
+  width: var(--island-full-width);
+  height: var(--island-full-height);
   overflow: hidden;
   border-radius: inherit;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  transform: scale(0.982) translateZ(0);
+  transform: translateY(6px) translateZ(0);
   transform-origin: 50% 0%;
   will-change: opacity, transform;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   transition:
-    opacity 120ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 120ms cubic-bezier(0.22, 1, 0.36, 1),
-    visibility 0ms linear 120ms;
+    opacity var(--island-exit-ms, 90ms) cubic-bezier(0.16, 1, 0.3, 1),
+    transform var(--island-exit-ms, 90ms) cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0ms linear var(--island-exit-ms, 90ms);
 }
 
 .translation-island--full.translation-island--stable .translation-island__full {
   pointer-events: auto;
   opacity: 1;
   visibility: visible;
-  transform: scale(1) translateZ(0);
+  transform: translateY(0) translateZ(0);
   transition:
-    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1) 60ms,
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1) 40ms,
+    opacity var(--island-enter-ms, 220ms) cubic-bezier(0.16, 1, 0.3, 1) var(--island-enter-delay, 100ms),
+    transform var(--island-enter-ms, 220ms) cubic-bezier(0.16, 1, 0.3, 1) var(--island-enter-delay, 100ms),
     visibility 0ms linear;
 }
 
-.translation-island--instant .translation-island__full {
+.translation-island--instant.translation-island .translation-island__full {
   transition: none;
 }
 
@@ -159,21 +144,20 @@ body.ball-window-body #root {
   width: 100%;
   height: 100%;
   min-height: 0;
-  border-radius: inherit !important;
-  box-shadow: none !important;
+  border-radius: inherit;
+  box-shadow: none;
   transform: translateZ(0);
   will-change: contents;
 }
 
 .app-shell--island {
   animation: none;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 46px 44px minmax(0, 1fr) 40px;
+  display: flex;
+  flex-direction: column;
 }
 
 .app-shell--island .app-header {
-  height: auto;
+  height: 46px;
   cursor: grab;
 }
 
@@ -224,7 +208,7 @@ body.ball-window-body #root {
   height: 100%;
   display: flex;
   align-items: stretch;
-  gap: 2px;
+  gap: 4px;
   padding: 6px 4px 6px 5px;
   box-sizing: border-box;
 }
@@ -247,14 +231,15 @@ body.ball-window-body #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  flex-direction: column;
+  gap: 4px;
   padding: 0 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 18px;
   background: transparent;
-  color: rgba(229, 230, 237, 0.58);
-  font-size: 10.5px;
-  font-weight: 600;
+  color: rgba(239, 240, 245, 0.8);
+  font-size: 10px;
+  font-weight: 500;
   line-height: 1;
   letter-spacing: 0;
   white-space: nowrap;
@@ -275,6 +260,10 @@ body.ball-window-body #root {
   stroke-width: 1.8;
 }
 
+.translation-island__actions button:nth-child(1) svg { color: #a8bcff; }
+.translation-island__actions button:nth-child(2) svg { color: #86d9b4; }
+.translation-island__actions button:nth-child(3) svg { color: #f0d4a2; }
+
 .translation-island__actions button span {
   min-width: 0;
   overflow: hidden;
@@ -282,8 +271,8 @@ body.ball-window-body #root {
 }
 
 .translation-island__actions button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 .translation-island__actions button:active:not(:disabled) {
@@ -378,7 +367,7 @@ body.ball-window-body #root {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: rgba(var(--island-accent), 0.1);
+  background: rgba(var(--island-accent), 0.14);
   color: rgba(var(--island-accent), 0.9);
   will-change: transform;
   backface-visibility: hidden;
@@ -426,7 +415,7 @@ body.ball-window-body #root {
 .translation-island__state-copy strong {
   overflow: hidden;
   color: rgba(250, 250, 252, 0.9);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.22;
   letter-spacing: 0;
@@ -436,8 +425,8 @@ body.ball-window-body #root {
 
 .translation-island__state-copy small {
   overflow: hidden;
-  color: rgba(220, 222, 231, 0.42);
-  font-size: 9.5px;
+  color: rgba(220, 222, 231, 0.64);
+  font-size: 10px;
   font-weight: 400;
   line-height: 1.2;
   letter-spacing: 0;
@@ -535,7 +524,7 @@ body.ball-window-body #root {
 .translation-island__core .brand-mark {
   width: 22px;
   height: 20px;
-  filter: drop-shadow(0 0 7px rgba(var(--island-accent), 0.2));
+  filter: none;
 }
 
 .translation-island--status.translation-island--working .translation-island__core .brand-mark__node {
@@ -558,6 +547,8 @@ body.ball-window-body #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .translation-island__surface,
+  .translation-island__full { transition: none !important; }
   .translation-island__actions button,
   .translation-island__action-loader,
   .translation-island__activity i,

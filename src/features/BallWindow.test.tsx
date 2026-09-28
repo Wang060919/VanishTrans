@@ -1,3 +1,4 @@
+import { ISLAND_TIMING } from "./islandModel";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
@@ -45,7 +46,8 @@ const onFocusChanged = vi.fn((listener: FocusChangedListener) => {
 
 function defaultInvoke(command: string, args?: Record<string, unknown>): Promise<unknown> {
   if (command === "set_ball_window_bounds") {
-    setBallWindowBounds(args as NativeBounds);
+    const { x, y, width, height } = args as NativeBounds;
+    setBallWindowBounds({ x, y, width, height });
     return Promise.resolve();
   }
   if (command === "save_ball_position") {
@@ -237,12 +239,12 @@ describe("BallWindow", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起快速工具" }));
     await advanceTimers(0);
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
-    // The full wordmark returns immediately (2eb538e) so the label fades back
-    // in sync with the surface collapse instead of reappearing after it.
-    expect(document.querySelector(".translation-island__core .brand-wordmark")).toBeInTheDocument();
+    // The quiet idle state keeps its icon while the native bounds wait for the morph.
+    expect(document.querySelector(".translation-island__core .brand-mark")).toBeInTheDocument();
+    expect(document.querySelector(".translation-island__core .brand-wordmark")).not.toBeInTheDocument();
     expect(setBallWindowBounds).not.toHaveBeenCalled();
 
-    await advanceTimers(279);
+    await advanceTimers(ISLAND_TIMING.surfaceMs - 1);
     expect(setBallWindowBounds).not.toHaveBeenCalled();
 
     await advanceTimers(1);
@@ -252,8 +254,9 @@ describe("BallWindow", () => {
       y: 0,
       width: 116,
       height: 42,
+      retainSurface: true,
     });
-    expect(document.querySelector(".translation-island__core .brand-wordmark")).toBeInTheDocument();
+    expect(document.querySelector(".translation-island__core .brand-mark")).toBeInTheDocument();
   });
 
   it("uses the instant presentation when the expanded actions lose DOM focus", async () => {
@@ -288,7 +291,7 @@ describe("BallWindow", () => {
     // (b837872), so the native bounds follow after the CSS animation.
     expect(getIsland()).not.toHaveClass("translation-island--instant");
 
-    await advanceTimers(279);
+    await advanceTimers(ISLAND_TIMING.surfaceMs - 1);
     expect(setBallWindowBounds).not.toHaveBeenCalledWith(
       expect.objectContaining({ width: 116, height: 42 }),
     );
@@ -299,6 +302,7 @@ describe("BallWindow", () => {
       y: 0,
       width: 116,
       height: 42,
+      retainSurface: true,
     });
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "set_ball_window_region",
@@ -802,14 +806,14 @@ describe("BallWindow", () => {
       expect.objectContaining({ width: 116, height: 42 }),
     );
 
-    await advanceTimers(120);
+    await advanceTimers(ISLAND_TIMING.fullContentExitMs);
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "set_ball_window_bounds",
       expect.objectContaining({ width: 116, height: 42 }),
     );
 
-    await advanceTimers(280);
+    await advanceTimers(ISLAND_TIMING.surfaceMs);
 
     const idleBoundsCall = mocks.invoke.mock.calls.find(
       (call) => call[0] === "set_ball_window_bounds" &&
@@ -845,7 +849,7 @@ describe("BallWindow", () => {
 
     act(() => focusChangedListener?.({ payload: false }));
     await act(async () => finishFullBounds?.());
-    await advanceTimers(280);
+    await advanceTimers(ISLAND_TIMING.surfaceMs);
 
     expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 });
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
@@ -856,8 +860,12 @@ describe("BallWindow", () => {
     render(<BallWindow />);
     await advanceTimers(0);
     act(() => listeners["expand-main-window"]?.({ payload: undefined }));
-    await advanceTimers(280);
+    await advanceTimers(ISLAND_TIMING.surfaceMs);
     setBallWindowBounds.mockClear();
+    let finishMorph!: (animation: Animation) => void;
+    const finished = new Promise<Animation>((resolve) => { finishMorph = resolve; });
+    const surface = getSurface() as HTMLElement;
+    surface.getAnimations = () => [{ finished } as Animation];
 
     fireEvent.click(screen.getByTitle("收起为灵动岛"));
     await advanceTimers(0);
@@ -865,16 +873,61 @@ describe("BallWindow", () => {
     expect(getIsland()).toHaveClass("translation-island--full-exit");
     expect(document.querySelector(".translation-island__full")).toHaveAttribute("aria-hidden", "true");
 
-    await advanceTimers(119);
+    await advanceTimers(ISLAND_TIMING.fullContentExitMs - 1);
     expect(getSurface()).toHaveAttribute("data-mode", "full");
     await advanceTimers(1);
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
     expect(setBallWindowBounds).not.toHaveBeenCalled();
 
-    await advanceTimers(279);
+    await advanceTimers(ISLAND_TIMING.surfaceMs - 1);
     expect(setBallWindowBounds).not.toHaveBeenCalled();
-    await advanceTimers(1);
+    await advanceTimers(100);
+    expect(setBallWindowBounds).not.toHaveBeenCalled();
+    await act(async () => finishMorph({} as Animation));
+    expect(setBallWindowBounds).not.toHaveBeenCalled();
+    await advanceTimers(64);
     expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 });
+  });
+
+  it("keeps the full native viewport through collapse and tool re-expansion on Windows", async () => {
+    vi.useFakeTimers();
+    mocks.invoke.mockImplementation((command, args) => {
+      if (command === "set_ball_window_bounds" && args?.retainSurface) return Promise.resolve(true);
+      return defaultInvoke(command, args);
+    });
+    render(<BallWindow />);
+    await advanceTimers(0);
+    act(() => listeners["expand-main-window"]?.({ payload: undefined }));
+    await advanceTimers(ISLAND_TIMING.surfaceMs);
+    const fullPosition = { ...nativePosition };
+    const fullSize = { ...nativeSize };
+    setBallWindowBounds.mockClear();
+
+    fireEvent.click(screen.getByTitle("收起为灵动岛"));
+    await advanceTimers(ISLAND_TIMING.fullContentExitMs + ISLAND_TIMING.surfaceMs + 10);
+    expect(getSurface()).toHaveAttribute("data-mode", "idle");
+    expect(setBallWindowBounds).not.toHaveBeenCalled();
+    expect(nativePosition).toEqual(fullPosition);
+    expect(nativeSize).toEqual(fullSize);
+    expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
+      x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "展开快速工具" }));
+    await advanceTimers(ISLAND_TIMING.surfaceMs + 64);
+    expect(getSurface()).toHaveAttribute("data-mode", "actions");
+    expect(nativeSize).toEqual(fullSize);
+    expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
+      x: 812, y: 0, width: 296, height: 60, retainSurface: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "主界面" }));
+    await advanceTimers(ISLAND_TIMING.surfaceMs + 64);
+    expect(getSurface()).toHaveAttribute("data-mode", "full");
+    expect(nativePosition).toEqual(fullPosition);
+    expect(nativeSize).toEqual(fullSize);
+    expect(mocks.invoke).toHaveBeenLastCalledWith("set_ball_window_bounds", {
+      ...fullPosition, ...fullSize,
+    });
   });
 
   it("shows translation progress and collapses after completion", async () => {
@@ -932,20 +985,20 @@ describe("BallWindow", () => {
     expect(getSurface()).toHaveAttribute("data-mode", "full");
     expect(document.querySelector(".translation-island__full")).toHaveAttribute("aria-hidden", "false");
     expect(screen.getByPlaceholderText("输入、粘贴或拖入文件")).toBeInTheDocument();
-    const copySource = screen.getByText("复制原文").closest("button");
-    const copyResult = screen.getByText("复制译文").closest("button");
-    expect(copySource).toBeDisabled();
-    expect(copyResult).toBeDisabled();
-    expect(screen.getByText("智能选读").closest("button")).toBeEnabled();
-    expect(screen.getByText("翻译记忆").closest("button")).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "复制译文" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "复制译文" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "截图翻译" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "目标语言：智能选择" }));
+    expect(screen.getByRole("listbox", { name: "目标语言" })).toBeVisible();
+    fireEvent.click(screen.getByRole("option", { name: "智能选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开设置" }));
+    expect(screen.getByRole("tab", { name: "翻译记忆" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "关闭设置" }));
 
     fireEvent.change(screen.getByPlaceholderText("输入、粘贴或拖入文件"), {
       target: { value: "state stays here" },
     });
-    fireEvent.click(copySource as HTMLButtonElement);
-    await waitFor(() => {
-      expect(mocks.invoke).toHaveBeenCalledWith("write_clipboard_safe", { text: "state stays here" });
-    });
+    expect(screen.getByRole("button", { name: "翻译文本" })).toBeEnabled();
     fireEvent.click(screen.getByTitle("收起为灵动岛"));
 
     await waitFor(() => {

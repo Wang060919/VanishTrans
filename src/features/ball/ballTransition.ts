@@ -1,11 +1,12 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { logError } from "../../lib/logger";
-import { getIdleAnchorX, hasSameGeometry, ISLAND_TIMING, shrinksIsland } from "../islandModel";
+import { getIdleAnchorX, getIslandGeometry, hasSameGeometry, ISLAND_TIMING, shrinksIsland } from "../islandModel";
 import {
-  isIslandTransitionAborted, waitForIslandPaint, waitForIslandTransition, type IslandTransitionContext,
+  isIslandTransitionAborted, waitForIslandTransition, type IslandTransitionContext,
   type IslandTransitionRequest,
 } from "../islandTransitionCoordinator";
 import { measureExpandedBounds } from "./ballGeometry";
+import { settleBallSurface } from "./ballSurfaceSettlement";
 import { collapseBallWindow } from "./ballCollapse";
 import { IDLE_WIDTH, IDLE_HEIGHT, setBallWindowBounds } from "./ballNative";
 import { type BallState } from "./useBallState";
@@ -67,8 +68,8 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
     const bounds = await measureExpandedBounds(state, previousMode, target, scale, context);
     if (!bounds || !context.isCurrent()) return;
     const {
-      side, currentPosition, currentOuterSize, idleOuterWidth, targetWidthPixels, targetHeightPixels,
-      estimatedOuterWidth, estimatedOuterHeight, expandedX, expandedY,
+      nativeTarget, side, idleOuterWidth, targetWidthPixels, targetHeightPixels,
+      estimatedOuterWidth, expandedX, expandedY,
     } = bounds;
 
     const shrinksExistingIsland = previousMode !== "idle" && shrinksIsland(previousMode, target);
@@ -87,40 +88,20 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
       if (!context.isCurrent()) return;
     }
 
-    const revealsExistingActionsSurface = previousMode === "idle"
-      && (target === "peek" || target === "actions")
-      && hasSameGeometry(nativeModeRef.current, target)
-      && currentPosition.x === expandedX
-      && currentPosition.y === expandedY
-      && currentOuterSize.width === estimatedOuterWidth
-      && currentOuterSize.height === estimatedOuterHeight;
-
-    if (revealsExistingActionsSurface) {
-      modeRef.current = target;
-      commitPresentation({
-        mode: target,
-        motion,
-        phase: "stable",
-        generation: context.generation,
-      });
-      await waitForIslandPaint(context.signal);
-      if (!context.isCurrent()) return;
-    }
-
-    nativeTargetModeRef.current = target;
+    nativeTargetModeRef.current = nativeTarget;
     await setBallWindowBounds({
       x: expandedX,
       y: expandedY,
       width: targetWidthPixels,
       height: targetHeightPixels,
     });
-    nativeModeRef.current = target;
+    nativeModeRef.current = nativeTarget;
     if (!context.isCurrent()) return;
     anchorPositionRef.current = {
       x: getIdleAnchorX(side, expandedX, estimatedOuterWidth, idleOuterWidth),
       y: expandedY,
     };
-    if (!shrinksExistingIsland && !revealsExistingActionsSurface) {
+    if (!shrinksExistingIsland) {
       modeRef.current = target;
       commitPresentation({
         mode: target,
@@ -128,6 +109,19 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
         phase: "stable",
         generation: context.generation,
       });
+    }
+    if (nativeTarget !== target) {
+      await settleBallSurface(shrinksExistingIsland ? 0 : ISLAND_TIMING.surfaceMs, context.signal);
+      if (!context.isCurrent()) return;
+      const visible = getIslandGeometry(target);
+      const width = Math.round(visible.width * scale);
+      const height = Math.round(visible.height * scale);
+      const offset = side === "center" ? Math.round((targetWidthPixels - width) / 2)
+        : side === "left" ? targetWidthPixels - width : 0;
+      await setBallWindowBounds({
+        x: expandedX + offset, y: expandedY, width, height, retainSurface: true,
+      });
+      if (!context.isCurrent()) return;
     }
     if (target === "actions" || target === "full") await win.setFocus();
     if (target === "full" && motion === "animated") {

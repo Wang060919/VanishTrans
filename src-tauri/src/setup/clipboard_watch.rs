@@ -12,6 +12,18 @@ fn is_enabled(app: &tauri::AppHandle) -> bool {
         .clipboard_watch_enabled
         .load(std::sync::atomic::Ordering::SeqCst)
 }
+fn wait_for_wake(app: &tauri::AppHandle, timeout: Duration) {
+    let signal = &app.state::<AppState>().clipboard_watch_signal;
+    let mut notified = signal.0.lock().unwrap_or_else(|error| error.into_inner());
+    let result = signal
+        .1
+        .wait_timeout_while(notified, timeout, |value| !*value);
+    notified = match result {
+        Ok((guard, _)) => guard,
+        Err(error) => error.into_inner().0,
+    };
+    *notified = false;
+}
 
 /// Optimized clipboard watch: adaptive polling based on window focus state.
 /// - Window focused + enabled: 500ms (responsive to in-app copies)
@@ -23,7 +35,7 @@ pub fn setup_clipboard_watch(app: &tauri::App) {
         let mut last_text = String::new();
         loop {
             if !is_enabled(&watch_handle) {
-                thread::sleep(Duration::from_secs(5));
+                wait_for_wake(&watch_handle, Duration::from_secs(5));
                 continue;
             }
 

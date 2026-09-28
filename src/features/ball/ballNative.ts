@@ -26,8 +26,9 @@ export async function setBallWindowBounds(bounds: {
   y: number;
   width: number;
   height: number;
+  retainSurface?: boolean;
 }) {
-  await setBallWindowBoundsCmd(bounds);
+  return setBallWindowBoundsCmd(bounds);
 }
 
 export async function saveBallPosition(

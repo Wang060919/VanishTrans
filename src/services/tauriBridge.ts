@@ -57,8 +57,9 @@ export type RunOcrOnCropRequest = { sessionId: number; x: number; y: number; w: 
 export interface OcrOutput { text: string; }
 export type FinishOcrRequest = { sessionId: number; text: string };
 export type CancelScreenshotRequest = { sessionId: number };
-export type SetBallWindowBoundsRequest = { x: number; y: number; width: number; height: number };
+export type SetBallWindowBoundsRequest = { x: number; y: number; width: number; height: number; retainSurface?: boolean };
 export type ShowMainWithTextRequest = { text: string };
+export type RevealQuickResultRequest = { requestSeq: number };
 export type SaveBallPositionRequest = { x: number; y: number; reposition?: boolean };
 export type BallPositionResponse = [number, number];
 export type SaveServiceProfileRequest = { name: string; baseUrl: string; model: string };
@@ -71,6 +72,8 @@ export type CommandName =
   | "frontend_ready"
   | "get_startup_warnings"
   | "quick_frontend_ready"
+  | "reserve_quick_request"
+  | "reveal_quick_result"
   | "log_frontend_message"
   | "set_logging_enabled"
   | "get_logging_enabled"
@@ -174,6 +177,14 @@ export async function getStartupWarnings(): Promise<StartupWarningsResponse> {
 
 export async function quickFrontendReady(ready = true): Promise<void> {
   return invokeCommand<void>("quick_frontend_ready", { ready });
+}
+
+export async function reserveQuickRequest(): Promise<number> {
+  return invokeCommand<number>("reserve_quick_request");
+}
+
+export async function revealQuickResult(request: RevealQuickResultRequest): Promise<boolean> {
+  return invokeCommand<boolean>("reveal_quick_result", request);
 }
 
 export async function logFrontendMessage(request: LogFrontendMessageRequest): Promise<void> {
@@ -337,8 +348,8 @@ export async function getPinState(): Promise<boolean> {
   return invokeCommand<boolean>("get_pin_state");
 }
 
-export async function setBallWindowBounds(request: SetBallWindowBoundsRequest): Promise<void> {
-  return invokeCommand<void>("set_ball_window_bounds", request);
+export async function setBallWindowBounds(request: SetBallWindowBoundsRequest): Promise<boolean> {
+  return invokeCommand<boolean>("set_ball_window_bounds", request);
 }
 
 export async function showMainWindow(): Promise<void> {

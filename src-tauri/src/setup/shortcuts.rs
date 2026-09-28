@@ -8,7 +8,9 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-use crate::clipboard::{backup_clipboard, restore_clipboard, ClipboardGuard};
+use crate::clipboard::{
+    backup_clipboard, restore_clipboard, should_restore_clipboard, ClipboardGuard,
+};
 use crate::keyboard;
 use crate::lock::LockRecover;
 use crate::translate::{self, ApiConfig};
@@ -100,6 +102,15 @@ where
 
 fn get_shortcuts() -> &'static Mutex<Vec<(Shortcut, String)>> {
     REGISTERED_SHORTCUTS.get_or_init(|| Mutex::new(Vec::new()))
+}
+fn unregister_shortcuts(app: &tauri::AppHandle) {
+    let previous = {
+        let mut registered = get_shortcuts().lock_recover();
+        std::mem::take(&mut *registered)
+    };
+    for (shortcut, _) in previous {
+        let _ = app.global_shortcut().unregister(shortcut);
+    }
 }
 
 /// Parse a shortcut string like "Alt+Q" into a Shortcut object.
@@ -256,8 +267,16 @@ fn publish_shortcut_conflicts(
 pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
     let api_config = app.state::<ApiConfig>();
     let hotkeys = api_config.hotkeys.lock_recover().clone();
-    let shortcut_plugin = app.global_shortcut();
     let validated = validate_shortcuts(&hotkeys)?;
+    let shortcut_plugin = app.global_shortcut();
+    if !app
+        .state::<crate::AppState>()
+        .shortcuts_enabled
+        .load(Ordering::SeqCst)
+    {
+        unregister_shortcuts(app);
+        return Ok(());
+    }
     log::info!(
         "[sync_shortcuts] input hotkeys: {:?}, validated: {:?}",
         hotkeys,
@@ -413,7 +432,7 @@ fn run_alt_q(app: tauri::AppHandle) {
 
     // Copy selected text (WM_COPY first, SendInput fallback)
     //    Internally handles clipboard backup/restore.
-    let text = keyboard::copy_selection(&app);
+    let text = keyboard::copy_selection(&app).map(|capture| capture.text);
     log::info!(
         "[alt-q] captured {} chars",
         text.as_ref().map_or(0, String::len)
@@ -435,7 +454,63 @@ fn run_alt_q(app: tauri::AppHandle) {
     log::info!("[alt-q] === end ===");
 }
 
-/// Alt+R: Copy → translate → paste replacement.
+/// Where a failed replace attempt hands its content.
+#[derive(Debug, PartialEq, Eq)]
+enum ReplacementDelivery<'a> {
+    /// Nothing was translated yet: the quick window translates the source once.
+    TranslateSource(&'a str),
+    /// A translation already exists: deliver it as-is. Handing it to the
+    /// translation channel would burn a second API call re-translating it.
+    ShowResult { source: &'a str, text: &'a str },
+}
+
+fn delivery_for_failure<'a>(
+    translated: Option<&'a str>,
+    source: &'a str,
+) -> ReplacementDelivery<'a> {
+    match translated {
+        Some(text) => ReplacementDelivery::ShowResult { source, text },
+        None => ReplacementDelivery::TranslateSource(source),
+    }
+}
+
+/// The captured selection is the only thing Alt+R may replace. `None` means
+/// the identity is missing or belongs to another window: never paste.
+fn replacement_target(
+    captured: &crate::selection::CapturedSelection,
+    original_window: keyboard::ForegroundWindowToken,
+) -> Option<crate::selection::SelectionTarget> {
+    captured
+        .target
+        .clone()
+        .filter(|candidate| candidate.window == original_window)
+}
+
+/// Conservative Alt+R outcome: never paste, hand the content to the quick
+/// result window instead.
+fn deliver_to_quick_window(
+    app: &tauri::AppHandle,
+    delivery: ReplacementDelivery<'_>,
+    reason: &str,
+    quick_seq: u64,
+) {
+    log::info!("[alt-r] {reason}; showing the quick result window instead of pasting");
+    let result = match delivery {
+        ReplacementDelivery::TranslateSource(source) => {
+            crate::commands::show_quick_translation_if_current(app, source.to_string(), quick_seq)
+        }
+        ReplacementDelivery::ShowResult { source, text } => {
+            crate::commands::show_quick_result(app, source.to_string(), text.to_string(), quick_seq)
+        }
+    };
+    if let Err(error) = result {
+        log::warn!("[alt-r] Failed to show quick window: {error}");
+    }
+}
+
+/// Alt+R: Copy → translate → verify the target → paste the replacement.
+/// Falls back to the quick result window instead of pasting when the target
+/// cannot be proven to still be the captured selection.
 /// Uses WM_COPY (hook-safe) for the copy step.
 fn handle_alt_r(app: tauri::AppHandle) {
     std::thread::spawn(move || {
@@ -452,18 +527,25 @@ fn handle_alt_r(app: tauri::AppHandle) {
             }
         };
 
+        // The shortcut claims its generation before selection capture and API work.
+        // Frontend quick requests use the same monotonic sequence domain.
+        let quick_seq = crate::commands::claim_quick_request();
+        let api_config = app.state::<ApiConfig>();
+        let seq = api_config.next_replace_request_seq();
+
         let Some(original_window) = keyboard::foreground_window_token() else {
             log::warn!("[alt-r] No foreground window; replacement cancelled");
             return;
         };
 
-        // 1. Copy selected text (WM_COPY first, SendInput fallback)
-        let text = match keyboard::copy_selection(&app) {
-            Some(t) => t,
-            None => return,
+        // 1. Copy the selected text together with a read-only identity of the
+        //    control and selection it came from (WM_COPY first, SendInput fallback).
+        let Some(captured) = keyboard::copy_selection(&app) else {
+            return;
         };
 
-        let cleaned = text
+        let cleaned = captured
+            .text
             .replace("\r\n", "\n")
             .replace("-\n", "")
             .trim()
@@ -471,9 +553,21 @@ fn handle_alt_r(app: tauri::AppHandle) {
         if cleaned.is_empty() {
             return;
         }
+
+        // Auto-replacement needs a provable target. Without one (for example in
+        // applications that expose no control/selection identity) or when the
+        // captured selection already moved during the copy, hand the text to
+        // the quick result window instead of pasting blindly.
+        let Some(replace_target) = replacement_target(&captured, original_window) else {
+            deliver_to_quick_window(
+                &app,
+                delivery_for_failure(None, &cleaned),
+                "Replace target is not verifiable",
+                quick_seq,
+            );
+            return;
+        };
         let target = translate::resolve_target_lang(&cleaned, "auto");
-        let api_config = app.state::<ApiConfig>();
-        let seq = api_config.next_replace_request_seq();
         let translated =
             match app
                 .state::<AppState>()
@@ -505,8 +599,9 @@ fn handle_alt_r(app: tauri::AppHandle) {
         let clipboard_backup = backup_clipboard(&app);
         let write_app = app.clone();
         let restore_app = app.clone();
+        let write_seq = std::cell::Cell::new(0u32);
         let replacement = replace_clipboard_and_paste(
-            || keyboard::foreground_window_is_current(original_window),
+            || keyboard::target_is_unchanged(&replace_target),
             || {
                 write_app
                     .clipboard()
@@ -515,22 +610,41 @@ fn handle_alt_r(app: tauri::AppHandle) {
                 write_app
                     .state::<ClipboardGuard>()
                     .mark_written(&translated);
+                write_seq.set(keyboard::clipboard_sequence_number());
                 Ok(())
             },
             keyboard::simulate_paste,
             || thread::sleep(Duration::from_millis(150)),
             || {
+                if !should_restore_clipboard(write_seq.get(), keyboard::clipboard_sequence_number())
+                {
+                    log::warn!(
+                        "[alt-r] Clipboard changed while pasting; keeping the user's content"
+                    );
+                    return;
+                }
                 if !restore_clipboard(&restore_app, clipboard_backup) {
                     log::warn!("[alt-r] Failed to restore the user's clipboard after paste");
                 }
             },
         );
 
-        if let Err(error) = replacement {
-            log::warn!("[alt-r] Replacement cancelled: {error}");
-            if let Some(window) = app.get_webview_window("ball") {
-                let _ = window.emit("screenshot-error", format!("Alt+R 失败: {error}"));
+        match replacement {
+            Err(ReplaceSelectionError::FocusChanged) => {
+                deliver_to_quick_window(
+                    &app,
+                    delivery_for_failure(Some(&translated), &cleaned),
+                    "Replace target changed during translation",
+                    quick_seq,
+                );
             }
+            Err(error) => {
+                log::warn!("[alt-r] Replacement cancelled: {error}");
+                if let Some(window) = app.get_webview_window("ball") {
+                    let _ = window.emit("screenshot-error", format!("Alt+R 失败: {error}"));
+                }
+            }
+            Ok(()) => {}
         }
     });
 }
@@ -798,5 +912,72 @@ mod tests {
 
         assert_eq!(result, Ok(()));
         assert!(restored_after_paste.get());
+    }
+
+    #[test]
+    fn post_translation_fallback_delivers_the_existing_result() {
+        assert_eq!(
+            delivery_for_failure(Some("译文"), "hello"),
+            ReplacementDelivery::ShowResult {
+                source: "hello",
+                text: "译文"
+            }
+        );
+        assert_eq!(
+            delivery_for_failure(None, "hello"),
+            ReplacementDelivery::TranslateSource("hello")
+        );
+    }
+
+    #[test]
+    fn unverifiable_identity_never_reaches_the_paste_flow() {
+        use std::cell::Cell;
+
+        let original = keyboard::ForegroundWindowToken::from_raw(1);
+        let captured = crate::selection::CapturedSelection {
+            text: "hello".into(),
+            target: None,
+            _apartment: None,
+        };
+        let pasted = Cell::new(false);
+        let mut delivered: Option<ReplacementDelivery<'_>> = None;
+        // The same routing handle_alt_r performs: without a target the paste
+        // flow is never entered and the source goes to the quick window.
+        if let Some(target) = replacement_target(&captured, original) {
+            let _ = replace_clipboard_and_paste(
+                || keyboard::target_is_unchanged(&target),
+                || Ok(()),
+                || {
+                    pasted.set(true);
+                    true
+                },
+                || {},
+                || {},
+            );
+        } else {
+            delivered = Some(delivery_for_failure(None, &captured.text));
+        }
+        assert!(!pasted.get());
+        assert!(matches!(
+            delivered,
+            Some(ReplacementDelivery::TranslateSource("hello"))
+        ));
+
+        // A captured identity from another window is equally unusable.
+        let foreign = crate::selection::CapturedSelection {
+            text: "hello".into(),
+            target: Some(crate::selection::SelectionTarget {
+                window: keyboard::ForegroundWindowToken::from_raw(2),
+                focus_hwnd: None,
+                fingerprint: crate::selection::SelectionFingerprint::Edit {
+                    start: 0,
+                    end: 5,
+                    caret: None,
+                    text: "hello".into(),
+                },
+            }),
+            _apartment: None,
+        };
+        assert!(replacement_target(&foreign, original).is_none());
     }
 }

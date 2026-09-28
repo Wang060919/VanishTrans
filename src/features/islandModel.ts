@@ -27,10 +27,10 @@ export const ISLAND_GEOMETRY: Record<IslandMode, IslandGeometry> = {
 };
 
 export const ISLAND_TIMING = {
-  surfaceMs: 280,
-  fullContentEnterDelayMs: 60,
+  surfaceMs: 360,
+  fullContentEnterDelayMs: 100,
   fullContentEnterMs: 220,
-  fullContentExitMs: 120,
+  fullContentExitMs: 90,
   idleWordmarkDelayMs: 220,
 } as const;
 

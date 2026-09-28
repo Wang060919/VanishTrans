@@ -27,6 +27,12 @@ pub fn toggle_pin(
         .pinned
         .store(pinned, std::sync::atomic::Ordering::SeqCst);
     if let Some(window) = app.get_webview_window("ball") {
+        let label = if pinned {
+            "取消保持主界面展开"
+        } else {
+            "保持主界面展开"
+        };
+        let _ = app.state::<crate::PinMenuItem>().0.set_text(label);
         let _ = window.emit("pin-state-changed", pinned);
     }
     Ok(pinned)
@@ -44,7 +50,8 @@ pub fn set_ball_window_bounds(
     y: i32,
     width: u32,
     height: u32,
-) -> Result<(), CommandError> {
+    retain_surface: Option<bool>,
+) -> Result<bool, CommandError> {
     if window.label() != "ball" {
         return Err(CommandError::validation("窗口边界只能应用到灵动岛"));
     }
@@ -52,15 +59,25 @@ pub fn set_ball_window_bounds(
         return Err(CommandError::validation("灵动岛窗口尺寸必须大于零"));
     }
 
-    // Use Tauri's built-in methods - they handle Windows decorations correctly
-    // Reference: RustyIsland (same Tauri v2 stack) uses only Tauri APIs
-    // https://github.com/hasnain7abbas/RustyIsland
-    window
-        .set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }))
-        .map_err(|error| CommandError::internal(error.to_string()))?;
-    window
-        .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
-        .map_err(|error| CommandError::internal(error.to_string()))
+    #[cfg(target_os = "windows")]
+    {
+        if retain_surface.unwrap_or(false) {
+            return super::window_bounds::retain_surface(&window, x, y, width, height);
+        }
+        super::window_bounds::set_bounds(&window, x, y, width, height)?;
+        Ok(false)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = retain_surface;
+        window
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }))
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        window
+            .set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }))
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        Ok(false)
+    }
 }
 
 // -----------------------------------------------------------
@@ -99,7 +116,7 @@ pub(crate) fn wait_for_frontend(ready: &AtomicBool) -> Result<(), CommandError> 
     }
 }
 
-fn position_quick_window(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+pub(super) fn position_quick_window(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
     let (x, y) = crate::cursor::compute_cursor_follow_position(app, 392.0, 330.0);
     let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
 }
@@ -108,20 +125,71 @@ pub(crate) fn show_quick_translation(
     app: &tauri::AppHandle,
     text: String,
 ) -> Result<(), CommandError> {
-    let window = app
-        .get_webview_window("quick")
-        .ok_or_else(|| CommandError::not_found("找不到迷你翻译窗口"))?;
-    position_quick_window(app, &window);
-    window
-        .show()
-        .map_err(|error| CommandError::internal(error.to_string()))?;
-    window
-        .set_focus()
-        .map_err(|error| CommandError::internal(error.to_string()))?;
+    let seq = super::quick_result::claim_quick_request();
+    show_quick_translation_if_current(app, text, seq)
+}
+
+/// Alt+R's source fallback keeps the sequence claimed at shortcut start.
+pub(crate) fn show_quick_translation_if_current(
+    app: &tauri::AppHandle,
+    text: String,
+    seq: u64,
+) -> Result<(), CommandError> {
+    super::quick_result::with_current_quick_request(seq, || {
+        let window = app
+            .get_webview_window("quick")
+            .ok_or_else(|| CommandError::not_found("找不到迷你翻译窗口"))?;
+        position_quick_window(app, &window);
+        window
+            .show()
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        window
+            .set_focus()
+            .map_err(|error| CommandError::internal(error.to_string()))?;
+        wait_for_frontend(&QUICK_FRONTEND_READY)?;
+        window
+            .emit("quick-translate", text)
+            .map_err(|error| CommandError::internal(error.to_string()))
+    })
+    .unwrap_or(Ok(()))
+}
+
+/// Deliver an already-computed translation to the quick window. Pure display:
+/// nothing is re-translated and no TM/history is written — the window shows
+/// the result through its session without issuing a new request.
+pub(crate) fn show_quick_result(
+    app: &tauri::AppHandle,
+    source: String,
+    text: String,
+    request_seq: u64,
+) -> Result<(), CommandError> {
+    #[derive(Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct QuickResultPayload {
+        source: String,
+        text: String,
+        request_seq: u64,
+    }
+
+    // Hidden webviews register listeners at startup. Never show or focus
+    // before the frontend session accepts this request's result.
     wait_for_frontend(&QUICK_FRONTEND_READY)?;
-    window
-        .emit("quick-translate", text)
-        .map_err(|error| CommandError::internal(error.to_string()))
+    super::quick_result::with_current_quick_request(request_seq, || {
+        let window = app
+            .get_webview_window("quick")
+            .ok_or_else(|| CommandError::not_found("找不到迷你翻译窗口"))?;
+        window
+            .emit(
+                "quick-translate-result",
+                QuickResultPayload {
+                    source,
+                    text,
+                    request_seq,
+                },
+            )
+            .map_err(|error| CommandError::internal(error.to_string()))
+    })
+    .unwrap_or(Ok(()))
 }
 
 pub(crate) fn show_quick_error(app: &tauri::AppHandle, message: &str) -> Result<(), CommandError> {

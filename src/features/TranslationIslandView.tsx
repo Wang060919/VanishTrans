@@ -31,7 +31,7 @@ export type {
   IslandPresentation,
 } from "./islandModel";
 
-const CONTENT_EASE = [0.22, 1, 0.36, 1] as const;
+const CONTENT_EASE = [0.16, 1, 0.3, 1] as const;
 const CORE_WIDTH = 58;
 const CONTENT_MORPH = {
   type: "tween" as const,
@@ -110,8 +110,14 @@ export default function TranslationIslandView({
         },
       };
   const islandStyle = {
+    "--island-full-width": `${getIslandGeometry("full").width}px`,
+    "--island-full-height": `${getIslandGeometry("full").height}px`,
     "--island-width": `${geometry.width}px`,
     "--island-height": `${geometry.height}px`,
+    "--island-surface-ms": `${ISLAND_TIMING.surfaceMs}ms`,
+    "--island-enter-delay": `${ISLAND_TIMING.fullContentEnterDelayMs}ms`,
+    "--island-enter-ms": `${ISLAND_TIMING.fullContentEnterMs}ms`,
+    "--island-exit-ms": `${ISLAND_TIMING.fullContentExitMs}ms`,
     "--island-radius": `${geometry.borderRadius}px`,
   } as CSSProperties;
   const islandClassName = [
@@ -293,7 +299,7 @@ export default function TranslationIslandView({
             onClick={onCoreClick}
           >
             <VanishMark
-              compact={mode !== "idle"}
+              compact
               animated={false}
               decorative
             />

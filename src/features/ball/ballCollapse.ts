@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ISLAND_TIMING, type IslandMode, type IslandMotion } from "../islandModel";
 import { waitForIslandTransition, type IslandTransitionContext } from "../islandTransitionCoordinator";
 import { IDLE_WIDTH, IDLE_HEIGHT, saveBallPosition, setBallWindowBounds } from "./ballNative";
+import { settleBallSurface } from "./ballSurfaceSettlement";
 import { type BallState } from "./useBallState";
 
 type BallCollapseState = Pick<BallState,
@@ -56,18 +57,20 @@ export async function collapseBallWindow(state: BallCollapseState, previousMode:
     generation: context.generation,
   });
 
-  if (motion === "animated") {
-    await waitForIslandTransition(ISLAND_TIMING.surfaceMs, context.signal);
+  await settleBallSurface(motion === "animated" ? ISLAND_TIMING.surfaceMs : 0, context.signal);
+  if (!context.isCurrent()) return;
+
+  // Keep the WebView viewport stationary on Windows; clip only after the morph.
+  const retained = await setBallWindowBounds({ ...idleBounds, retainSurface: true });
+  if (!retained) {
+    nativeTargetModeRef.current = "idle";
+    nativeModeRef.current = "idle";
   }
   if (!context.isCurrent()) return;
 
-  // Resize the native surface only after the visual collapse has completed.
-  nativeTargetModeRef.current = "idle";
-  await setBallWindowBounds(idleBounds);
-  nativeModeRef.current = "idle";
-  if (!context.isCurrent()) return;
-
-  idleOuterSizeRef.current = await win.outerSize();
+  idleOuterSizeRef.current = retained
+    ? { width: idleWidthPixels, height: idleHeightPixels }
+    : await win.outerSize();
   if (!context.isCurrent()) return;
   anchorPositionRef.current = await saveBallPosition({ x: idleX, y: currentPos.y }, false);
 

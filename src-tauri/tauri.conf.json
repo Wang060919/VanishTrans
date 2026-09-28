@@ -45,6 +45,7 @@
         "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
+        "dragDropEnabled": false,
         "visible": false,
         "x": 100,
         "y": 100
@@ -61,7 +62,7 @@
         "resizable": false,
         "decorations": false,
         "transparent": true,
-        "shadow": true,
+        "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false,

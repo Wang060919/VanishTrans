@@ -124,6 +124,15 @@ fn clipboard_is_empty() -> bool {
     true
 }
 
+/// Whether a pending clipboard restore may proceed.
+///
+/// `seq_at_write` is the clipboard sequence number observed right after our
+/// own write. A different `seq_now` means the user or another application
+/// copied something since, and their content must win over the backup.
+pub fn should_restore_clipboard(seq_at_write: u32, seq_now: u32) -> bool {
+    seq_now == seq_at_write
+}
+
 /// Restore a previously backed-up clipboard content.
 /// An originally empty clipboard is restored to empty instead of leaving the
 /// temporary selection text behind.
@@ -373,5 +382,15 @@ mod tests {
         assert!(is_copyable_global_format(13));
         assert!(is_copyable_global_format(15));
         assert!(is_copyable_global_format(0xc001));
+    }
+
+    #[test]
+    fn restore_proceeds_while_our_write_is_the_latest_clipboard_change() {
+        assert!(should_restore_clipboard(7, 7));
+    }
+
+    #[test]
+    fn restore_keeps_content_the_user_copied_after_our_write() {
+        assert!(!should_restore_clipboard(7, 8));
     }
 }

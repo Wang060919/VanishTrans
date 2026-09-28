@@ -27,7 +27,7 @@ src-tauri/src/
 Read [the current architecture](docs/architecture/ARCHITECTURE.md) for ownership,
 entry points and concurrency invariants. Refactoring reports describe historical snapshots.
 
-## Tauri Commands (52 total)
+## Tauri Commands (54 total)
 <!-- BEGIN TAURI_COMMANDS -->
 **Config**: `frontend_ready`, `get_startup_warnings`, `get_api_config`, `set_api_config`, `get_logging_enabled`, `set_logging_enabled`, `log_frontend_message`, `set_hotkeys`, `set_glossary`, `set_free_translation`, `set_max_records`
 
@@ -41,7 +41,7 @@ entry points and concurrency invariants. Refactoring reports describe historical
 
 **TM**: `tm_search`, `tm_delete`, `tm_clear`, `tm_stats`, `tm_export`, `tm_import`, `tm_import_content`
 
-**Window**: `hide_window`, `toggle_pin`, `get_pin_state`, `set_ball_window_bounds`, `show_main_window`, `hide_quick_window`, `show_main_with_text`, `quick_frontend_ready`
+**Window**: `hide_window`, `toggle_pin`, `get_pin_state`, `set_ball_window_bounds`, `show_main_window`, `hide_quick_window`, `show_main_with_text`, `quick_frontend_ready`, `reserve_quick_request`, `reveal_quick_result`
 
 **Ball**: `translate_clipboard_from_ball`, `start_screenshot_from_ball`, `toggle_ball_show_main`, `toggle_ball`, `save_ball_position`, `get_ball_position`
 

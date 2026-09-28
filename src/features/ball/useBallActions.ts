@@ -101,6 +101,11 @@ export function useBallActions({
     busyActionRef.current = action;
     setBusyAction(action);
     try {
+      if (action === "screenshot") {
+        // Hidden WebViews can suspend animation frames. Settle and unmount the
+        // action strip before the screenshot command hides this window.
+        await transitionMode("idle", { motion: "instant", reason: "business" });
+      }
       await invokeCommand(command);
       if (expectsTranslationState) {
         if (expectingTranslationRef.current) {
@@ -112,7 +117,7 @@ export function useBallActions({
             }
           }, 900);
         }
-      } else {
+      } else if (action !== "screenshot") {
         await transitionMode("idle");
       }
     } catch (error) {
@@ -123,6 +128,9 @@ export function useBallActions({
       }
       const message = errorMessage(error);
       showNotice(message || "操作失败，请重试");
+      if (action === "screenshot") {
+        await transitionMode("actions", { motion: "instant", reason: "business" });
+      }
     } finally {
       busyActionRef.current = null;
       setBusyAction(null);

@@ -15,7 +15,9 @@ export async function measureExpandedBounds(state: BallGeometryState, previousMo
   const win = getCurrentWindow();
   const idleWidthPixels = Math.round(IDLE_WIDTH * scale);
   const idleHeightPixels = Math.round(IDLE_HEIGHT * scale);
-  const targetDimensions = getIslandGeometry(target);
+  // Once a larger viewport exists, keep it warm; only the island morphs.
+  const nativeTarget = nativeModeRef.current === "full" ? "full" : target;
+  const targetDimensions = getIslandGeometry(nativeTarget);
   const currentPosition = await win.outerPosition();
   const currentOuterSize = await win.outerSize();
   const currentInnerSize = await win.innerSize();
@@ -100,7 +102,7 @@ export async function measureExpandedBounds(state: BallGeometryState, previousMo
   const expandedY = Math.min(Math.max(anchor.y, monitorTop + topGutterPixels), maxY);
 
   return {
-    side, currentPosition, currentOuterSize, idleOuterWidth, targetWidthPixels, targetHeightPixels,
+    nativeTarget, side, currentPosition, currentOuterSize, idleOuterWidth, targetWidthPixels, targetHeightPixels,
     estimatedOuterWidth, estimatedOuterHeight, expandedX, expandedY,
   };
 }
