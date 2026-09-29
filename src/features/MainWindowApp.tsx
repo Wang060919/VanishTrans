@@ -7,12 +7,13 @@ import { useTauriEvents, type TranslationRequestEvent } from "../hooks/useTauriE
 import { useTranslation } from "../hooks/useTranslation";
 import MainLayout from "../layouts/MainLayout";
 import { logError } from "../lib/logger";
+import type { IslandResult } from "../lib/translationResult";
 
 interface MainWindowAppProps {
+  resultToOpen?: IslandResult | null;
   embedded?: boolean;
   onCollapse?: () => void | Promise<void>;
   onScreenshot?: () => void | Promise<void>;
-  onRequestExpand?: () => void | Promise<void>;
   onWindowDragStart?: () => boolean | void;
   onWindowDragEnd?: () => void;
   onWindowMoved?: () => void | Promise<void>;
@@ -21,9 +22,9 @@ interface MainWindowAppProps {
 
 export default function MainWindowApp({
   embedded = false,
+  resultToOpen,
   onCollapse,
   onScreenshot,
-  onRequestExpand,
   onWindowDragStart,
   onWindowDragEnd,
   onWindowMoved,
@@ -32,12 +33,8 @@ export default function MainWindowApp({
   const [pinned, setPinned] = useState(false);
   const [notices, setNotices] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const translation = useTranslation();
+  const translation = useTranslation(resultToOpen);
   const config = useConfig();
-
-  const requestExpand = useCallback(() => {
-    void onRequestExpand?.();
-  }, [onRequestExpand]);
 
   const addNotices = useCallback((messages: string[]) => {
     setNotices((current) => Array.from(new Set([...current, ...messages.filter(Boolean)])));
@@ -52,31 +49,28 @@ export default function MainWindowApp({
 
   const listenersReady = useTauriEvents({
     onClipboardTranslate: useCallback((request: TranslationRequestEvent) => {
-      requestExpand();
       if (request.type === "error") {
         resetTranslationRef.current(request.message);
         return;
       }
       doTranslateStreamRef.current(request.text);
-    }, [requestExpand]),
+    }, []),
 
     onOcrTranslate: useCallback((text: string) => {
-      requestExpand();
       if (text.startsWith("❌ Alt+R 失败:")) {
         resetTranslationRef.current(text);
         return;
       }
       doTranslateStreamRef.current(text);
-    }, [requestExpand]),
+    }, []),
 
     onScreenshotStart: useCallback(() => {
       resetTranslationRef.current();
     }, []),
 
     onScreenshotError: useCallback((message: string) => {
-      requestExpand();
       resetTranslationRef.current(message);
-    }, [requestExpand]),
+    }, []),
 
     onShortcutConflicts: useCallback((conflicts) => {
       addNotices(conflicts.map((conflict) => conflict.shortcut

@@ -9,13 +9,13 @@ type BallActionsState = Pick<BallState,
   "modeRef" | "draggingRef" | "transitionCoordinator" | "lastDragEndedAtRef" |
   "expectingTranslationRef" | "busyActionRef" | "noticeRef" | "expectedActivityTimerRef" |
   "noticeTimerRef" | "statusTimerRef" | "phase" | "setBusyAction" |
-  "setNotice"
+  "setNotice" | "resultRef" | "setResultToOpen"
 > & Pick<BallTransitions, "transitionMode">;
 
 export function useBallActions({
   modeRef, draggingRef, transitionCoordinator, lastDragEndedAtRef, expectingTranslationRef, busyActionRef,
   noticeRef, expectedActivityTimerRef, noticeTimerRef, statusTimerRef, phase, setBusyAction, setNotice,
-  transitionMode,
+  transitionMode, resultRef, setResultToOpen,
 }: BallActionsState) {
   const scheduleStatusCollapse = useCallback((statusPhase: IslandPhase) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
@@ -27,8 +27,8 @@ export function useBallActions({
       if (effectiveMode === "status") {
         void transitionMode("idle", { reason: "business" });
       }
-    }, statusPhase === "done" ? 1250 : 1900);
-  }, [transitionCoordinator, transitionMode, modeRef, statusTimerRef]);
+    }, statusPhase === "done" ? (resultRef.current ? 6000 : 1250) : 6000);
+  }, [transitionCoordinator, transitionMode, modeRef, statusTimerRef, resultRef]);
 
   const handleIslandBlur = useCallback((event: React.FocusEvent<HTMLElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
@@ -54,11 +54,20 @@ export function useBallActions({
   const handleCoreClick = useCallback(async () => {
     if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
     if (modeRef.current === "status") {
-      if (phase !== "working") await transitionMode("idle");
+      if (phase !== "working") {
+        const target = phase === "error" ? "full" : phase === "done" && resultRef.current ? "result" : "idle";
+        await transitionMode(target);
+      }
       return;
     }
     await toggleActions();
-  }, [phase, toggleActions, transitionMode, modeRef, draggingRef, lastDragEndedAtRef]);
+  }, [phase, toggleActions, transitionMode, modeRef, draggingRef, lastDragEndedAtRef, resultRef]);
+
+  const openResultInFull = useCallback(async () => {
+    if (!resultRef.current || draggingRef.current) return;
+    setResultToOpen(resultRef.current);
+    await transitionMode("full");
+  }, [resultRef, draggingRef, setResultToOpen, transitionMode]);
 
   const expandFull = useCallback(async () => {
     await transitionMode("full");
@@ -85,7 +94,8 @@ export function useBallActions({
       busyActionRef.current = action;
       setBusyAction(action);
       try {
-        await expandFull();
+        if (resultRef.current) await transitionMode("result");
+        else await expandFull();
       } finally {
         busyActionRef.current = null;
         setBusyAction(null);
@@ -137,9 +147,9 @@ export function useBallActions({
     }
   }, [
     expandFull, showNotice, transitionMode, modeRef, draggingRef, lastDragEndedAtRef,
-    expectingTranslationRef, busyActionRef, expectedActivityTimerRef, setBusyAction,
+    expectingTranslationRef, busyActionRef, expectedActivityTimerRef, setBusyAction, resultRef,
   ]);
 
-  return { scheduleStatusCollapse, handleIslandBlur, handleCoreClick, expandFull, collapseFull, runAction };
+  return { scheduleStatusCollapse, handleIslandBlur, handleCoreClick, expandFull, collapseFull, runAction, openResultInFull };
 }
 export type BallActions = ReturnType<typeof useBallActions>;

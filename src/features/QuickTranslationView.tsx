@@ -1,8 +1,10 @@
 import type { MouseEventHandler, RefObject } from "react";
-import { Check, Copy, Expand, RefreshCw, X } from "lucide-react";
+import { ArrowUpRight, Check, Copy, Expand, RefreshCw, X } from "lucide-react";
 import VanishMark from "../components/brand/VanishMark";
 
 interface Props {
+  embedded?: boolean;
+  directionLabel?: string;
   shellRef?: RefObject<HTMLDivElement>;
   source: string;
   output: string;
@@ -18,34 +20,35 @@ interface Props {
 
 /** Shared visual surface for the native quick window and browser preview. */
 export default function QuickTranslationView({
-  shellRef, source, output, error, loading, copied,
+  shellRef, source, output, error, loading, copied, embedded = false, directionLabel,
   onDrag, onCopy, onExpand, onClose, onRetry,
 }: Props) {
+  const compactResult = Boolean(output) && !loading && !error;
   const status = copied ? "已复制" : error ? "未完成" : loading ? "翻译中" : output ? "译文" : "即时翻译";
 
   return (
-    <section ref={shellRef} className="quick-translate-shell" data-state={error ? "error" : loading ? "working" : output ? "done" : "idle"} aria-label="即时翻译">
-      <header className="quick-translate-header" onMouseDown={onDrag} data-tauri-drag-region>
+    <section ref={shellRef} className={"quick-translate-shell" + (compactResult ? " quick-translate-shell--result" : "")} data-state={error ? "error" : loading ? "working" : output ? "done" : "idle"} aria-label="即时翻译">
+      <header className="quick-translate-header" onMouseDown={onDrag} data-tauri-drag-region={embedded ? undefined : true}>
         <div className="quick-translate-brand">
           <VanishMark compact animated={false} decorative />
           <span className={loading ? "quick-translate-status quick-translate-status--active" : "quick-translate-status"}>
-            {status}
+            {compactResult && directionLabel && !copied ? directionLabel : status}
           </span>
         </div>
         <div className="quick-translate-actions">
-          <button type="button" onClick={onCopy} disabled={!output} aria-label={copied ? "译文已复制" : "复制译文"} title={copied ? "已复制" : "复制"}>
+          {!compactResult && <button type="button" onClick={onCopy} disabled={!output} aria-label={copied ? "译文已复制" : "复制译文"} title={copied ? "已复制" : "复制"}>
             {copied ? <Check size={14} /> : <Copy size={14} />}
-          </button>
-          <button type="button" onClick={onExpand} disabled={!source} aria-label="在主窗口中打开" title="展开">
+          </button>}
+          {!compactResult && <button type="button" onClick={onExpand} disabled={!source} aria-label="在主窗口中打开" title="展开">
             <Expand size={14} />
-          </button>
+          </button>}
           <button type="button" onClick={onClose} aria-label="关闭迷你翻译" title="关闭">
             <X size={15} />
           </button>
         </div>
       </header>
 
-      {source && (
+      {source && (!compactResult || !embedded) && (
         <div className="quick-source selectable" title={source}>
           {source}
         </div>
@@ -55,7 +58,7 @@ export default function QuickTranslationView({
         {error ? (
           <div className="quick-error">
             <span>{error}</span>
-            {source && (
+            {source && !compactResult && (
               <button type="button" onClick={onRetry} aria-label="重试翻译" title="重试">
                 <RefreshCw size={14} />
               </button>
@@ -69,6 +72,16 @@ export default function QuickTranslationView({
           loading ? <div className="quick-loading" aria-label="正在翻译"><i /><i /><i /></div> : <p className="quick-empty">选中文字，即可开始翻译</p>
         )}
       </div>
+      {compactResult && <footer className="island-result-footer">
+        <button type="button" className="island-result-copy" onClick={onCopy}
+          aria-label={copied ? "译文已复制" : "复制译文"}>
+          {copied ? <Check size={16} /> : <Copy size={16} />}<span>{copied ? "已复制" : "复制译文"}</span>
+        </button>
+        <button type="button" className="island-result-expand" onClick={onExpand}
+          aria-label="在主窗口中打开" title="查看原文、编辑或翻译更多内容">
+          <span>查看详情</span><ArrowUpRight size={16} />
+        </button>
+      </footer>}
     </section>
   );
 }

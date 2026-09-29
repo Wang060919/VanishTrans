@@ -114,6 +114,7 @@ export type CommandName =
   | "toggle_pin"
   | "get_pin_state"
   | "set_ball_window_bounds"
+  | "start_window_drag"
   | "show_main_window"
   | "hide_quick_window"
   | "show_main_with_text"
@@ -338,6 +339,10 @@ export async function finishOcr(request: FinishOcrRequest): Promise<void> {
 
 export async function hideWindow(): Promise<void> {
   return invokeCommand<void>("hide_window");
+}
+
+export async function startWindowDragging(): Promise<boolean> {
+  return invokeCommand<boolean>("start_window_drag");
 }
 
 export async function togglePin(): Promise<boolean> {

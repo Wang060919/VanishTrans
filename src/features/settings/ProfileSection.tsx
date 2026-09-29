@@ -1,6 +1,7 @@
 import { Trash2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import type { ServiceProfile } from "../../types";
+import ProfileSelect from "./ProfileSelect";
 
 interface ProfileSectionProps {
   profiles: ServiceProfile[];
@@ -9,98 +10,54 @@ interface ProfileSectionProps {
   onSaveProfile: (profile: ServiceProfile) => Promise<ServiceProfile[]>;
   onDeleteProfile: (name: string) => Promise<ServiceProfile[]>;
   onApplyProfile: (name: string) => Promise<ServiceProfile>;
-  notifySaved: () => void;
   notifyError: (error: unknown) => void;
 }
 
-/** Save current connection as a named profile + existing profile list. */
-export default function ProfileSection({
-  profiles,
-  baseUrl,
-  model,
-  onSaveProfile,
-  onDeleteProfile,
-  onApplyProfile,
-  notifySaved,
-  notifyError,
-}: ProfileSectionProps) {
+export default function ProfileSection({ profiles, baseUrl, model, onSaveProfile,
+  onDeleteProfile, onApplyProfile, notifyError }: ProfileSectionProps) {
   const [profileName, setProfileName] = useState("");
+  const [selected, setSelected] = useState("");
+  const [naming, setNaming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const selection = profiles.some((profile) => profile.name === selected) ? selected : "";
 
-  const handleSave = useCallback(async () => {
+  const run = async (operation: () => Promise<unknown>) => {
+    setPending(true);
+    try { await operation(); } catch (error) { notifyError(error); }
+    finally { setPending(false); }
+  };
+  const save = () => run(async () => {
     const name = profileName.trim();
-    if (!name) {
-      notifyError(new Error("请输入档案名称"));
-      return;
-    }
-    try {
-      await onSaveProfile({ name, baseUrl: baseUrl.trim(), model: model.trim() });
-      setProfileName("");
-      notifySaved();
-    } catch (error) {
-      notifyError(error);
-    }
-  }, [baseUrl, model, notifyError, notifySaved, onSaveProfile, profileName]);
-
-  const handleApply = useCallback(
-    async (name: string) => {
-      try {
-        await onApplyProfile(name);
-      } catch (error) {
-        notifyError(error);
-      }
-    },
-    [notifyError, onApplyProfile]
-  );
-
-  const handleDelete = useCallback(
-    async (name: string) => {
-      try {
-        await onDeleteProfile(name);
-      } catch (error) {
-        notifyError(error);
-      }
-    },
-    [notifyError, onDeleteProfile]
-  );
+    if (!name) return;
+    await onSaveProfile({ name, baseUrl: baseUrl.trim(), model: model.trim() });
+    setSelected(name);
+    setProfileName("");
+    setNaming(false);
+  });
 
   return (
-    <>
-      <div className="setting-field">
-        <label htmlFor="profile-name">保存为服务档案</label>
-        <div className="setting-inline">
-          <input
-            id="profile-name"
-            type="text"
-            value={profileName}
-            onChange={(event) => setProfileName(event.target.value)}
-            placeholder="如：OpenAI / DeepSeek / 本地 Ollama"
-          />
-          <button type="button" className="secondary-button" onClick={() => void handleSave()}>
-            保存档案
-          </button>
-        </div>
+    <div className="settings-profiles">
+      <div className="profile-toolbar">
+        {profiles.length > 0 ? <>
+          <ProfileSelect profiles={profiles} value={selection} disabled={pending} onChange={setSelected} />
+          <button type="button" className="secondary-button" disabled={!selection || pending}
+            onClick={() => void run(() => onApplyProfile(selection))}>应用</button>
+          <button type="button" className="text-action text-action--danger"
+            aria-label={"删除配置 " + selection} disabled={!selection || pending}
+            onClick={() => void run(() => onDeleteProfile(selection))}><Trash2 size={14} /></button>
+        </> : <span className="setting-hint">常用服务配置</span>}
+        <button type="button" className="text-action profile-save-action" aria-expanded={naming}
+          disabled={pending} onClick={() => setNaming(!naming)}>{naming ? "取消" : "另存为配置"}</button>
       </div>
-      {profiles.length > 0 && (
-        <div className="profile-list">
-          {profiles.map((profile) => (
-            <div className="profile-row" key={profile.name}>
-              <span className="profile-name">{profile.name}</span>
-              <span className="profile-meta">{profile.baseUrl} · {profile.model}</span>
-              <button type="button" className="secondary-button" onClick={() => void handleApply(profile.name)}>
-                应用
-              </button>
-              <button
-                type="button"
-                className="text-action text-action--danger"
-                aria-label={`删除档案 ${profile.name}`}
-                onClick={() => void handleDelete(profile.name)}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+      {naming && <form className="profile-naming" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        <label htmlFor="profile-name">配置名称</label>
+        <div className="setting-inline">
+          <input id="profile-name" type="text" value={profileName} disabled={pending}
+            onChange={(event) => setProfileName(event.target.value)} placeholder="例如：日常翻译" />
+          <button type="submit" className="secondary-button" disabled={pending || !profileName.trim()}>保存配置</button>
         </div>
-      )}
-    </>
+        <p className="setting-hint">仅保存服务地址和模型，不包含 API Key。</p>
+      </form>}
+    </div>
   );
 }

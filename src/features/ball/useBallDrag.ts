@@ -21,6 +21,10 @@ export function useBallDrag({
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const modeIsDraggable = modeRef.current !== "full";
     if (!modeIsDraggable || transitionCoordinator.isTransitioning || event.button !== 0) return;
+    if (modeRef.current === "result" && event.target instanceof Element
+      && !event.target.closest(".quick-translate-header")) return;
+    if (modeRef.current === "result" && event.target instanceof Element
+      && event.target.closest("button")) return;
     const captureTarget = event.target instanceof Element
       ? event.target.closest("button") ?? event.currentTarget
       : event.currentTarget;
@@ -71,6 +75,7 @@ export function useBallDrag({
         if (dragMode === "peek"
           || dragMode === "actions"
           || dragMode === "status"
+          || dragMode === "result"
           || (dragMode === "idle" && !hasSameGeometry(nativeModeRef.current, "idle"))) {
           const scale = await win.scaleFactor();
           const endInnerSize = await win.innerSize();

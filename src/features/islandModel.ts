@@ -1,6 +1,6 @@
 export type DockSide = "left" | "center" | "right";
 export type BallAction = "clipboard" | "screenshot" | "main";
-export type IslandMode = "idle" | "peek" | "actions" | "status" | "full";
+export type IslandMode = "idle" | "peek" | "actions" | "status" | "result" | "full";
 export type IslandPhase = "working" | "done" | "error" | "idle";
 export type IslandMotion = "animated" | "instant";
 export type IslandVisualPhase = "stable" | "full-exit";
@@ -20,19 +20,30 @@ export interface IslandPresentation {
 
 export const ISLAND_GEOMETRY: Record<IslandMode, IslandGeometry> = {
   idle: { width: 116, height: 42, borderRadius: 21 },
-  peek: { width: 296, height: 60, borderRadius: 30 },
-  actions: { width: 296, height: 60, borderRadius: 30 },
-  status: { width: 264, height: 52, borderRadius: 26 },
-  full: { width: 720, height: 380, borderRadius: 28 },
+  peek: { width: 224, height: 48, borderRadius: 24 },
+  actions: { width: 224, height: 48, borderRadius: 24 },
+  status: { width: 232, height: 48, borderRadius: 24 },
+  result: { width: 392, height: 176, borderRadius: 28 },
+  full: { width: 560, height: 540, borderRadius: 28 },
 };
 
 export const ISLAND_TIMING = {
   surfaceMs: 360,
-  fullContentEnterDelayMs: 100,
-  fullContentEnterMs: 220,
+  compactMs: 300,
+  resultMs: 340,
+  collapseMs: 260,
+  fullContentEnterDelayMs: 70,
+  fullContentEnterMs: 240,
   fullContentExitMs: 90,
   idleWordmarkDelayMs: 220,
 } as const;
+
+/** Shared by CSS, compact content and native clipping to avoid early cuts. */
+export function getIslandSurfaceMs(mode: IslandMode) {
+  if (mode === "idle") return ISLAND_TIMING.collapseMs;
+  if (mode === "full") return ISLAND_TIMING.surfaceMs;
+  return mode === "result" ? ISLAND_TIMING.resultMs : ISLAND_TIMING.compactMs;
+}
 
 export const ISLAND_WINDOW_POLICY = {
   edgeGutter: 8,

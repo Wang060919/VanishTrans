@@ -20,6 +20,8 @@ export function useBallWindow() {
     dockSide: state.dockSide,
     busyAction: state.busyAction,
     notice: state.notice,
+    result: state.result,
+    resultToOpen: state.resultToOpen,
     shouldReduceMotion: state.shouldReduceMotion ?? false,
     ...actions,
     ...drag,

@@ -10,7 +10,7 @@ export function useIslandPreviewMotion(initialMode: IslandMode, animated: boolea
   const setMode = useCallback((update: SetStateAction<IslandMode>) => {
     if (timer.current) clearTimeout(timer.current);
     const target = typeof update === "function" ? update(mode) : update;
-    if (animated && mode === "full" && target !== "full") {
+    if (animated && (mode === "full" || mode === "result") && target !== mode) {
       setPhase("full-exit");
       timer.current = setTimeout(() => {
         timer.current = null;

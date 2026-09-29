@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
+import type { TranslationResult } from "../lib/translationResult";
 import { errorMessage, isCancelledError } from "../lib/errors";
 import { generateTranslationKey, TranslationRequestLifecycle } from "../lib/translationState";
 
@@ -20,9 +21,11 @@ export function useTranslationSession(
   const lifecycle = useRef(new TranslationRequestLifecycle(initialSequence)).current;
   const [sourceId] = useState(() => `${scope}:${crypto.randomUUID()}`);
   const revision = useRef(0);
-  const broadcast = useCallback((state: "working" | "done" | "error" | "idle") => {
+  const requestSource = useRef<{ source: string; direction: LangDirection } | null>(null);
+  const broadcast = useCallback((state: "working" | "done" | "error" | "idle", result?: TranslationResult) => {
     void emit("translation-state", {
       state, sourceId, requestId: lifecycle.requestId, revision: ++revision.current,
+      ...(result ? { result } : {}),
     }).catch(() => {});
   }, [lifecycle, sourceId]);
   const current = useRef(initialState);
@@ -62,6 +65,7 @@ export function useTranslationSession(
   const begin = useCallback((kind: TranslationKind) => {
     clearStatusTimer();
     const requestId = lifecycle.begin();
+    requestSource.current = null;
     if (reserveQuickRequest) quickClaims.current.set(requestId, claimQuick());
     patch({ outputText: "", translationError: null, fileStatus: null,
       loading: true, streaming: kind === "stream", glowActive: false });
@@ -73,7 +77,8 @@ export function useTranslationSession(
     if (!lifecycle.complete(requestId)) return;
     patch({ outputText, loading: false, streaming: false, glowActive: true,
       translationKey: generateTranslationKey(), fileStatus });
-    broadcast("done");
+    const source = requestSource.current;
+    broadcast("done", source && !fileStatus ? { ...source, text: outputText } : undefined);
     if (fileStatus) {
       statusTimer.current = setTimeout(() => {
         if (lifecycle.isCurrent(requestId)) patch({ fileStatus: null });
@@ -105,6 +110,18 @@ export function useTranslationSession(
     patch({ ...initialState, translationError: message });
     broadcast(message ? "error" : "idle");
   }, [broadcast, claimQuick, clearStatusTimer, lifecycle, patch, reserveQuickRequest]);
+  const setRequestSource = useCallback((requestId: number, source: string, direction: LangDirection) => {
+    if (lifecycle.acceptsResult(requestId)) requestSource.current = { source, direction };
+  }, [lifecycle]);
+  const restoreResult = useCallback((result: TranslationResult) => {
+    const requestId = lifecycle.begin();
+    lifecycle.complete(requestId);
+    clearStatusTimer();
+    requestSource.current = { source: result.source, direction: result.direction };
+    patch({ ...initialState, inputText: result.source, outputText: result.text,
+      translationKey: generateTranslationKey() });
+    broadcast("done", result);
+  }, [broadcast, clearStatusTimer, lifecycle, patch]);
   const setInputText = useCallback((inputText: string) => patch({ inputText }), [patch]);
   const setFileStatus = useCallback((requestId: number, fileStatus: string) => {
     if (lifecycle.acceptsResult(requestId)) patch({ fileStatus });
@@ -129,7 +146,7 @@ export function useTranslationSession(
     patch({ inputText: payload.source, outputText: payload.text, translationError: null,
       fileStatus: null, loading: false, streaming: false, glowActive: true,
       translationKey: generateTranslationKey() });
-    broadcast("done");
+    broadcast("done", { source: payload.source, text: payload.text, direction: "auto" });
     return true;
   }, [broadcast, clearStatusTimer, lifecycle, patch]);
 
@@ -143,7 +160,7 @@ export function useTranslationSession(
     broadcast("idle");
   }, [broadcast, clearStatusTimer, lifecycle]);
   return { ...state, lifecycle, begin, waitForQuickClaim, complete, fail, cancel, reset,
-    applyExternalResult,
+    applyExternalResult, setRequestSource, restoreResult,
     setInputText, setFileStatus, clearGlow, handleStreamChunk, handleStreamDone };
 }
 export type TranslationSession = ReturnType<typeof useTranslationSession>;

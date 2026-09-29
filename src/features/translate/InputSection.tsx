@@ -1,4 +1,4 @@
-import { ClipboardPaste, Eraser, RefreshCw, Sparkles } from "lucide-react";
+import { ClipboardPaste, Eraser, RefreshCw } from "lucide-react";
 import { useCallback } from "react";
 import { readClipboardSafe } from "../../services/tauriBridge";
 import CharCounter from "../../components/CharCounter";
@@ -87,7 +87,7 @@ export default function InputSection({
           placeholder="输入、粘贴或拖入文件"
           spellCheck={false}
           onKeyDown={(event) => {
-            if (!loading && event.key === "Enter" && !event.shiftKey) {
+            if (!loading && !event.nativeEvent.isComposing && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
               onTranslate(ignoreCache);
             }
@@ -109,16 +109,7 @@ export default function InputSection({
               <RefreshCw size={13} aria-hidden="true" />
               <span>忽略缓存</span>
             </button>
-            <button
-              type="button"
-              className="translate-action"
-              aria-label="翻译文本"
-              disabled={!inputText.trim() || loading}
-              onClick={() => onTranslate(ignoreCache)}
-            >
-              <Sparkles size={14} aria-hidden="true" />
-              <span>{loading ? "翻译中" : "Enter 翻译"}</span>
-            </button>
+
           </div>
         </div>
       </div>

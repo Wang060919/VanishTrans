@@ -72,7 +72,7 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
   const displayValue = pending || value;
 
   return (
-    <div ref={containerRef} className="flex items-center justify-between gap-2">
+    <div ref={containerRef} className="hotkey-row">
       <span className="text-xs text-text-muted truncate">{label}</span>
       <div className="flex items-center gap-1.5">
         <kbd className="px-2 py-0.5 text-xs font-mono bg-surface-sunken border border-border-subtle rounded min-w-[60px] text-center text-text-secondary">

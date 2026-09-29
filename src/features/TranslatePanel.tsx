@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { FileText, LoaderCircle } from "lucide-react";
+import IconButton from "../components/IconButton";
 import FileDropZone from "./translate/FileDropZone";
 import InputSection from "./translate/InputSection";
 import OutputSection from "./translate/OutputSection";
 
 interface TranslatePanelProps {
+  actions?: React.ReactNode;
   inputText: string;
   onInputChange: (v: string) => void;
   outputText: string;
@@ -26,6 +29,7 @@ interface TranslatePanelProps {
  * Line count: ~75 lines (well under 150 line target)
  */
 export default function TranslatePanel({
+  actions,
   inputText,
   onInputChange,
   outputText,
@@ -41,6 +45,7 @@ export default function TranslatePanel({
   onTranslateFile,
   translationKey,
 }: TranslatePanelProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [ignoreCache, setIgnoreCache] = useState(false);
 
   // Auto-clear glow effect after animation
@@ -59,9 +64,12 @@ export default function TranslatePanel({
   };
 
   return (
-    <FileDropZone onDrop={onTranslateFile} disabled={loading}>
+    <FileDropZone onDrop={onTranslateFile} disabled={loading} inputRef={fileInputRef}>
       <main className="translation-workspace">
-        {fileStatus && <div className="file-status" role="status">{fileStatus}</div>}
+        {fileStatus && <div className="file-status" role="status">
+          <FileText size={18} aria-hidden="true" /><span>{fileStatus}</span>
+          {loading && <LoaderCircle size={16} className="translation-island__action-loader" aria-hidden="true" />}
+        </div>}
 
         <div className="acrylic-panel">
           <InputSection
@@ -95,6 +103,17 @@ export default function TranslatePanel({
             translationKey={translationKey}
           />
         </div>
+        <footer className="translation-toolbar">
+          <div className="translation-tools">
+            <IconButton icon={<FileText size={18} />} label="翻译文件" disabled={loading} onClick={() => fileInputRef.current?.click()} />
+            {actions}
+          </div>
+          <div className="translation-submit">
+            <button type="button" className="translate-action" aria-label="翻译文本" disabled={!inputText.trim() || loading}
+              onClick={() => onTranslate(ignoreCache)}>翻译</button>
+            <span>Ctrl + Enter</span>
+          </div>
+        </footer>
       </main>
     </FileDropZone>
   );

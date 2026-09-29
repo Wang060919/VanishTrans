@@ -5,6 +5,7 @@ import {
   type BallAction, type DockSide, type IslandMode, type IslandPhase, type IslandPresentation,
 } from "../islandModel";
 import { IslandTransitionCoordinator } from "../islandTransitionCoordinator";
+import type { IslandResult } from "../../lib/translationResult";
 
 /** Owns island state and synchronous refs. Other hooks receive only their required fields. */
 export function useBallState() {
@@ -19,6 +20,13 @@ export function useBallState() {
   const [dockSide, setDockSide] = useState<DockSide>("center");
   const [busyAction, setBusyAction] = useState<BallAction | null>(null);
   const [notice, setNotice] = useState("");
+  const [result, setResult] = useState<IslandResult | null>(null);
+  const resultRef = useRef<IslandResult | null>(null);
+  const [resultToOpen, setResultToOpen] = useState<IslandResult | null>(null);
+  const commitResult = useCallback((next: IslandResult | null) => {
+    resultRef.current = next;
+    setResult(next);
+  }, []);
   const shouldReduceMotion = useReducedMotion();
   const mode = presentation.mode;
 
@@ -60,6 +68,7 @@ export function useBallState() {
     busyActionRef, noticeRef, expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef,
     phaseRef, commitPresentation, presentation, setPresentation, phase, setPhase, dockSide, setDockSide,
     busyAction, setBusyAction, notice, setNotice,
+    result, resultRef, commitResult, resultToOpen, setResultToOpen,
   };
 }
 export type BallState = ReturnType<typeof useBallState>;

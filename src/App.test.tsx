@@ -90,6 +90,7 @@ describe("App", () => {
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
 
     await user.click(screen.getByRole("button", { name: "打开设置" }));
+    await user.click(screen.getByRole("button", { name: "翻译服务" }));
     const modelInput = screen.getByDisplayValue("gpt-4o-mini");
     await user.clear(modelInput);
     await user.type(modelInput, "gpt-4.1-mini");
@@ -185,7 +186,7 @@ describe("App", () => {
     await user.click(screen.getByRole("option", { name: "中文" }));
 
     const textarea = screen.getByPlaceholderText("输入、粘贴或拖入文件");
-    await user.type(textarea, "some text{enter}");
+    await user.type(textarea, "some text{Control>}{Enter}{/Control}");
 
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith(
@@ -217,7 +218,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
-    await user.type(screen.getByPlaceholderText("输入、粘贴或拖入文件"), "hello{enter}");
+    await user.type(screen.getByPlaceholderText("输入、粘贴或拖入文件"), "hello{Control>}{Enter}{/Control}");
 
     await waitFor(() => expect(screen.getByText("最终译文")).toBeInTheDocument());
     expect(screen.queryByText("片段")).not.toBeInTheDocument();
@@ -240,7 +241,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
-    await user.type(screen.getByPlaceholderText("输入、粘贴或拖入文件"), "hello{enter}");
+    await user.type(screen.getByPlaceholderText("输入、粘贴或拖入文件"), "hello{Control>}{Enter}{/Control}");
     await waitFor(() => expect(mockedInvoke.mock.calls.some(([cmd]) => cmd === "translate_stream")).toBe(true));
 
     const streamCall = mockedInvoke.mock.calls.find(([cmd]) => cmd === "translate_stream");
@@ -341,7 +342,7 @@ describe("App", () => {
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("get_api_config"));
 
     const textarea = screen.getByPlaceholderText("输入、粘贴或拖入文件");
-    await user.type(textarea, "hello{enter}");
+    await user.type(textarea, "hello{Control>}{Enter}{/Control}");
 
     await waitFor(() => {
       expect(screen.getByText(/请先在设置中配置 API Key/)).toBeInTheDocument();
@@ -379,6 +380,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "打开设置" }));
     expect(screen.getByRole("dialog", { name: "设置" })).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "关闭设置" }));
     await user.click(screen.getByRole("button", { name: "打开历史记录" }));
     await waitFor(() => expect(screen.getByRole("dialog", { name: "翻译历史" })).toBeInTheDocument());
     expect(screen.queryByRole("dialog", { name: "设置" })).not.toBeInTheDocument();

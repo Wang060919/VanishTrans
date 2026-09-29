@@ -19,6 +19,7 @@ mod screenshot_visibility;
 mod tm;
 mod translate;
 mod window;
+mod window_drag;
 #[cfg(target_os = "windows")]
 mod window_bounds;
 
@@ -32,3 +33,4 @@ pub use screenshot::*;
 pub use tm::*;
 pub use translate::*;
 pub use window::*;
+pub use window_drag::*;
