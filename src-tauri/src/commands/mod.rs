@@ -21,6 +21,7 @@ mod translate;
 mod window;
 #[cfg(target_os = "windows")]
 mod window_bounds;
+mod window_drag;
 
 pub use app::*;
 pub use clipboard::*;
@@ -32,3 +33,4 @@ pub use screenshot::*;
 pub use tm::*;
 pub use translate::*;
 pub use window::*;
+pub use window_drag::*;

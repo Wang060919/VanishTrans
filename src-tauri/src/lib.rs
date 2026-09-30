@@ -390,6 +390,7 @@ pub fn run() {
             commands::toggle_pin,
             commands::get_pin_state,
             commands::set_ball_window_bounds,
+            commands::start_window_drag,
             commands::get_api_config,
             commands::set_api_config,
             commands::set_hotkeys,
