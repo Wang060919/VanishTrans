@@ -6,6 +6,9 @@ import "./styles/tokens.css";
 import "./styles/island.css";
 import "./styles/app.css";
 import "./styles/quick-window.css";
+import "./styles/settings.css";
+import "./styles/native-ui.css";
+import "./styles/native-island.css";
 import { logError } from "./lib/logger";
 
 interface EBState {

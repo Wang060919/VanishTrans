@@ -1,10 +1,12 @@
 import { type IslandPhase } from "../islandModel";
+import { readTranslationResult, type IslandResult } from "../../lib/translationResult";
 
 interface TranslationActivity {
   state?: string;
   sourceId?: unknown;
   requestId?: unknown;
   revision?: unknown;
+  result?: unknown;
 }
 
 type Activity = IslandPhase | "idle";
@@ -23,6 +25,7 @@ export function normalizeTranslationActivity(payload: unknown): IslandPhase | "i
 
 /** Keep terminal revisions as tombstones so late working events cannot revive a source. */
 export class TranslationActivityAggregator {
+  completedResult: IslandResult | null = null;
   private readonly sources = new Map<string, SourceActivity>();
 
   accept(payload: unknown): Activity | null {
@@ -44,6 +47,10 @@ export class TranslationActivityAggregator {
       this.sources.set(sourceId, { state, requestId, revision });
     }
     // Anonymous events retain legacy last-event semantics, but cannot hide known work.
-    return [...this.sources.values()].some((item) => item.state === "working") ? "working" : state;
+    const activity = [...this.sources.values()].some((item) => item.state === "working") ? "working" : state;
+    const result = activity === "done" && identified ? readTranslationResult(event.result) : null;
+    this.completedResult = result ? { ...result, sourceId: event!.sourceId as string,
+      requestId: event!.requestId as number, revision: event!.revision as number } : null;
+    return activity;
   }
 }

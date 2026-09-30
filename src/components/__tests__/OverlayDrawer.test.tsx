@@ -3,6 +3,31 @@ import { describe, expect, it, vi } from "vitest";
 import OverlayDrawer from "../OverlayDrawer";
 
 describe("OverlayDrawer", () => {
+  it("isolates full-size settings, wraps focus and restores the opener", () => {
+    const opener = document.createElement("button");
+    document.body.appendChild(opener);
+    opener.focus();
+    const content = (open: boolean) => <div>
+      <button>background</button>
+      <OverlayDrawer fullSize open={open} title="设置" onClose={vi.fn()}>
+        <input aria-label="last control" />
+      </OverlayDrawer>
+    </div>;
+    const view = render(content(true));
+    const back = screen.getByRole("button", { name: "返回翻译" });
+    const last = screen.getByLabelText("last control");
+    expect(back).toHaveFocus();
+    expect(screen.getByText("background")).toHaveAttribute("inert");
+    fireEvent.keyDown(back, { key: "Tab", shiftKey: true });
+    expect(last).toHaveFocus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(back).toHaveFocus();
+    view.rerender(content(false));
+    expect(opener).toHaveFocus();
+    expect(screen.getByText("background")).not.toHaveAttribute("inert");
+    opener.remove();
+  });
+
   it("renders an accessible dialog and closes on Escape", () => {
     const onClose = vi.fn();
     render(

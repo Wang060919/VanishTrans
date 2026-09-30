@@ -1,6 +1,7 @@
 import MainWindowApp from "./MainWindowApp";
 import TranslationIslandView from "./TranslationIslandView";
 import { useBallWindow } from "./useBallWindow";
+import IslandResultPanel from "./IslandResultPanel";
 
 export { normalizeTranslationActivity } from "./useBallWindow";
 
@@ -20,13 +21,18 @@ export default function BallWindow() {
       dockSide={island.dockSide}
       busyAction={island.busyAction}
       notice={island.notice}
+      hasResult={island.result !== null}
+      resultContent={island.result && (
+        <IslandResultPanel result={island.result} onExpand={() => void island.openResultInFull()}
+          onClose={() => void island.collapseFull()} />
+      )}
       shouldReduceMotion={island.shouldReduceMotion}
       fullContent={(
         <MainWindowApp
           embedded
+          resultToOpen={island.resultToOpen}
           onCollapse={island.collapseFull}
           onScreenshot={() => island.runAction("screenshot", "start_screenshot_from_ball")}
-          onRequestExpand={island.expandFull}
           onWindowDragStart={island.handleFullDragStart}
           onWindowDragEnd={island.handleFullDragEnd}
           onWindowMoved={island.handleFullWindowMoved}

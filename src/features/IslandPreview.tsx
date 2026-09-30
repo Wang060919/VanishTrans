@@ -2,6 +2,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import type { LangDirection } from "../hooks/useTranslation";
 import MainLayout from "../layouts/MainLayout";
 import { useIslandPreviewMotion } from "./useIslandPreviewMotion";
+import IslandResultPanel from "./IslandResultPanel";
 import QuickTranslationView from "./QuickTranslationView";
 import TranslationIslandView from "./TranslationIslandView";
 import {
@@ -14,7 +15,7 @@ import {
 } from "./islandModel";
 import "./IslandPreview.css";
 
-const MODES: IslandMode[] = ["idle", "peek", "actions", "status", "full"];
+const MODES: IslandMode[] = ["idle", "peek", "actions", "status", "result", "full"];
 const PHASES: IslandPhase[] = ["working", "done", "error"];
 const BUSY_ACTIONS: BallAction[] = ["clipboard", "screenshot", "main"];
 const DOCK_SIDES: DockSide[] = ["left", "center", "right"];
@@ -42,9 +43,13 @@ export default function IslandPreview() {
     : noticeParam || "暂时无法连接翻译服务";
   const [quickOpen, setQuickOpen] = useState(params.get("mode") === "quick");
   const [previewCopied, setPreviewCopied] = useState(false);
-  const [inputText, setInputText] = useState("");
-  const [outputText, setOutputText] = useState("");
+  const [freeTranslation, setFreeTranslation] = useState(false);
+  const [inputText, setInputText] = useState(params.has("sample") ? "Good tools disappear into the work.\nThey help you stay focused on what matters." : "");
+  const [outputText, setOutputText] = useState(params.has("sample") ? "好的工具会融入工作，\n让你专注于真正重要的事。" : "");
   const [direction, setDirection] = useState<LangDirection>("auto");
+  const previewResult = { source: "Stay focused. Let the little things flow.",
+    text: params.get("length") === "long" ? "专注眼前，让琐事自然流转。".repeat(60) : "专注眼前，让琐事自然流转。",
+    direction: "en2zh" as const };
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const dimensions = getIslandGeometry(interactive ? "full" : mode);
   const presentation: IslandPresentation = {
@@ -83,6 +88,12 @@ export default function IslandPreview() {
         <TranslationIslandView
           presentation={presentation}
           phase={phase}
+          hasResult={phase === "done" || mode === "result"}
+          resultContent={<IslandResultPanel result={previewResult} preview
+            onClose={() => setMode("idle")} onExpand={() => {
+              setInputText(previewResult.source); setOutputText(previewResult.text);
+              setDirection(previewResult.direction); setMode("full");
+            }} />}
           dockSide={dockSide}
           busyAction={busyAction}
           notice={notice}
@@ -127,26 +138,31 @@ export default function IslandPreview() {
                 hotkeys: [],
                 hotkeyLabels: {},
                 onHotkeysChange: async () => {},
-                profiles: [],
+                profiles: params.has("profiles") ? [
+                  { name: "日常翻译", baseUrl: "https://example.test", model: "gpt-4o-mini" },
+                  { name: "本地服务", baseUrl: "http://localhost:11434", model: "local-model" },
+                ] : [],
                 onSaveProfile: async () => [],
                 onDeleteProfile: async () => [],
                 onApplyProfile: async () => ({ name: "", baseUrl: "", model: "" }),
                 onTestConnection: async () => "",
                 loggingEnabled: true,
                 onSetLogging: async () => {},
-                freeTranslation: false,
-                onSetFreeTranslation: async () => {},
+                freeTranslation,
+                onSetFreeTranslation: async (enabled) => setFreeTranslation(enabled),
               }}
             />
           )}
           onRunAction={(action) => {
-            if (interactive && action === "main") setMode("full");
+            if (interactive && action === "main") setMode(phase === "done" ? "result" : "full");
           }}
           onCoreClick={() => {
             if (!interactive) return;
             setMode((current) => {
               if (current === "idle" || current === "peek") return "actions";
               if (current === "actions") return "idle";
+              if (current === "status" && phase === "done") return "result";
+              if (current === "status" && phase === "error") return "full";
               return current;
             });
           }}

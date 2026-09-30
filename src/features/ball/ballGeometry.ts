@@ -16,7 +16,8 @@ export async function measureExpandedBounds(state: BallGeometryState, previousMo
   const idleWidthPixels = Math.round(IDLE_WIDTH * scale);
   const idleHeightPixels = Math.round(IDLE_HEIGHT * scale);
   // Once a larger viewport exists, keep it warm; only the island morphs.
-  const nativeTarget = nativeModeRef.current === "full" ? "full" : target;
+  // Result cards are rounded rectangles, so never clip them with the capsule region.
+  const nativeTarget = nativeModeRef.current === "full" && target !== "result" ? "full" : target;
   const targetDimensions = getIslandGeometry(nativeTarget);
   const currentPosition = await win.outerPosition();
   const currentOuterSize = await win.outerSize();

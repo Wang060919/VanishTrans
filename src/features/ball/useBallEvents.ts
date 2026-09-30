@@ -12,12 +12,12 @@ type BallEventsState = Pick<BallState,
   "mode" | "modeRef" | "draggingRef" | "transitionCoordinator" |
   "coordinatorLifetimeRef" | "expectingTranslationRef" | "expectedActivityTimerRef" | "noticeTimerRef" |
   "statusTimerRef" | "fullPinnedRef" | "phaseRef" | "phase" |
-  "setPhase"
+  "setPhase" | "commitResult"
 > & Pick<BallTransitions, "transitionMode"> & Pick<BallActions, "scheduleStatusCollapse"> & Pick<BallDrag, "clearPointerOrigin">;
 
 export function useBallEvents({
   mode, modeRef, draggingRef, transitionCoordinator, coordinatorLifetimeRef, expectingTranslationRef,
-  expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef, phaseRef, phase, setPhase,
+  expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef, phaseRef, phase, setPhase, commitResult,
   transitionMode, scheduleStatusCollapse, clearPointerOrigin,
 }: BallEventsState) {
   const activityAggregator = useRef(new TranslationActivityAggregator());
@@ -61,6 +61,7 @@ export function useBallEvents({
     const translationListener = listen<unknown>("translation-state", (event) => {
       const activity = activityAggregator.current.accept(event.payload);
       if (!activity) return;
+      commitResult(activityAggregator.current.completedResult);
       expectingTranslationRef.current = false;
       if (expectedActivityTimerRef.current) {
         clearTimeout(expectedActivityTimerRef.current);
@@ -89,11 +90,14 @@ export function useBallEvents({
       void transitionMode("status", { reason: "business" });
     });
     const focusListener = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      // The native drag loop can briefly deactivate the window. Do not queue
+      // an automatic collapse that would run as soon as dragging ends.
+      if (!focused && draggingRef.current) return;
       const effectiveMode = transitionCoordinator.requestedTarget ?? modeRef.current;
       const shouldCollapseActions = (effectiveMode === "peek" || effectiveMode === "actions")
         && !expectingTranslationRef.current;
-      const shouldCollapseFull = effectiveMode === "full"
-        && !fullPinnedRef.current;
+      const shouldCollapseFull = effectiveMode === "result"
+        || (effectiveMode === "full" && !fullPinnedRef.current);
       if (!focused && shouldCollapseActions) {
         void transitionMode("idle", { reason: "focus-loss" });
       } else if (!focused && shouldCollapseFull) {
@@ -110,7 +114,7 @@ export function useBallEvents({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       if (document.querySelector('[role="dialog"]')) return;
-      if (modeRef.current === "peek" || modeRef.current === "actions" || modeRef.current === "full") {
+      if (modeRef.current === "peek" || modeRef.current === "actions" || modeRef.current === "full" || modeRef.current === "result") {
         void transitionMode("idle", { reason: "keyboard" });
       }
     };
@@ -133,8 +137,8 @@ export function useBallEvents({
       if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     };
   }, [
-    clearPointerOrigin, transitionCoordinator, transitionMode, modeRef, expectingTranslationRef,
-    expectedActivityTimerRef, clearNoticeTimer, statusTimerRef, fullPinnedRef, phaseRef, setPhase,
+    clearPointerOrigin, transitionCoordinator, transitionMode, modeRef, draggingRef, expectingTranslationRef,
+    expectedActivityTimerRef, clearNoticeTimer, statusTimerRef, fullPinnedRef, phaseRef, setPhase, commitResult,
   ]);
 
   useEffect(() => {

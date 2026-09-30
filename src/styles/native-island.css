@@ -1,0 +1,50 @@
+/* Skin only: preserve native clipping, retained viewport and transition timing. */
+.translation-island { --island-accent: 0, 170, 255; --island-edge: transparent; --island-depth: transparent; }
+.translation-island__surface::after { box-shadow: none; }
+.translation-island__actions, .translation-island__notice { width: calc(var(--island-width) - 58px); min-width: 0; }
+.translation-island__actions { align-items: center; gap: 4px; padding: 4px; }
+.translation-island__actions button { height: 36px; padding: 0; border-radius: 18px; }
+.translation-island__actions button:nth-child(n) svg { color: var(--color-ink); stroke-width: 1.8; }
+.translation-island__actions button span {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.translation-island__core::before { background: none; box-shadow: none; }
+.translation-island__core:hover:not(:disabled)::before { background: var(--color-surface-raised); }
+.translation-island__core .brand-mark { filter: none; }
+.translation-island__core .brand-mark__node { animation: none; }
+.translation-island .translation-island__content--status { display: flex; width: calc(var(--island-width) - 58px); gap: 9px; padding: 0 8px 0 16px; }
+.translation-island__state-icon { order: 2; flex: none; margin-left: auto; background: none; color: var(--color-signal); }
+.translation-island--done .translation-island__state-icon { color: var(--color-success); }
+.translation-island--error .translation-island__state-icon { color: var(--color-danger); }
+.translation-island__state-copy { flex: 1; }
+.translation-island__state-copy strong { font-size: 13px; font-weight: 450; color: var(--color-ink); }
+.translation-island__state-copy small { display: none; }
+.translation-island__content--status:has(.translation-island__status-open) .translation-island__state-icon { margin-right: 24px; }
+.translation-island__state-copy, .translation-island__state-icon { pointer-events: none; }
+.translation-island__status-open { z-index: 1; }
+.island-idle-label { font-size: 12px; font-weight: 450; color: var(--color-ink-secondary); }
+.island-idle-dot { background: var(--color-success); }
+.quick-translate-shell { box-shadow: none; border: 0; }
+.quick-translate-header { height: 40px; padding: 6px 18px 0 22px; }
+.quick-translate-status::before { display: none; }
+.quick-translate-status--active { color: var(--color-ink-muted); }
+.quick-source { color: var(--color-ink-muted); font-size: 12px; padding: 3px 24px 0; }
+.quick-result { padding: 10px 24px 12px; }
+.quick-result-text { font-size: 17px; line-height: 1.6; font-weight: 450; }
+.quick-result-text--streaming::after, .quick-loading i { background: var(--color-signal); }
+.quick-translate-shell--result .quick-translate-header { height: 40px; padding: 6px 18px 0 24px; }
+.quick-translate-shell--result .quick-result-text { font-size: 18px; font-weight: 450; }
+.island-result-footer { justify-content: flex-end; gap: 10px; padding: 0 20px 12px; }
+.island-result-footer button { width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; background: transparent; color: var(--color-ink); }
+.island-result-footer button:hover { background: var(--color-surface-raised); color: #fff; }
+.island-result-footer button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+.translation-island__result .quick-translate-header, .translation-island__result .quick-translate-brand { flex-direction: row; }
+.translation-island--center .translation-island__result .quick-translate-header,
+.translation-island--left .translation-island__result .quick-translate-header,
+.translation-island--center .translation-island__result .quick-translate-brand,
+.translation-island--left .translation-island__result .quick-translate-brand { flex-direction: row; }
+.translation-island--center .translation-island__result .quick-translate-header,
+.translation-island--left .translation-island__result .quick-translate-header { padding-left: 24px; padding-right: 18px; }
+
+.quick-translate-brand .brand-mark, .quick-translate-actions button { color: var(--color-ink); }

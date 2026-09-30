@@ -35,7 +35,7 @@ export function useBallTransitions({
     target: IslandMode,
     options: TransitionOptions = {},
   ) => {
-    if (target === "full" && statusTimerRef.current) {
+    if ((target === "full" || target === "result") && statusTimerRef.current) {
       clearTimeout(statusTimerRef.current);
       statusTimerRef.current = null;
     }

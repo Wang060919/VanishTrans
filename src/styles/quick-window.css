@@ -61,8 +61,8 @@ body.quick-window-body .quick-translate-shell {
   align-items: center;
   gap: 6px;
   color: var(--color-ink-muted);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   letter-spacing: 0;
 }
 
@@ -82,7 +82,7 @@ body.quick-window-body .quick-translate-shell {
 
 .quick-translate-status--active::before {
   background: var(--color-signal);
-  box-shadow: 0 0 9px rgba(141, 156, 255, 0.5);
+  box-shadow: 0 0 9px rgba(0, 170, 255, 0.5);
   animation: quickStatusPulse 900ms var(--ease-standard) infinite;
 }
 
@@ -133,10 +133,11 @@ body.quick-window-body .quick-translate-shell {
   overflow: hidden;
   flex: none;
   padding: 4px 22px 0;
-  color: var(--color-ink-muted);
+  color: var(--color-ink-secondary);
   font-family: var(--font-content);
-  font-size: 12px;
-  line-height: 1.48;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   -webkit-box-orient: vertical;
@@ -157,9 +158,9 @@ body.quick-window-body .quick-translate-shell {
   margin: 0;
   color: rgba(250, 250, 252, 0.93);
   font-family: var(--font-content);
-  font-size: 16px;
+  font-size: var(--font-size-content);
   font-weight: 400;
-  line-height: 1.65;
+  line-height: var(--line-height-content);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   animation: quickResultIn 180ms var(--ease-standard) both;
@@ -249,3 +250,23 @@ body.quick-window-body .quick-translate-shell {
 .quick-translate-shell[data-state="error"] .quick-translate-status::before { background: #e06972; box-shadow: none; }
 .quick-translate-actions button:focus-visible,
 .quick-error button:focus-visible { outline: 1px solid var(--color-ink-muted); outline-offset: 2px; }
+
+/* Expanded result: read first, copy next, open the editor only when needed. */
+.quick-translate-shell--result .quick-translate-header { height: 38px; padding: 4px 18px 0 22px; }
+.quick-translate-shell--result .quick-translate-status { color: #b9b9c1; font-weight: 500; }
+.quick-translate-shell--result .quick-translate-status::before { display: none; }
+.quick-translate-shell--result .quick-translate-brand { gap: 9px; }
+.quick-translate-shell--result .quick-translate-brand .brand-mark { width: 19px; height: 19px; }
+.translation-island__result .quick-translate-shell--result .quick-result {
+  display: flex; flex-direction: column; justify-content: safe center;
+  margin: 0 0 8px; padding: 5px 24px 1px; scrollbar-gutter: stable;
+}
+.quick-translate-shell--result .quick-result-text { font-size: 17px; line-height: 1.55; font-weight: 500; letter-spacing: 0; }
+.island-result-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: none; padding: 0 22px 14px; }
+.island-result-footer button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; border: 0; font: inherit; font-size: 12px; cursor: pointer; }
+.island-result-copy { padding: 0 13px; border-radius: 16px; background: #f2f2f7; color: #111114; font-weight: 600; }
+.island-result-copy:hover { background: #fff; }
+.island-result-expand { padding: 0 3px 0 9px; border-radius: 16px; background: transparent; color: #a1a1aa; }
+.island-result-expand:hover { color: #fff; background: #171719; }
+.island-result-footer button:focus-visible { outline: 2px solid #a1a1aa; outline-offset: 3px; }
+.island-result-footer button:active { transform: scale(.97); }

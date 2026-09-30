@@ -93,7 +93,7 @@ describe("island screenshot entry points", () => {
     }
     expect(document.querySelectorAll(".translation-island__content--actions")).toHaveLength(1);
     const content = document.querySelector(".translation-island__content--actions");
-    expect(parseFloat(getComputedStyle(content!).width)).toBeCloseTo(238, 0);
-    expect(native.bounds.width).toBe(entry === "full" ? 720 : 296);
+    expect(parseFloat(getComputedStyle(content!).width)).toBeCloseTo(166, 0);
+    expect(native.bounds.width).toBe(entry === "full" ? 560 : 224);
   });
 });

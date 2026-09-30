@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ISLAND_TIMING, type IslandMode, type IslandMotion } from "../islandModel";
+import { getIslandSurfaceMs, ISLAND_TIMING, type IslandMode, type IslandMotion } from "../islandModel";
 import { waitForIslandTransition, type IslandTransitionContext } from "../islandTransitionCoordinator";
 import { IDLE_WIDTH, IDLE_HEIGHT, saveBallPosition, setBallWindowBounds } from "./ballNative";
 import { settleBallSurface } from "./ballSurfaceSettlement";
@@ -23,9 +23,9 @@ export async function collapseBallWindow(state: BallCollapseState, previousMode:
   const currentSize = await win.outerSize();
   if (!context.isCurrent()) return;
 
-  if (previousMode === "full" && motion === "animated") {
+  if ((previousMode === "full" || previousMode === "result") && motion === "animated") {
     commitPresentation({
-      mode: "full",
+      mode: previousMode,
       motion,
       phase: "full-exit",
       generation: context.generation,
@@ -57,7 +57,7 @@ export async function collapseBallWindow(state: BallCollapseState, previousMode:
     generation: context.generation,
   });
 
-  await settleBallSurface(motion === "animated" ? ISLAND_TIMING.surfaceMs : 0, context.signal);
+  await settleBallSurface(motion === "animated" ? getIslandSurfaceMs("idle") : 0, context.signal);
   if (!context.isCurrent()) return;
 
   // Keep the WebView viewport stationary on Windows; clip only after the morph.

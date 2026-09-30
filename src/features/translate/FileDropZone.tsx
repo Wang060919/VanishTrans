@@ -2,6 +2,7 @@ import { FileText } from "lucide-react";
 import React, { useCallback, useRef, useState } from "react";
 
 interface FileDropZoneProps {
+  inputRef?: React.RefObject<HTMLInputElement>;
   onDrop: (filename: string, content: string) => void;
   disabled?: boolean;
   children: React.ReactNode;
@@ -12,7 +13,7 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
  * FileDropZone - handles file drag-and-drop overlay.
  * Single responsibility: file drop interaction and parsing.
  */
-export default function FileDropZone({ onDrop, disabled = false, children }: FileDropZoneProps) {
+export default function FileDropZone({ onDrop, disabled = false, children, inputRef }: FileDropZoneProps) {
   const [dragging, setDragging] = useState(false);
   const dragOverCounter = useRef(0);
 
@@ -41,15 +42,8 @@ export default function FileDropZone({ onDrop, disabled = false, children }: Fil
     event.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    dragOverCounter.current = 0;
-    setDragging(false);
-
+  const readFile = useCallback((file?: File) => {
     if (disabled) return;
-
-    const file = event.dataTransfer.files[0];
     if (!file) return;
 
 
@@ -68,6 +62,18 @@ export default function FileDropZone({ onDrop, disabled = false, children }: Fil
     reader.readAsText(file);
   }, [disabled, onDrop]);
 
+  const handleDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragOverCounter.current = 0;
+    setDragging(false);
+
+    if (disabled) return;
+
+    const file = event.dataTransfer.files[0];
+    readFile(file);
+  }, [disabled, readFile]);
+
   return (
     <div
       className="translation-drop-zone"
@@ -76,6 +82,8 @@ export default function FileDropZone({ onDrop, disabled = false, children }: Fil
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      <input ref={inputRef} type="file" hidden aria-label="选择翻译文件" disabled={disabled}
+        accept=".txt,.srt,.json" onChange={(event) => { readFile(event.target.files?.[0]); event.target.value = ""; }} />
       {dragging && (
         <div className="file-drop-overlay" role="status">
           <FileText size={28} aria-hidden="true" />

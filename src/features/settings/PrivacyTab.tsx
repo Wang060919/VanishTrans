@@ -37,8 +37,8 @@ export default function PrivacyTab({ loggingEnabled, onSetLogging, notifyError }
           />
           <span className="setting-hint">{loggingEnabled ? "已开启" : "已关闭"}</span>
         </div>
-        <p className="setting-hint">关闭后不再写入日志文件；翻译历史与翻译记忆仍按现有设置保存。</p>
       </div>
+      <p className="setting-hint">关闭后不再写入日志文件；翻译历史与翻译记忆仍按现有设置保存。</p>
     </section>
   );
 }

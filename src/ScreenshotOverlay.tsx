@@ -2,6 +2,7 @@ import { finishOcr, cancelScreenshot as cancelScreenshotCmd, getScreenshotPayloa
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
+import ScreenshotToolbar from "./components/ScreenshotToolbar";
 import { errorMessage } from "./lib/errors";
 
 interface Rect {
@@ -131,12 +132,11 @@ export default function ScreenshotOverlay() {
     const rw = Math.abs(sel.curX - sel.startX);
     const rh = Math.abs(sel.curY - sel.startY);
     if (rw < 2 || rh < 2) return;
-    const styles = getComputedStyle(canvas);
     ctx.fillStyle = smart
       ? "rgba(124, 145, 255, 0.09)"
-      : styles.getPropertyValue("--color-signal-soft").trim() || "rgba(124, 145, 255, 0.12)";
+      : "rgba(141, 156, 255, 0.12)";
     ctx.fillRect(x, y, rw, rh);
-    ctx.strokeStyle = styles.getPropertyValue("--color-signal").trim() || "#7c91ff";
+    ctx.strokeStyle = "#8d9cff";
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, rw, rh);
     const label = `${Math.round(rw)} × ${Math.round(rh)}`;
@@ -339,15 +339,11 @@ export default function ScreenshotOverlay() {
         </div>
       )}
       {status && (
-        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/85 text-white px-6 py-3 rounded-lg text-sm z-[9999]">
+        <div className="screenshot-status" role="status">
           {status}
         </div>
       )}
-      {imgLoaded && !status && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 text-white/60 text-[13px] pointer-events-none z-[9999]">
-          拖拽选取识别区域 · Esc 取消
-        </div>
-      )}
+      {imgLoaded && !status && <ScreenshotToolbar onCancel={() => void cancelScreenshot()} />}
     </div>
   );
 }

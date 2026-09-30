@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { logError } from "../../lib/logger";
-import { getIdleAnchorX, getIslandGeometry, hasSameGeometry, ISLAND_TIMING, shrinksIsland } from "../islandModel";
+import { getIdleAnchorX, getIslandGeometry, getIslandSurfaceMs, hasSameGeometry, ISLAND_TIMING, shrinksIsland } from "../islandModel";
 import {
   isIslandTransitionAborted, waitForIslandTransition, type IslandTransitionContext,
   type IslandTransitionRequest,
@@ -65,6 +65,12 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
       return;
     }
 
+    if ((previousMode === "result" || previousMode === "full") && previousMode !== target && motion === "animated") {
+      commitPresentation({ mode: previousMode, motion, phase: "full-exit", generation: context.generation });
+      await waitForIslandTransition(ISLAND_TIMING.fullContentExitMs, context.signal);
+      if (!context.isCurrent()) return;
+    }
+
     const bounds = await measureExpandedBounds(state, previousMode, target, scale, context);
     if (!bounds || !context.isCurrent()) return;
     const {
@@ -83,7 +89,7 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
         generation: context.generation,
       });
       if (motion === "animated") {
-        await waitForIslandTransition(ISLAND_TIMING.surfaceMs, context.signal);
+        await waitForIslandTransition(getIslandSurfaceMs(target), context.signal);
       }
       if (!context.isCurrent()) return;
     }
@@ -111,7 +117,7 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
       });
     }
     if (nativeTarget !== target) {
-      await settleBallSurface(shrinksExistingIsland ? 0 : ISLAND_TIMING.surfaceMs, context.signal);
+      await settleBallSurface(shrinksExistingIsland ? 0 : getIslandSurfaceMs(target), context.signal);
       if (!context.isCurrent()) return;
       const visible = getIslandGeometry(target);
       const width = Math.round(visible.width * scale);
@@ -123,9 +129,9 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
       });
       if (!context.isCurrent()) return;
     }
-    if (target === "actions" || target === "full") await win.setFocus();
+    if (target === "actions" || target === "full" || target === "result") await win.setFocus();
     if (target === "full" && motion === "animated") {
-      await waitForIslandTransition(ISLAND_TIMING.surfaceMs, context.signal);
+      await waitForIslandTransition(getIslandSurfaceMs(target), context.signal);
     }
   } catch (error) {
     if (context.signal.aborted || isIslandTransitionAborted(error)) return;
