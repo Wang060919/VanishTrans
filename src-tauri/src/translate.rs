@@ -68,6 +68,9 @@ pub async fn do_translate_unified_scoped(
 mod sse_tests;
 
 #[cfg(test)]
+mod sse_usage_tests;
+
+#[cfg(test)]
 mod google_tests;
 
 #[cfg(test)]

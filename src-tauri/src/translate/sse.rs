@@ -22,6 +22,7 @@ struct StreamErrorInfo {
 struct StreamEnvelope {
     choices: Option<Vec<StreamChoice>>,
     error: Option<StreamErrorInfo>,
+    usage: Option<serde_json::Value>,
 }
 
 pub(super) fn process_sse_line(
@@ -58,6 +59,21 @@ pub(super) fn process_sse_line(
     let choices = envelope
         .choices
         .ok_or_else(|| "API 流响应格式异常：缺少 choices".to_string())?;
+    // Usage-only chunks carry no choices; keep waiting for text and [DONE].
+    if choices.is_empty()
+        && envelope.usage.as_ref().is_some_and(|usage| {
+            ["prompt_tokens", "completion_tokens", "total_tokens"]
+                .iter()
+                .all(|key| {
+                    usage
+                        .get(*key)
+                        .and_then(serde_json::Value::as_u64)
+                        .is_some()
+                })
+        })
+    {
+        return Ok(false);
+    }
     let choice = choices
         .first()
         .ok_or_else(|| "API 流响应格式异常：choices 为空".to_string())?;
