@@ -27,6 +27,12 @@ static REGISTERED_SHORTCUTS: std::sync::OnceLock<Mutex<Vec<(Shortcut, String)>>>
 static SYNC_SHORTCUTS_LOCK: Mutex<()> = Mutex::new(());
 static ALT_Q_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+/// Registration retries: a hotkey the OS still reports as taken is usually a
+/// previous instance mid-shutdown, which releases its grabs within a few
+/// hundred milliseconds. Retry briefly before surfacing a conflict.
+const REGISTER_ATTEMPTS: u32 = 3;
+const REGISTER_RETRY_DELAY: Duration = Duration::from_millis(400);
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ShortcutRegistrationConflict {
@@ -341,9 +347,19 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
     let mut tracked = unregister_all(previous, |shortcut| shortcut_plugin.unregister(shortcut));
 
     let (replacement, conflicts) = register_available_shortcuts(validated, |shortcut| {
-        shortcut_plugin
-            .register(shortcut)
-            .map_err(|error| error.to_string())
+        let mut attempt = 0;
+        loop {
+            match shortcut_plugin.register(shortcut) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    attempt += 1;
+                    if attempt >= REGISTER_ATTEMPTS {
+                        return Err(error.to_string());
+                    }
+                    thread::sleep(REGISTER_RETRY_DELAY);
+                }
+            }
+        }
     });
 
     tracked.extend(replacement);
