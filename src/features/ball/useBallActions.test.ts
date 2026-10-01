@@ -10,7 +10,9 @@ vi.mock("./ballNative", () => ({ invokeCommand }));
 function setup(transitionMode: BallTransitions["transitionMode"]) {
   return renderHook(() => {
     const state = useBallState();
-    const actions = useBallActions({ ...state, transitionMode });
+    const actions = useBallActions({
+      ...state, transitionMode, requestFocusCollapse: vi.fn(),
+    });
     return { state, actions };
   });
 }

@@ -24,7 +24,10 @@ const transitionMode = vi.fn().mockResolvedValue(undefined);
 const scheduleStatusCollapse = vi.fn();
 function useHarness({ clearPointerOrigin }: { clearPointerOrigin: () => void }) {
   const state = useBallState();
-  useBallEvents({ ...state, clearPointerOrigin, transitionMode, scheduleStatusCollapse });
+  useBallEvents({
+    ...state, clearPointerOrigin, transitionMode, scheduleStatusCollapse,
+    requestFocusCollapse: vi.fn(), cancelFocusCollapse: vi.fn(),
+  });
   return state;
 }
 const event = (sourceId: string, state: string, revision: number, requestId = 1) =>

@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { errorMessage } from "../../lib/errors";
+import { logInfo } from "../../lib/logger";
 import { type BallAction, type IslandPhase } from "../islandModel";
 import { invokeCommand } from "./ballNative";
 import { type BallState } from "./useBallState";
@@ -9,13 +10,13 @@ type BallActionsState = Pick<BallState,
   "modeRef" | "draggingRef" | "transitionCoordinator" | "lastDragEndedAtRef" |
   "expectingTranslationRef" | "busyActionRef" | "noticeRef" | "expectedActivityTimerRef" |
   "noticeTimerRef" | "statusTimerRef" | "phase" | "setBusyAction" |
-  "setNotice" | "resultRef" | "setResultToOpen"
-> & Pick<BallTransitions, "transitionMode">;
+  "setNotice" | "resultRef" | "setResultToOpen" | "transitionSettledAtRef"
+> & Pick<BallTransitions, "transitionMode" | "requestFocusCollapse">;
 
 export function useBallActions({
   modeRef, draggingRef, transitionCoordinator, lastDragEndedAtRef, expectingTranslationRef, busyActionRef,
   noticeRef, expectedActivityTimerRef, noticeTimerRef, statusTimerRef, phase, setBusyAction, setNotice,
-  transitionMode, resultRef, setResultToOpen,
+  transitionMode, resultRef, setResultToOpen, transitionSettledAtRef, requestFocusCollapse,
 }: BallActionsState) {
   const scheduleStatusCollapse = useCallback((statusPhase: IslandPhase) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
@@ -38,20 +39,38 @@ export function useBallActions({
       && busyActionRef.current === null
       && !expectingTranslationRef.current
       && !noticeRef.current) {
-      void transitionMode("idle", { motion: "instant", reason: "focus-loss" });
+      requestFocusCollapse("instant");
     }
   }, [
-    transitionCoordinator, transitionMode, modeRef, draggingRef, expectingTranslationRef, busyActionRef,
+    transitionCoordinator, requestFocusCollapse, modeRef, draggingRef, expectingTranslationRef, busyActionRef,
     noticeRef,
   ]);
 
   const toggleActions = useCallback(async () => {
-    if (modeRef.current === "actions") await transitionMode("idle");
+    if (modeRef.current === "actions") {
+      // While an open transition is in flight — and for a beat after it ends
+      // while the action strip is still growing — the core button still covers
+      // the strip area; a click there means "open", not "close". Dropping it
+      // stops rapid clicks from flapping the island open/shut forever.
+      if (transitionCoordinator.requestedTarget === "actions"
+        || performance.now() - transitionSettledAtRef.current < 350) return;
+      await transitionMode("idle");
+    }
     else if (modeRef.current === "peek") await transitionMode("actions");
     else if (modeRef.current === "idle") await transitionMode("actions");
-  }, [transitionMode, modeRef]);
+  }, [transitionMode, modeRef, transitionCoordinator, transitionSettledAtRef]);
 
   const handleCoreClick = useCallback(async () => {
+    logInfo("ball.click", "core click", {
+      mode: modeRef.current,
+      phase,
+      transitioning: transitionCoordinator.isTransitioning,
+      requested: transitionCoordinator.requestedTarget,
+      dragging: draggingRef.current,
+      busy: busyActionRef.current,
+      expecting: expectingTranslationRef.current,
+      hasResult: resultRef.current !== null,
+    });
     if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
     if (modeRef.current === "status") {
       if (phase !== "working") {
@@ -61,7 +80,10 @@ export function useBallActions({
       return;
     }
     await toggleActions();
-  }, [phase, toggleActions, transitionMode, modeRef, draggingRef, lastDragEndedAtRef, resultRef]);
+  }, [
+    phase, toggleActions, transitionMode, modeRef, draggingRef, lastDragEndedAtRef, resultRef,
+    busyActionRef, expectingTranslationRef, transitionCoordinator,
+  ]);
 
   const openResultInFull = useCallback(async () => {
     if (!resultRef.current || draggingRef.current

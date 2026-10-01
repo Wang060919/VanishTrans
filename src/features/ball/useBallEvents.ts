@@ -2,6 +2,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef } from "react";
 import { useThemeSync } from "../../hooks/useTheme";
+import { logInfo } from "../../lib/logger";
+import { getForegroundWindowInfo } from "../../services/tauriBridge";
 import { TranslationActivityAggregator } from "./ballActivity";
 import { type BallState } from "./useBallState";
 import { type BallTransitions } from "./useBallTransitions";
@@ -13,12 +15,13 @@ type BallEventsState = Pick<BallState,
   "coordinatorLifetimeRef" | "expectingTranslationRef" | "expectedActivityTimerRef" | "noticeTimerRef" |
   "statusTimerRef" | "fullPinnedRef" | "phaseRef" | "phase" |
   "setPhase" | "commitResult"
-> & Pick<BallTransitions, "transitionMode"> & Pick<BallActions, "scheduleStatusCollapse"> & Pick<BallDrag, "clearPointerOrigin">;
+> & Pick<BallTransitions, "transitionMode" | "requestFocusCollapse" | "cancelFocusCollapse">
+  & Pick<BallActions, "scheduleStatusCollapse"> & Pick<BallDrag, "clearPointerOrigin">;
 
 export function useBallEvents({
   mode, modeRef, draggingRef, transitionCoordinator, coordinatorLifetimeRef, expectingTranslationRef,
   expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef, phaseRef, phase, setPhase, commitResult,
-  transitionMode, scheduleStatusCollapse, clearPointerOrigin,
+  transitionMode, requestFocusCollapse, cancelFocusCollapse, scheduleStatusCollapse, clearPointerOrigin,
 }: BallEventsState) {
   const activityAggregator = useRef(new TranslationActivityAggregator());
   const clearNoticeTimer = useCallback(() => {
@@ -61,6 +64,10 @@ export function useBallEvents({
     const translationListener = listen<unknown>("translation-state", (event) => {
       const activity = activityAggregator.current.accept(event.payload);
       if (!activity) return;
+      logInfo("ball.events", "translation-state", {
+        activity, mode: modeRef.current,
+        requested: transitionCoordinator.requestedTarget,
+      });
       commitResult(activityAggregator.current.completedResult);
       expectingTranslationRef.current = false;
       if (expectedActivityTimerRef.current) {
@@ -90,19 +97,29 @@ export function useBallEvents({
       void transitionMode("status", { reason: "business" });
     });
     const focusListener = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) {
+        cancelFocusCollapse();
+        logInfo("ball.events", "focus changed", { focused, mode: modeRef.current });
+        return;
+      }
       // The native drag loop can briefly deactivate the window. Do not queue
       // an automatic collapse that would run as soon as dragging ends.
-      if (!focused && draggingRef.current) return;
+      if (draggingRef.current) return;
       const effectiveMode = transitionCoordinator.requestedTarget ?? modeRef.current;
       const shouldCollapseActions = (effectiveMode === "peek" || effectiveMode === "actions")
         && !expectingTranslationRef.current;
       const shouldCollapseFull = effectiveMode === "result"
         || (effectiveMode === "full" && !fullPinnedRef.current);
-      if (!focused && shouldCollapseActions) {
-        void transitionMode("idle", { reason: "focus-loss" });
-      } else if (!focused && shouldCollapseFull) {
-        void transitionMode("idle", { reason: "focus-loss" });
-      }
+      // Identify which window holds the foreground right now — the focus
+      // thief is already foreground by the time this event lands.
+      void getForegroundWindowInfo()
+        .then((owner) => logInfo("ball.events", "foreground owner on blur", { owner }))
+        .catch(() => {});
+      logInfo("ball.events", "focus changed", {
+        focused, mode: modeRef.current, effectiveMode,
+        collapse: shouldCollapseActions || shouldCollapseFull,
+      });
+      if (shouldCollapseActions || shouldCollapseFull) requestFocusCollapse();
     });
     const expandListener = listen("expand-main-window", () => {
       void transitionMode("full", { reason: "user" });
@@ -135,10 +152,12 @@ export function useBallEvents({
       if (expectedActivityTimerRef.current) clearTimeout(expectedActivityTimerRef.current);
       clearNoticeTimer();
       if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+      cancelFocusCollapse();
     };
   }, [
     clearPointerOrigin, transitionCoordinator, transitionMode, modeRef, draggingRef, expectingTranslationRef,
     expectedActivityTimerRef, clearNoticeTimer, statusTimerRef, fullPinnedRef, phaseRef, setPhase, commitResult,
+    requestFocusCollapse, cancelFocusCollapse,
   ]);
 
   useEffect(() => {
