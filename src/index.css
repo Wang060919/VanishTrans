@@ -20,7 +20,9 @@
 
 @font-face {
   font-family: "Noto Sans SC";
-  src: url("/fonts/NotoSansSC-Variable.ttf") format("truetype");
+  /* Subset: GB2312 charset + CJK punctuation + kana + UI glyphs. ~2MB vs 17MB;
+     rare glyphs outside the subset fall back to the system font stack. */
+  src: url("/fonts/NotoSansSC-Subset.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

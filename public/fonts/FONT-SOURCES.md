@@ -2,7 +2,7 @@
 
 Retrieved from the Google Fonts repository on 2026-09-29.
 Inter provides Latin, Greek and Cyrillic glyphs; Noto Sans SC provides Simplified Chinese.
-Both are unmodified variable TrueType fonts, licensed under SIL OFL 1.1.
+Both are licensed under SIL OFL 1.1.
 Keep Inter-OFL.txt and NotoSansSC-OFL.txt with redistributed copies.
 
 ## Inter-Variable.ttf
@@ -15,7 +15,12 @@ Keep Inter-OFL.txt and NotoSansSC-OFL.txt with redistributed copies.
 - Git blob SHA-1: 21f6aff961064c2e429f570995e446bcdd555422
 - SHA-256: 5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57
 
-## NotoSansSC-Variable.ttf
+## NotoSansSC-Subset.woff2
+- Subset of the variable source below (HarfBuzz `subset-font`, woff2 output).
+  Coverage: full GB2312 charset, CJK punctuation, kana, fullwidth forms,
+  printable Latin, and every non-ASCII glyph used by the app UI.
+  All font weights (wght 100-900) are retained; glyphs outside the subset
+  fall back to the system font stack.
 - Source: https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf
 - Git blob SHA-1: fb0637bafbcd804fe32152370a1225990745b4bc
 - SHA-256: a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da
