@@ -373,6 +373,65 @@ pub fn save_ball_position(
     Ok((x, y))
 }
 
+/// Diagnostic: identify which window holds the foreground. Called from the
+/// island's blur handler to reveal what steals focus after an expansion.
+#[tauri::command]
+pub fn get_foreground_window_info() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::PWSTR;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetClassNameW, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+        };
+
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            if hwnd == HWND::default() {
+                return None;
+            }
+            let mut title = [0u16; 256];
+            let title_len = GetWindowTextW(hwnd, &mut title);
+            let mut class = [0u16; 128];
+            let class_len = GetClassNameW(hwnd, &mut class);
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            let mut process = String::new();
+            if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+                let mut size = 260u32;
+                let mut buffer = vec![0u16; size as usize];
+                if QueryFullProcessImageNameW(
+                    handle,
+                    windows::Win32::System::Threading::PROCESS_NAME_WIN32,
+                    PWSTR(buffer.as_mut_ptr()),
+                    &mut size,
+                )
+                .is_ok()
+                {
+                    process = String::from_utf16_lossy(&buffer[..size as usize]);
+                }
+                let _ = windows::Win32::Foundation::CloseHandle(handle);
+            }
+            Some(format!(
+                "pid={pid} process={} class={} title={}",
+                std::path::Path::new(&process)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or(process),
+                String::from_utf16_lossy(&class[..class_len as usize]),
+                String::from_utf16_lossy(&title[..title_len as usize]),
+            ))
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 #[tauri::command]
 pub fn get_ball_position(app: tauri::AppHandle) -> Result<(i32, i32), CommandError> {
     let config_dir = app

@@ -128,7 +128,8 @@ export type CommandName =
   | "toggle_ball_show_main"
   | "toggle_ball"
   | "save_ball_position"
-  | "get_ball_position";
+  | "get_ball_position"
+  | "get_foreground_window_info";
 
 export function isCommandError(error: unknown): error is CommandError {
   if (!error || typeof error !== "object") return false;
@@ -404,5 +405,9 @@ export async function saveBallPosition(request: SaveBallPositionRequest): Promis
 
 export async function getBallPosition(): Promise<BallPositionResponse> {
   return invokeCommand<BallPositionResponse>("get_ball_position");
+}
+
+export async function getForegroundWindowInfo(): Promise<string | null> {
+  return invokeCommand<string | null>("get_foreground_window_info");
 }
 
