@@ -170,6 +170,15 @@ pub struct StartupWarnings(pub Mutex<Vec<String>>);
 pub fn run() {
     logging::init();
     tauri::Builder::default()
+        // Must be the first plugin: a second process exits here and forwards
+        // its launch to the running instance, which expands the main window.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("ball") {
+                let _ = window.show();
+                let _ = window.emit("expand-main-window", ());
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
