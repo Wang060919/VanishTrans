@@ -414,7 +414,6 @@ pub fn run() {
             commands::delete_service_profile,
             commands::apply_service_profile,
             commands::test_connection,
-            commands::translate,
             commands::translate_with_direction,
             commands::translate_stream,
             commands::cancel_translation,

@@ -31,7 +31,6 @@ export type SetLoggingEnabledRequest = { enabled: boolean };
 export type LogFrontendMessageRequest = { level: string; message: string };
 export type WriteClipboardSafeRequest = { text: string };
 export type CleanupClipboardTextRequest = { text: string };
-export type TranslateRequest = { text: string; sourceLang: string; targetLang: string };
 export type TranslateWithDirectionRequest = { text: string; direction: string; forceRefresh?: boolean };
 export type TranslateStreamRequest = { text: string; direction: string; requestId: number; forceRefresh?: boolean };
 export type TranslateBatchRequest = { segments: string[]; direction: string };
@@ -96,7 +95,6 @@ export type CommandName =
   | "delete_service_profile"
   | "apply_service_profile"
   | "test_connection"
-  | "translate"
   | "translate_with_direction"
   | "translate_stream"
   | "translate_batch"
@@ -270,10 +268,6 @@ export async function applyServiceProfile(request: ApplyServiceProfileRequest): 
 
 export async function testConnection(request: SetApiConfigRequest): Promise<string> {
   return invokeCommand<string>("test_connection", request);
-}
-
-export async function translate(request: TranslateRequest): Promise<string> {
-  return invokeCommand<string>("translate", request);
 }
 
 export async function translateWithDirection(request: TranslateWithDirectionRequest): Promise<string> {

@@ -2,11 +2,7 @@ use super::{
     credentials::load_api_key_credential, default_max_records, ApiConfig, PersistedConfig,
 };
 use crate::persistence::{load_json, LoadedJson};
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU64, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Mutex, time::Duration};
 
 impl ApiConfig {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
@@ -85,7 +81,6 @@ impl ApiConfig {
             persistence: loaded.safety,
             write_lock: Mutex::new(()),
             request_seq: Mutex::new(HashMap::new()),
-            replace_request_seq: AtomicU64::new(0),
             hotkeys: Mutex::new(if hotkeys.is_empty() {
                 Self::default_hotkeys()
             } else {

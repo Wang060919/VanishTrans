@@ -10,7 +10,7 @@ mod tm_dir;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{atomic::AtomicU64, Mutex};
+use std::sync::Mutex;
 
 /// Mutex protecting concurrent reads/writes to config.json.
 pub static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
@@ -24,9 +24,8 @@ pub struct ApiConfig {
     persistence: crate::persistence::LoadSafety,
     write_lock: Mutex<()>,
     /// Monotonically increasing translation sequences, isolated by webview label.
+    /// Alt+R uses the same map under the dedicated "replace" scope.
     pub request_seq: Mutex<HashMap<String, u64>>,
-    /// Independent cancellation domain for Alt+R replacement.
-    pub replace_request_seq: AtomicU64,
     /// Hotkey bindings stored as (action, shortcut_string).
     /// Actions: "translate", "screenshot", "replace".
     pub hotkeys: Mutex<Vec<(String, String)>>,

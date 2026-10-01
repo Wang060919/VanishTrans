@@ -24,16 +24,6 @@ async fn wait_for_request_superseded(state: &ApiConfig, scope: &str, seq: u64) {
 }
 
 /// Route to the free provider or configured API without writing history or TM.
-pub async fn do_translate_unified(
-    state: &ApiConfig,
-    text: &str,
-    source_lang: &str,
-    target_lang: &str,
-) -> Result<String, String> {
-    let snapshot = state.translation_snapshot();
-    translate_with_snapshot(state, &snapshot, text, source_lang, target_lang).await
-}
-
 async fn translate_with_snapshot(
     state: &ApiConfig,
     snapshot: &crate::config::TranslationConfig,

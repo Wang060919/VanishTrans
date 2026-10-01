@@ -67,34 +67,6 @@ pub fn cancel_translation(window: tauri::WebviewWindow, state: tauri::State<'_, 
 }
 
 #[tauri::command]
-pub async fn translate(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, ApiConfig>,
-    text: String,
-    source_lang: String,
-    target_lang: String,
-) -> Result<String, CommandError> {
-    let seq = state.next_request_seq(window.label());
-    let snapshot = state.translation_snapshot();
-    let result = do_translate_unified_scoped(
-        &state,
-        &snapshot,
-        &text,
-        &source_lang,
-        &target_lang,
-        window.label(),
-        seq,
-    )
-    .await
-    .map_err(map_translation_error)?;
-    if !state.is_current_request(window.label(), seq) {
-        // A newer request superseded this one — silently drop the result
-        return Err(CommandError::cancelled());
-    }
-    Ok(result)
-}
-
-#[tauri::command]
 pub async fn translate_with_direction(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, ApiConfig>,
