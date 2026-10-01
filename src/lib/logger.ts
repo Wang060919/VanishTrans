@@ -32,3 +32,14 @@ export function logError(context: string, message: string, detail?: unknown): vo
   console.error(line);
   void logFrontendMessage({ level: "error", message: line }).catch(() => {});
 }
+
+/**
+ * Info-level operational trace for diagnosing island/window lifecycle issues.
+ * Same file-sink as logError; keep call sites sparse.
+ */
+export function logInfo(context: string, message: string, detail?: unknown): void {
+  const serialized = serializeDetail(detail);
+  const line = `[${context}] ${message}${serialized ? ` ${serialized}` : ""}`;
+  console.info(line);
+  void logFrontendMessage({ level: "info", message: line }).catch(() => {});
+}

@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { motion, type Transition } from "framer-motion";
 import IslandCompactContent from "./IslandCompactContent";
 import type {
   CSSProperties,
@@ -9,7 +9,6 @@ import type {
 import VanishMark from "../components/brand/VanishMark";
 import {
   getIslandGeometry,
-  getIslandSurfaceMs,
   ISLAND_TIMING,
   type BallAction,
   type DockSide,
@@ -68,12 +67,24 @@ export default function TranslationIslandView({
 
   const showsActions = mode === "peek" || mode === "actions";
   const geometry = getIslandGeometry(mode);
+  // One spring drives width+height+radius so they progress in lockstep —
+  // capsule modes keep r = h/2 all through the morph — and mid-flight
+  // retargets carry velocity instead of restarting a fixed curve. Collapse
+  // is near-critically damped; expansion keeps a small ~4% overshoot that
+  // the padded native canvas leaves room for.
+  const surfaceTransition: Transition = instant
+    ? { duration: 0 }
+    : {
+        type: "spring",
+        ...(mode === "idle"
+          ? { stiffness: 400, damping: 33 }
+          : { stiffness: 300, damping: 25 }),
+      };
   const islandStyle = {
     "--island-full-width": `${getIslandGeometry("full").width}px`,
     "--island-full-height": `${getIslandGeometry("full").height}px`,
     "--island-width": `${geometry.width}px`,
     "--island-height": `${geometry.height}px`,
-    "--island-surface-ms": `${getIslandSurfaceMs(mode)}ms`,
     "--island-enter-delay": `${ISLAND_TIMING.fullContentEnterDelayMs}ms`,
     "--island-enter-ms": `${ISLAND_TIMING.fullContentEnterMs}ms`,
     "--island-exit-ms": `${ISLAND_TIMING.fullContentExitMs}ms`,
@@ -83,7 +94,12 @@ export default function TranslationIslandView({
     "translation-island",
     `translation-island--${mode}`,
     `translation-island--${dockSide}`,
-    `translation-island--${phase}`,
+    // The idle PHASE must not emit `translation-island--idle`: every CSS rule
+    // under that class targets the idle MODE (full-width core). A translation
+    // state arriving while the island is in full mode leaves phase="idle" set,
+    // and the next actions/peek expand would render the core at 100% — a wide
+    // capsule with only the centered V that swallows every click.
+    phase !== "idle" && `translation-island--${phase}`,
     `translation-island--${visualPhase}`,
     instant && "translation-island--instant",
     hasResult && "translation-island--has-result",
@@ -113,10 +129,17 @@ export default function TranslationIslandView({
       onLostPointerCapture={onCorePointerCancel}
       onBlurCapture={onIslandBlur}
     >
-      <div
+      <motion.div
         className="translation-island__surface"
         data-mode={mode}
         data-transition-generation={generation}
+        initial={false}
+        animate={{
+          width: geometry.width,
+          height: geometry.height,
+          borderRadius: geometry.borderRadius,
+        }}
+        transition={surfaceTransition}
         style={{
           transformOrigin: dockSide === "center"
             ? "50% 0%"
@@ -170,7 +193,7 @@ export default function TranslationIslandView({
             {mode === "idle" && hasResult && <span className="island-idle-dot" aria-hidden="true" />}
           </motion.button>
         )}
-      </div>
+      </motion.div>
     </aside>
   );
 }

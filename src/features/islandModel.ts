@@ -51,6 +51,36 @@ export const ISLAND_WINDOW_POLICY = {
   topSnapDistance: 32,
 } as const;
 
+/** Compact modes are capsules; result/full are rounded-rect cards. */
+export function isIslandCapsule(mode: IslandMode) {
+  return mode !== "result" && mode !== "full";
+}
+
+/** Transparent margin kept around the painted shape, CSS px. Capsules need
+ *  room for the press bulge (~7px at the widest mode); cards only need the
+ *  antialiased-edge bleed. Applied to both the transient canvas pad and the
+ *  retained clip ring, so hit testing stays `pad` wider than the visuals. */
+export function getIslandClipPadCss(mode: IslandMode) {
+  return isIslandCapsule(mode) ? 8 : 2;
+}
+
+export function getIslandClipPad(mode: IslandMode, scale: number) {
+  return Math.ceil(getIslandClipPadCss(mode) * scale);
+}
+
+/** Spring overshoot stays under ~4% of travel; pad slightly past it so the
+ *  bounce never clips flat at the window edge mid-morph. */
+const ISLAND_MORPH_OVERSHOOT = 0.06;
+
+export function getIslandMorphHeadroom(previous: IslandMode, target: IslandMode, scale: number) {
+  const from = getIslandGeometry(previous);
+  const to = getIslandGeometry(target);
+  return {
+    x: Math.ceil(Math.abs(to.width - from.width) * scale * ISLAND_MORPH_OVERSHOOT),
+    y: Math.ceil(Math.abs(to.height - from.height) * scale * ISLAND_MORPH_OVERSHOOT),
+  };
+}
+
 export function getIslandGeometry(mode: IslandMode): IslandGeometry {
   return ISLAND_GEOMETRY[mode];
 }

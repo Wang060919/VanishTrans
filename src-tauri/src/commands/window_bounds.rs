@@ -116,6 +116,15 @@ pub(super) fn set_bounds(
     }
 }
 
+/// Painted-shape description for a retained clip: a missing radius yields a
+/// capsule (half the short side), a missing pad falls back to EDGE_BLEED.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BallClipSpec {
+    corner_radius: Option<f64>,
+    pad: Option<i32>,
+}
+
 /// Clip the collapsed island without moving or resizing its WebView viewport.
 /// Pixels and hit testing outside the capsule belong to the desktop again.
 pub(super) fn retain_surface(
@@ -124,12 +133,13 @@ pub(super) fn retain_surface(
     y: i32,
     width: u32,
     height: u32,
+    clip: Option<BallClipSpec>,
 ) -> Result<bool, CommandError> {
     let handle = window
         .hwnd()
         .map_err(|e| CommandError::internal(e.to_string()))?;
     let hwnd = HWND(handle.0);
-    retain_surface_at(hwnd, x, y, width, height)
+    retain_surface_at(hwnd, x, y, width, height, clip)
 }
 
 pub(super) fn retain_surface_at(
@@ -138,24 +148,36 @@ pub(super) fn retain_surface_at(
     y: i32,
     width: u32,
     height: u32,
+    clip: Option<BallClipSpec>,
 ) -> Result<bool, CommandError> {
     ensure_frameless(hwnd)?;
     let mut outer = RECT::default();
     // SAFETY: live window handle and a valid writable RECT.
     unsafe { GetWindowRect(hwnd, &mut outer) }
         .map_err(|e| CommandError::internal(e.to_string()))?;
-    let left = i64::from(x) - i64::from(outer.left);
-    let top = i64::from(y) - i64::from(outer.top);
-    let right = left + i64::from(width);
-    let bottom = top + i64::from(height);
-    if left < 0
-        || top < 0
-        || right > i64::from(outer.right) - i64::from(outer.left)
-        || bottom > i64::from(outer.bottom) - i64::from(outer.top)
-    {
+    let window_width = i64::from(outer.right) - i64::from(outer.left);
+    let window_height = i64::from(outer.bottom) - i64::from(outer.top);
+    // Sub-pixel/DPI rounding can push the clip a few pixels past the canvas
+    // edge; clamp those into the window instead of failing the transition.
+    let left = (i64::from(x) - i64::from(outer.left)).clamp(0, window_width);
+    let top = (i64::from(y) - i64::from(outer.top)).clamp(0, window_height);
+    let right = (left + i64::from(width)).clamp(left, window_width);
+    let bottom = (top + i64::from(height)).clamp(top, window_height);
+    if right <= left || bottom <= top {
         return Err(CommandError::validation("灵动岛区域超出窗口边界"));
     }
-    super::ball_region::clip_capsule(
+    let half_min_side = ((right - left).min(bottom - top) / 2) as i32;
+    let radius = clip
+        .and_then(|spec| spec.corner_radius)
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(|value| value.round() as i32)
+        .unwrap_or(half_min_side)
+        .clamp(0, half_min_side);
+    let pad = clip
+        .and_then(|spec| spec.pad)
+        .unwrap_or(super::ball_region::EDGE_BLEED)
+        .max(0);
+    super::ball_region::clip_rounded(
         hwnd,
         RECT {
             left: left as i32,
@@ -163,6 +185,8 @@ pub(super) fn retain_surface_at(
             right: right as i32,
             bottom: bottom as i32,
         },
+        radius,
+        pad,
     )?;
     Ok(true)
 }

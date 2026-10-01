@@ -68,8 +68,10 @@ describe("island result flow", () => {
   });
   it("opens, copies and restores the exact result in the full workspace without another request", async () => {
     await openResult();
-    expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds",
-      expect.objectContaining({ width: 392, height: 176 }));
+    // The padded pre-morph canvas is followed by a post-settle retain clip at
+    // the exact visual bounds.
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds",
+      expect.objectContaining({ width: 392, height: 176, retainSurface: true })));
     fireEvent.click(screen.getByRole("button", { name: "复制译文" }));
     expect(await screen.findByRole("button", { name: "译文已复制" })).toBeInTheDocument();
     expect(mocks.invoke).toHaveBeenCalledWith("write_clipboard_safe", { text: result.text });

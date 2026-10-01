@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback } from "react";
-import { logError } from "../../lib/logger";
+import { logError, logInfo } from "../../lib/logger";
 import { startWindowDragging } from "../../services/tauriBridge";
 import { getIdleAnchorX, hasSameGeometry } from "../islandModel";
 import { IDLE_WIDTH, IDLE_HEIGHT, saveBallPosition } from "./ballNative";
@@ -21,6 +21,23 @@ export function useBallDrag({
 }: BallDragState) {
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const modeIsDraggable = modeRef.current !== "full";
+    const surface = document.querySelector<HTMLElement>(".translation-island__surface");
+    const surfaceRect = surface?.getBoundingClientRect();
+    logInfo("ball.input", "pointerdown", {
+      mode: modeRef.current,
+      domMode: surface?.getAttribute("data-mode"),
+      surfaceX: surfaceRect ? Math.round(surfaceRect.left) : null,
+      surfaceW: surfaceRect ? Math.round(surfaceRect.width) : null,
+      button: event.button,
+      x: Math.round(event.clientX),
+      y: Math.round(event.clientY),
+      target: event.target instanceof Element
+        ? (event.target.getAttribute("class") ?? event.target.tagName).slice(0, 80)
+        : "non-element",
+      transitioning: transitionCoordinator.isTransitioning,
+      requested: transitionCoordinator.requestedTarget,
+      skipped: !modeIsDraggable || transitionCoordinator.isTransitioning || event.button !== 0,
+    });
     if (!modeIsDraggable || transitionCoordinator.isTransitioning || event.button !== 0) return;
     if (modeRef.current === "result" && event.target instanceof Element
       && !event.target.closest(".quick-translate-header")) return;

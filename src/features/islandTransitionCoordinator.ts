@@ -67,14 +67,18 @@ export function waitForIslandPaint(signal: AbortSignal) {
 
   return new Promise<void>((resolve, reject) => {
     let frameId = 0;
-    const handleAbort = () => {
-      cancelAnimationFrame(frameId);
-      reject(new IslandTransitionAbortedError());
-    };
     const finish = () => {
+      window.clearTimeout(timer);
       signal.removeEventListener("abort", handleAbort);
       resolve();
     };
+    const handleAbort = () => {
+      window.clearTimeout(timer);
+      cancelAnimationFrame(frameId);
+      reject(new IslandTransitionAbortedError());
+    };
+    // Suspended webviews stop driving rAF; never block longer than a few frames.
+    const timer = window.setTimeout(finish, 120);
 
     signal.addEventListener("abort", handleAbort, { once: true });
     frameId = requestAnimationFrame(() => {
@@ -103,6 +107,10 @@ export class IslandTransitionCoordinator {
 
   get isTransitioning() {
     return this.active !== null;
+  }
+
+  get isDisposed() {
+    return this.disposed;
   }
 
   get requestedTarget(): IslandMode | null {

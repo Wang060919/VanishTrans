@@ -67,3 +67,43 @@ fn region_and_activation_changes_keep_the_native_canvas_frameless() {
         );
     }
 }
+
+#[test]
+fn retain_surface_clamps_edge_overflow_and_rejects_disjoint_clips() {
+    let window = TestWindow(unsafe {
+        CreateWindowExW(
+            WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE,
+            windows::core::w!("STATIC"),
+            windows::core::w!("island clip clamp"),
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+            100,
+            100,
+            720,
+            380,
+            HWND::default(),
+            None,
+            None,
+            None,
+        )
+        .expect("create test window")
+    });
+    let hwnd = window.0;
+    ensure_frameless(hwnd).unwrap();
+    let mut outer = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut outer) }.unwrap();
+    let window_width = outer.right - outer.left;
+    // A clip spilling a few pixels past the canvas edge still applies, clamped.
+    assert!(retain_surface_at(hwnd, outer.right - 40, outer.top, 116, 42, None).unwrap());
+    assert!(retain_surface_at(hwnd, outer.left - 24, outer.top, 116, 42, None).unwrap());
+    // A clip with no overlap keeps failing so callers roll back to real bounds.
+    assert!(retain_surface_at(hwnd, outer.right + 500, outer.top, 116, 42, None).is_err());
+    assert!(retain_surface_at(
+        hwnd,
+        outer.left,
+        outer.bottom + 500,
+        window_width as u32,
+        42,
+        None
+    )
+    .is_err());
+}

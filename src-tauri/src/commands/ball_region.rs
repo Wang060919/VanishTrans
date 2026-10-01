@@ -25,26 +25,49 @@ pub(super) fn clip_capsule(hwnd: HWND, bounds: RECT) -> Result<(), CommandError>
         .bottom
         .checked_sub(bounds.top)
         .filter(|value| *value > 0);
-    let right = bounds.right.checked_add(1);
-    let bottom = bounds.bottom.checked_add(1);
-    let (Some(width), Some(height), Some(right), Some(bottom)) = (width, height, right, bottom)
-    else {
+    let (Some(width), Some(height)) = (width, height) else {
         return Err(CommandError::validation("灵动岛圆角区域超出范围"));
     };
-    let diameter = width.min(height);
+    clip_rounded(hwnd, bounds, width.min(height) / 2, EDGE_BLEED)
+}
+
+/// Clip `bounds` to a round rect with painted corner radius `corner_radius`
+/// physical px, dilated outward by `pad`. Dilation keeps the antialiased edge
+/// inside the binary mask and — for capsules — leaves room for the press
+/// bulge to stay hittable. A capsule is just radius = min(w, h)/2.
+pub(super) fn clip_rounded(
+    hwnd: HWND,
+    bounds: RECT,
+    corner_radius: i32,
+    pad: i32,
+) -> Result<(), CommandError> {
+    let width = bounds
+        .right
+        .checked_sub(bounds.left)
+        .filter(|value| *value > 0);
+    let height = bounds
+        .bottom
+        .checked_sub(bounds.top)
+        .filter(|value| *value > 0);
+    let right = bounds.right.checked_add(1);
+    let bottom = bounds.bottom.checked_add(1);
+    let (Some(_w), Some(_h), Some(right), Some(bottom)) = (width, height, right, bottom) else {
+        return Err(CommandError::validation("灵动岛圆角区域超出范围"));
+    };
     // GDI excludes the last rounded-region edge pixel; +1 preserves the requested
     // bounds. Coordinates are already physical pixels, including fractional DPI.
-    // The capsule is then dilated by EDGE_BLEED (rect grows, radius grows) so the
-    // clip never intersects the painted edge. Saturating ops: bounds already
-    // passed overflow checks, and a clamped far edge clips nothing extra.
-    let region_diameter = diameter.saturating_add(EDGE_BLEED * 2);
+    // Dilating a round rect grows both the rect and its corner radius by pad.
+    // Saturating ops: bounds already passed overflow checks, and a clamped far
+    // edge clips nothing extra.
+    let pad = pad.max(0);
+    let region_diameter = corner_radius.max(0).saturating_add(pad).saturating_mul(2);
     // SAFETY: caller supplies a live HWND and validated window-relative bounds.
     unsafe {
         let region = CreateRoundRectRgn(
-            bounds.left.saturating_sub(EDGE_BLEED),
-            bounds.top.saturating_sub(EDGE_BLEED),
-            right.saturating_add(EDGE_BLEED),
-            bottom.saturating_add(EDGE_BLEED),
+            bounds.left.saturating_sub(pad),
+            bounds.top.saturating_sub(pad),
+            right.saturating_add(pad),
+            bottom.saturating_add(pad),
             region_diameter,
             region_diameter,
         );

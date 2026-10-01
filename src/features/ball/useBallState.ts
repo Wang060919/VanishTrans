@@ -53,6 +53,8 @@ export function useBallState() {
   const expectedActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusCollapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transitionSettledAtRef = useRef(Number.NEGATIVE_INFINITY);
   const fullPinnedRef = useRef(false);
   const phaseRef = useRef<IslandPhase>("working");
 
@@ -66,6 +68,7 @@ export function useBallState() {
     pointerOriginRef, pointerCaptureTargetRef, draggingRef, transitionCoordinatorRef, transitionCoordinator,
     coordinatorLifetimeRef, lastDragEndedAtRef, anchorPositionRef, idleOuterSizeRef, expectingTranslationRef,
     busyActionRef, noticeRef, expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef,
+    focusCollapseTimerRef, transitionSettledAtRef,
     phaseRef, commitPresentation, presentation, setPresentation, phase, setPhase, dockSide, setDockSide,
     busyAction, setBusyAction, notice, setNotice,
     result, resultRef, commitResult, resultToOpen, setResultToOpen,

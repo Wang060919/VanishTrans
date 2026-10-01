@@ -27,6 +27,8 @@ export async function setBallWindowBounds(bounds: {
   width: number;
   height: number;
   retainSurface?: boolean;
+  /** Physical-px painted corner radius and clip ring for retainSurface clips. */
+  clip?: { cornerRadius?: number; pad?: number };
 }) {
   return setBallWindowBoundsCmd(bounds);
 }

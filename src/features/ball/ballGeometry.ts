@@ -1,8 +1,9 @@
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { flushSync } from "react-dom";
 import {
-  chooseDockSide, getExpandedX, getIdleAnchorX, getIslandGeometry, hasSameGeometry, ISLAND_WINDOW_POLICY,
-  type IslandMode,
+  chooseDockSide, getExpandedX, getIdleAnchorX, getIslandClipPad, getIslandGeometry,
+  getIslandMorphHeadroom, hasSameGeometry, ISLAND_WINDOW_POLICY,
+  type DockSide, type IslandMode, type IslandMotion,
 } from "../islandModel";
 import { type IslandTransitionContext } from "../islandTransitionCoordinator";
 import { IDLE_WIDTH, IDLE_HEIGHT, FULL_WIDTH } from "./ballNative";
@@ -105,5 +106,44 @@ export async function measureExpandedBounds(state: BallGeometryState, previousMo
   return {
     nativeTarget, side, currentPosition, currentOuterSize, idleOuterWidth, targetWidthPixels, targetHeightPixels,
     estimatedOuterWidth, estimatedOuterHeight, expandedX, expandedY,
+  };
+}
+
+/**
+ * The native canvas for a freshly targeted mode, padded on the sides the
+ * surface grows toward (and below it): the spring overshoot and the capsule's
+ * press bulge paint into that margin instead of clipping flat at the window
+ * edge. The post-settle region clip then re-tightens the hit area to the
+ * visual bounds. A retained full canvas and shrinking morphs (which already
+ * played out inside the old canvas) need no padding.
+ */
+export function paddedTargetCanvas({
+  padsCanvas, previous, target, side, scale, motion, shrinks,
+  expandedX, expandedY, width, height,
+}: {
+  padsCanvas: boolean;
+  previous: IslandMode;
+  target: IslandMode;
+  side: DockSide;
+  scale: number;
+  motion: IslandMotion;
+  shrinks: boolean;
+  expandedX: number;
+  expandedY: number;
+  width: number;
+  height: number;
+}) {
+  const edgePad = padsCanvas ? getIslandClipPad(target, scale) : 0;
+  const headroom = padsCanvas && motion === "animated" && !shrinks
+    ? getIslandMorphHeadroom(previous, target, scale)
+    : { x: 0, y: 0 };
+  const padX = edgePad + headroom.x;
+  const padLeft = side === "right" ? 0 : padX;
+  const padRight = side === "left" ? 0 : padX;
+  return {
+    x: expandedX - padLeft,
+    y: expandedY,
+    width: width + padLeft + padRight,
+    height: height + edgePad + headroom.y,
   };
 }

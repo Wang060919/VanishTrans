@@ -74,11 +74,11 @@ body.ball-window-body #root {
   contain: layout style paint;
   --island-press-ms: 260ms;
   --island-press-ease: cubic-bezier(0.3, 1.35, 0.45, 1);
-  transition:
-    width var(--island-surface-ms, 360ms) cubic-bezier(0.3, 1.12, 0.44, 1),
-    height var(--island-surface-ms, 360ms) cubic-bezier(0.3, 1.12, 0.44, 1),
-    border-radius var(--island-surface-ms, 360ms) cubic-bezier(0.3, 1.2, 0.44, 1),
-    transform var(--island-press-ms) var(--island-press-ease);
+  /* Width/height/border-radius morph via the framer-motion spring on the
+     element itself — one spring keeps all three in lockstep (capsule ends
+     stay semicircular) and retargets carry velocity. Only the press
+     transform stays a CSS transition. */
+  transition: transform var(--island-press-ms) var(--island-press-ease);
 }
 
 .translation-island__surface::after {
@@ -111,16 +111,18 @@ body.ball-window-body #root {
   cursor: grabbing;
 }
 
-/* Press squash: the capsule compresses fast, then springs back on release.
-   The transition vars swap duration/easing without retargeting in-flight
-   geometry morphs. */
+/* Press bulge: the capsule swells outward like the iOS island's gel press,
+   then springs back on release. The transform origin is the docked top edge,
+   so the swell grows into the padded canvas margin and stays inside the
+   clipped region. The transition vars swap duration/easing without
+   retargeting in-flight geometry morphs. */
 .translation-island--idle .translation-island__surface:active,
 .translation-island--peek .translation-island__surface:active,
 .translation-island--actions .translation-island__surface:active,
 .translation-island--status .translation-island__surface:active {
   --island-press-ms: 90ms;
   --island-press-ease: cubic-bezier(0.3, 0.7, 0.4, 1);
-  transform: scale(0.94, 0.88) translateZ(0);
+  transform: scale(1.03, 1.07) translateZ(0);
 }
 
 .translation-island__full {

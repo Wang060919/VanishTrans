@@ -14,18 +14,30 @@ function surfaceWithAnimation(finished: Promise<Animation>) {
 }
 
 describe("native collapse paint barrier", () => {
-  it("does not release native resizing when the nominal duration passes before CSS finishes", async () => {
+  it("does not release native resizing until CSS finishes within the cap", async () => {
     vi.useFakeTimers();
     let finish!: (value: Animation) => void;
     surfaceWithAnimation(new Promise((resolve) => { finish = resolve; }));
     const settled = vi.fn();
     const pending = settleBallSurface(360, new AbortController().signal).then(settled);
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(400);
     expect(settled).not.toHaveBeenCalled();
     finish({} as Animation);
     await vi.advanceTimersByTimeAsync(0);
     expect(settled).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(64);
+    await pending;
+    expect(settled).toHaveBeenCalledOnce();
+  });
+
+  it("still releases the native step when a suspended renderer never finishes", async () => {
+    vi.useFakeTimers();
+    surfaceWithAnimation(new Promise(() => {}));
+    const settled = vi.fn();
+    const pending = settleBallSurface(360, new AbortController().signal).then(settled);
+    await vi.advanceTimersByTimeAsync(509);
+    expect(settled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
     await pending;
     expect(settled).toHaveBeenCalledOnce();
   });

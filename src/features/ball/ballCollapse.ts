@@ -1,5 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getIslandSurfaceMs, ISLAND_TIMING, type IslandMode, type IslandMotion } from "../islandModel";
+import { logInfo } from "../../lib/logger";
+import {
+  getIslandClipPad, getIslandGeometry, getIslandSurfaceMs, ISLAND_TIMING,
+  type IslandMode, type IslandMotion,
+} from "../islandModel";
 import { waitForIslandTransition, type IslandTransitionContext } from "../islandTransitionCoordinator";
 import { IDLE_WIDTH, IDLE_HEIGHT, saveBallPosition, setBallWindowBounds } from "./ballNative";
 import { settleBallSurface } from "./ballSurfaceSettlement";
@@ -61,7 +65,21 @@ export async function collapseBallWindow(state: BallCollapseState, previousMode:
   if (!context.isCurrent()) return;
 
   // Keep the WebView viewport stationary on Windows; clip only after the morph.
-  const retained = await setBallWindowBounds({ ...idleBounds, retainSurface: true });
+  // The clip ring stays wider than the painted capsule so the press bulge and
+  // its antialiased edge always remain hittable.
+  const idleGeometry = getIslandGeometry("idle");
+  const retained = await setBallWindowBounds({
+    ...idleBounds,
+    retainSurface: true,
+    clip: {
+      cornerRadius: Math.round(idleGeometry.borderRadius * scale),
+      pad: getIslandClipPad("idle", scale),
+    },
+  });
+  logInfo("ball.collapse", "idle clip applied", {
+    retained, previousMode, ...idleBounds,
+    canvas: { x: currentPos.x, y: currentPos.y, width: currentSize.width, height: currentSize.height },
+  });
   if (!retained) {
     nativeTargetModeRef.current = "idle";
     nativeModeRef.current = "idle";

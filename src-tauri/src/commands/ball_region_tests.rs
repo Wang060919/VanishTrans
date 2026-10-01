@@ -124,6 +124,7 @@ fn retained_capsules_match_every_compact_mode_scale_and_dock_without_resizing() 
                         original.top,
                         width as u32,
                         height as u32,
+                        None,
                     )
                     .unwrap());
                 }

@@ -50,6 +50,7 @@ pub fn set_ball_window_bounds(
     width: u32,
     height: u32,
     retain_surface: Option<bool>,
+    clip: Option<super::window_bounds::BallClipSpec>,
 ) -> Result<bool, CommandError> {
     if window.label() != "ball" {
         return Err(CommandError::validation("窗口边界只能应用到灵动岛"));
@@ -61,14 +62,14 @@ pub fn set_ball_window_bounds(
     #[cfg(target_os = "windows")]
     {
         if retain_surface.unwrap_or(false) {
-            return super::window_bounds::retain_surface(&window, x, y, width, height);
+            return super::window_bounds::retain_surface(&window, x, y, width, height, clip);
         }
         super::window_bounds::set_bounds(&window, x, y, width, height)?;
         Ok(false)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = retain_surface;
+        let _ = (retain_surface, clip);
         window
             .set_size(tauri::Size::Physical(tauri::PhysicalSize { width, height }))
             .map_err(|error| CommandError::internal(error.to_string()))?;
