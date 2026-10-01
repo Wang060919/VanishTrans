@@ -136,3 +136,51 @@ fn removes_native_edges_before_first_show_without_a_transition() {
         );
     }
 }
+
+#[test]
+fn re_strips_caption_when_tao_rewrites_styles_on_flag_diffs() {
+    // Tao's apply_diff rewrites GWL_STYLE/GWL_EXSTYLE whenever a WindowFlags bit
+    // changes (show, hide, resizable, …), restoring the caption styles that
+    // install() removed. The subclass must strip them again before repaint.
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION, WS_SYSMENU,
+    };
+    let window = TestWindow(unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            windows::core::w!("STATIC"),
+            windows::core::w!("island style regression"),
+            WS_OVERLAPPEDWINDOW,
+            0,
+            0,
+            116,
+            42,
+            HWND::default(),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    });
+    let hwnd = window.0;
+    install(hwnd).unwrap();
+    unsafe {
+        let frame = WS_CAPTION | WS_SYSMENU;
+        assert_eq!(GetWindowLongW(hwnd, GWL_STYLE) as u32 & frame.0, 0);
+        // Simulate tao's apply_diff: caption styles come back, then FRAMECHANGED.
+        let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+        SetWindowLongW(hwnd, GWL_STYLE, (style | frame.0) as i32);
+        SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+        .unwrap();
+        assert_eq!(GetWindowLongW(hwnd, GWL_STYLE) as u32 & frame.0, 0);
+    }
+}

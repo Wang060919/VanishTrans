@@ -6,10 +6,11 @@ mod load;
 mod profiles;
 mod requests;
 mod storage;
+mod tm_dir;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{atomic::AtomicU64, Mutex};
+use std::sync::Mutex;
 
 /// Mutex protecting concurrent reads/writes to config.json.
 pub static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
@@ -23,9 +24,8 @@ pub struct ApiConfig {
     persistence: crate::persistence::LoadSafety,
     write_lock: Mutex<()>,
     /// Monotonically increasing translation sequences, isolated by webview label.
+    /// Alt+R uses the same map under the dedicated "replace" scope.
     pub request_seq: Mutex<HashMap<String, u64>>,
-    /// Independent cancellation domain for Alt+R replacement.
-    pub replace_request_seq: AtomicU64,
     /// Hotkey bindings stored as (action, shortcut_string).
     /// Actions: "translate", "screenshot", "replace".
     pub hotkeys: Mutex<Vec<(String, String)>>,
@@ -38,6 +38,9 @@ pub struct ApiConfig {
     /// When enabled, translation uses the free Google Translate endpoint
     /// instead of the configured OpenAI-compatible API (no key required).
     pub free_translation: std::sync::atomic::AtomicBool,
+    /// Custom directory for `tm.db`; empty means the default app-data dir.
+    /// Applied on startup only — the live TM connection never moves.
+    pub tm_dir: Mutex<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -54,6 +57,8 @@ struct PersistedConfig {
     profiles: Vec<ServiceProfile>,
     #[serde(default)]
     free_translation: bool,
+    #[serde(default)]
+    tm_dir: String,
 }
 
 #[derive(Clone)]
@@ -66,6 +71,7 @@ pub(crate) struct ConfigSnapshot {
     max_records: usize,
     profiles: Vec<ServiceProfile>,
     free_translation: bool,
+    tm_dir: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -39,7 +39,9 @@ fn map_translation_error(error: String) -> CommandError {
     }
 }
 
-fn persist_translation(
+/// A TM write failure must not discard a successful translation or hide it
+/// behind an IO error — the cache degrades, the user keeps the result.
+pub(crate) fn persist_translation(
     tm: &crate::tm::TranslationMemory,
     history: &HistoryStore,
     source: &str,
@@ -47,11 +49,11 @@ fn persist_translation(
     direction: &str,
     target_lang: &str,
     context_hash: &str,
-) -> Result<(), CommandError> {
-    tm.store_in_context(source, target, "auto", target_lang, context_hash)
-        .map_err(CommandError::io)?;
+) {
+    if let Err(error) = tm.store_in_context(source, target, "auto", target_lang, context_hash) {
+        log::warn!("[translate] TM write failed; result still returned: {error}");
+    }
     history.add(source, target, direction);
-    Ok(())
 }
 // -----------------------------------------------------------
 // Translation commands
@@ -62,34 +64,6 @@ fn persist_translation(
 #[tauri::command]
 pub fn cancel_translation(window: tauri::WebviewWindow, state: tauri::State<'_, ApiConfig>) {
     state.cancel_current_request(window.label());
-}
-
-#[tauri::command]
-pub async fn translate(
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, ApiConfig>,
-    text: String,
-    source_lang: String,
-    target_lang: String,
-) -> Result<String, CommandError> {
-    let seq = state.next_request_seq(window.label());
-    let snapshot = state.translation_snapshot();
-    let result = do_translate_unified_scoped(
-        &state,
-        &snapshot,
-        &text,
-        &source_lang,
-        &target_lang,
-        window.label(),
-        seq,
-    )
-    .await
-    .map_err(map_translation_error)?;
-    if !state.is_current_request(window.label(), seq) {
-        // A newer request superseded this one — silently drop the result
-        return Err(CommandError::cancelled());
-    }
-    Ok(result)
 }
 
 #[tauri::command]
@@ -124,21 +98,21 @@ pub async fn translate_with_direction(
     let result = do_translate_unified_scoped(&state, &snapshot, &text, "auto", target, scope, seq)
         .await
         .map_err(map_translation_error)?;
-    let committed = state.with_current_request(scope, seq, || {
-        persist_translation(
-            &tm,
-            &history,
-            &text,
-            &result,
-            &direction,
-            target,
-            &context_hash,
-        )
-    });
-    match committed {
-        Some(Ok(())) => {}
-        Some(Err(error)) => return Err(error),
-        None => return Err(CommandError::cancelled()),
+    if state
+        .with_current_request(scope, seq, || {
+            persist_translation(
+                &tm,
+                &history,
+                &text,
+                &result,
+                &direction,
+                target,
+                &context_hash,
+            )
+        })
+        .is_none()
+    {
+        return Err(CommandError::cancelled());
     }
     Ok(result)
 }
@@ -197,21 +171,21 @@ pub async fn translate_stream(
             do_translate_unified_scoped(&state, &snapshot, &text, "auto", target, scope, seq)
                 .await
                 .map_err(map_translation_error)?;
-        let committed = state.with_current_request(scope, seq, || {
-            persist_translation(
-                &tm,
-                &history,
-                &text,
-                &result,
-                &direction,
-                target,
-                &context_hash,
-            )
-        });
-        match committed {
-            Some(Ok(())) => {}
-            Some(Err(error)) => return Err(error),
-            None => return Err(CommandError::cancelled()),
+        if state
+            .with_current_request(scope, seq, || {
+                persist_translation(
+                    &tm,
+                    &history,
+                    &text,
+                    &result,
+                    &direction,
+                    target,
+                    &context_hash,
+                )
+            })
+            .is_none()
+        {
+            return Err(CommandError::cancelled());
         }
         let _ = window.emit(
             "translate-stream-chunk",
@@ -254,21 +228,21 @@ pub async fn translate_stream(
     .await
     .map_err(map_translation_error)?;
 
-    let committed = state.with_current_request(scope, seq, || {
-        persist_translation(
-            &tm,
-            &history,
-            &text,
-            &result,
-            &direction,
-            target,
-            &context_hash,
-        )
-    });
-    match committed {
-        Some(Ok(())) => {}
-        Some(Err(error)) => return Err(error),
-        None => return Err(CommandError::cancelled()),
+    if state
+        .with_current_request(scope, seq, || {
+            persist_translation(
+                &tm,
+                &history,
+                &text,
+                &result,
+                &direction,
+                target,
+                &context_hash,
+            )
+        })
+        .is_none()
+    {
+        return Err(CommandError::cancelled());
     }
     let _ = window.emit(
         "translate-stream-done",

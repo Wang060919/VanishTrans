@@ -41,10 +41,12 @@ fn assert_rounded_region(hwnd: HWND, width: i32, height: i32) {
         assert_ne!(GetWindowRgn(hwnd, region).0, ERROR);
         let mut bounds = RECT::default();
         assert_ne!(GetRgnBox(region, &mut bounds).0, ERROR);
-        assert_eq!((bounds.left, bounds.top), (0, 0));
-        // GDI's rounded-region rasterization may exclude the last edge pixel.
-        assert!((width - 1..=width).contains(&bounds.right));
-        assert!((height - 1..=height).contains(&bounds.bottom));
+        // The clip is dilated by EDGE_BLEED so its binary edge stays outside
+        // the painted antialiased outline (see ball_region::EDGE_BLEED).
+        let bleed = crate::commands::ball_region::EDGE_BLEED;
+        assert_eq!((bounds.left, bounds.top), (-bleed, -bleed));
+        assert_eq!(bounds.right, width + bleed);
+        assert_eq!(bounds.bottom, height + bleed);
         for (x, y) in [
             (0, 0),
             (width - 1, 0),
@@ -55,7 +57,7 @@ fn assert_rounded_region(hwnd: HWND, width: i32, height: i32) {
         }
         assert!(PtInRegion(region, width / 2, height / 2).as_bool());
         assert!(PtInRegion(region, width / 2, height - 2).as_bool());
-        assert!(!PtInRegion(region, width / 2, height + 1).as_bool());
+        assert!(!PtInRegion(region, width / 2, bounds.bottom).as_bool());
         assert!(DeleteObject(region).as_bool());
     }
 }

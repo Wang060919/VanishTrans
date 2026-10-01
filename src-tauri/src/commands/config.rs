@@ -94,6 +94,39 @@ pub fn set_hotkeys(
     Ok(())
 }
 
+/// Transiently suspend or resume global hotkeys while the settings hotkey
+/// recorder captures a combo. Reference-counted: every suspend needs a
+/// matching resume, and the count is independent of the tray pause flag so
+/// resuming can never re-enable shortcuts the user paused manually.
+#[tauri::command]
+pub fn set_shortcuts_suspended(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    suspended: bool,
+) -> Result<(), CommandError> {
+    let counter = &state.shortcut_suspend_count;
+    let previous = if suspended {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    } else {
+        // An unmatched resume (e.g. a recorder that never suspended) must not
+        // underflow the count.
+        counter
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |count| count.checked_sub(1),
+            )
+            .unwrap_or_else(|count| count)
+    };
+    if let Err(error) = crate::setup::sync_shortcuts(&app) {
+        counter.store(previous, std::sync::atomic::Ordering::SeqCst);
+        return Err(CommandError::internal(format!(
+            "快捷键状态更新失败: {error}"
+        )));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn set_glossary(
     state: tauri::State<'_, ApiConfig>,

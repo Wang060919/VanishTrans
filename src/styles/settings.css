@@ -80,6 +80,18 @@
 .settings-section .glossary-row > span { display: none; }
 .settings-section .glossary-row > button { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--color-ink-muted); }
 .settings-section .setting-field:has(.toggle-switch) { padding: 14px; border-radius: 14px; background: var(--color-surface-raised); }
+
+/* TM storage location: same grouped-card treatment as api-fields/hotkey-list. */
+.tm-dir-group { display: flex; flex-direction: column; padding: 0 14px; border-radius: 14px; background: var(--color-surface-raised); }
+.tm-dir-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 6px 0; color: var(--color-ink); font-size: 13px; }
+.tm-dir-row + .tm-dir-row { border-top: 1px solid var(--color-line); }
+.tm-dir-row > input { flex: 1; min-width: 0; text-align: right; }
+.tm-dir-value { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 0; }
+.tm-dir-path { direction: rtl; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); font-size: 12px; }
+.tm-dir-badge { flex: none; padding: 1px 6px; border-radius: 5px; background: var(--color-signal-soft); color: var(--color-signal); font-size: 10px; }
+.tm-dir-actions { display: flex; align-items: center; gap: 4px; min-height: 30px; }
+.tm-dir-actions .setting-hint { margin-left: auto; }
+.tm-dir-apply { color: var(--color-signal); }
 .settings-panel .toggle-switch { width: 44px; height: 26px; border: 0; background: #39393d; }
 .settings-panel .toggle-thumb { width: 22px; height: 22px; top: 2px; left: 2px; }
 .settings-panel .toggle-switch[aria-checked="true"] { background: var(--color-success); }

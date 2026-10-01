@@ -72,9 +72,14 @@ describe("App", () => {
 
   it("loads saved API config on mount", async () => {
     render(<App />);
-    await waitFor(() => {
-      expect(mockedInvoke).toHaveBeenCalledWith("get_api_config");
-    });
+    // First render resolves the lazily-imported window bundle, which may
+    // take longer than the default 1s waitFor on a cold transform cache.
+    await waitFor(
+      () => {
+        expect(mockedInvoke).toHaveBeenCalledWith("get_api_config");
+      },
+      { timeout: 10000 },
+    );
   });
 
   it("preserves a stored API key when saving another setting", async () => {
@@ -158,23 +163,6 @@ describe("App", () => {
       "translate_stream",
       expect.anything(),
     );
-  });
-
-  it("translates OCR text received via ocr-translate event", async () => {
-    render(<App />);
-    await waitFor(() => expect(listeners["ocr-translate"]).toBeDefined());
-
-    await triggerAndFlush(() => emit("ocr-translate", "scanned text"));
-
-    await waitFor(() => {
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        "translate_stream",
-        expect.objectContaining({ request: expect.objectContaining({ text: "hello world" }) }),
-      );
-    });
-    await waitFor(() => {
-      expect(screen.getByText(/你好/)).toBeInTheDocument();
-    });
   });
 
   it("sends the current direction to translate_stream", async () => {
@@ -302,12 +290,12 @@ describe("App", () => {
     });
 
     render(<App />);
-    await waitFor(() => expect(listeners["ocr-translate"]).toBeDefined());
-    await triggerAndFlush(() => emit("ocr-translate", "first"));
+    await waitFor(() => expect(listeners["shortcut-translate"]).toBeDefined());
+    await triggerAndFlush(() => emit("shortcut-translate", "first"));
     await waitFor(() => {
       expect(mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream")).toHaveLength(1);
     });
-    await triggerAndFlush(() => emit("ocr-translate", "second"));
+    await triggerAndFlush(() => emit("shortcut-translate", "second"));
 
     await waitFor(() => {
       const calls = mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream");

@@ -1,6 +1,8 @@
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
-use windows::Win32::UI::WindowsAndMessaging::{WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT};
+use windows::Win32::UI::WindowsAndMessaging::{
+    WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT, WM_STYLECHANGED,
+};
 
 const SUBCLASS_ID: usize = 1;
 
@@ -31,6 +33,14 @@ unsafe extern "system" fn frame_proc(
     match message {
         // Both windows render their entire surface in WebView2, including corners.
         WM_NCPAINT => LRESULT(0),
+        // Tao rewrites GWL_STYLE/GWL_EXSTYLE on every flag diff (show, hide,
+        // resizable, …), restoring the caption styles ensure_frameless removed
+        // at install. Re-strip them inside the same synchronous frame change;
+        // the nested FRAMECHANGED re-entry sees clean styles and stops.
+        WM_STYLECHANGED => {
+            let _ = super::window_bounds::ensure_frameless(hwnd);
+            DefSubclassProc(hwnd, message, wparam, lparam)
+        }
         // Forward activation to Tao so its focus bookkeeping/events still run.
         // The documented -1 flag tells DefWindowProc to skip non-client repaint.
         WM_NCACTIVATE => DefSubclassProc(hwnd, message, wparam, LPARAM(-1)),

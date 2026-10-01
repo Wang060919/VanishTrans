@@ -1,9 +1,12 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lazy, Suspense } from "react";
-import ScreenshotOverlay from "./ScreenshotOverlay";
-import BallWindow from "./features/BallWindow";
-import MainWindowApp from "./features/MainWindowApp";
-import QuickTranslateWindow from "./features/QuickTranslateWindow";
+
+// Each webview lazily loads only its own window bundle, so hidden windows
+// never parse the full app's code.
+const ScreenshotOverlay = lazy(() => import("./ScreenshotOverlay"));
+const BallWindow = lazy(() => import("./features/BallWindow"));
+const MainWindowApp = lazy(() => import("./features/MainWindowApp"));
+const QuickTranslateWindow = lazy(() => import("./features/QuickTranslateWindow"));
 
 const IslandPreview = import.meta.env.DEV
   ? lazy(() => import("./features/IslandPreview"))
@@ -19,8 +22,9 @@ export default function App() {
   }
 
   const windowLabel = getCurrentWindow().label;
-  if (windowLabel === "screenshot") return <ScreenshotOverlay />;
-  if (windowLabel === "ball") return <BallWindow />;
-  if (windowLabel === "quick") return <QuickTranslateWindow />;
-  return <MainWindowApp />;
+  let content = <MainWindowApp />;
+  if (windowLabel === "screenshot") content = <ScreenshotOverlay />;
+  else if (windowLabel === "ball") content = <BallWindow />;
+  else if (windowLabel === "quick") content = <QuickTranslateWindow />;
+  return <Suspense fallback={null}>{content}</Suspense>;
 }

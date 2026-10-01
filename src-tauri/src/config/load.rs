@@ -2,11 +2,7 @@ use super::{
     credentials::load_api_key_credential, default_max_records, ApiConfig, PersistedConfig,
 };
 use crate::persistence::{load_json, LoadedJson};
-use std::{
-    collections::HashMap,
-    sync::{atomic::AtomicU64, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Mutex, time::Duration};
 
 impl ApiConfig {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
@@ -35,6 +31,7 @@ impl ApiConfig {
             max_records,
             profiles,
             free_translation,
+            tm_dir,
             config_existed,
         ) = loaded
             .value
@@ -47,6 +44,7 @@ impl ApiConfig {
                     c.max_records.clamp(50, 1000),
                     c.profiles,
                     c.free_translation,
+                    c.tm_dir,
                     true,
                 )
             })
@@ -60,6 +58,7 @@ impl ApiConfig {
                     default_max_records(),
                     Vec::new(),
                     false,
+                    String::new(),
                     false,
                 )
             });
@@ -82,7 +81,6 @@ impl ApiConfig {
             persistence: loaded.safety,
             write_lock: Mutex::new(()),
             request_seq: Mutex::new(HashMap::new()),
-            replace_request_seq: AtomicU64::new(0),
             hotkeys: Mutex::new(if hotkeys.is_empty() {
                 Self::default_hotkeys()
             } else {
@@ -92,6 +90,7 @@ impl ApiConfig {
             max_records: std::sync::atomic::AtomicUsize::new(max_records),
             profiles: Mutex::new(profiles),
             free_translation: std::sync::atomic::AtomicBool::new(free_translation),
+            tm_dir: Mutex::new(tm_dir),
         };
         // Never persist fallback data after a failed read or failed recovery backup.
         if !config_existed && this.persistence.ensure_writable().is_ok() {

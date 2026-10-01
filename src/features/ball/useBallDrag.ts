@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback } from "react";
 import { logError } from "../../lib/logger";
+import { startWindowDragging } from "../../services/tauriBridge";
 import { getIdleAnchorX, hasSameGeometry } from "../islandModel";
 import { IDLE_WIDTH, IDLE_HEIGHT, saveBallPosition } from "./ballNative";
 import { type BallState } from "./useBallState";
@@ -67,7 +68,10 @@ export function useBallDrag({
     void (async () => {
       try {
         const win = getCurrentWindow();
-        await win.startDragging();
+        // `win.startDragging()` only posts the native move message on Windows
+        // and resolves at drag START. The command polls GUI_INMOVESIZE until
+        // release, so anchor saving and queue resume happen after the drag.
+        await startWindowDragging();
         const endPosition = await win.outerPosition();
         const endOuterSize = await win.outerSize();
         lastDragEndedAtRef.current = performance.now();
@@ -107,9 +111,11 @@ export function useBallDrag({
       } finally {
         draggingRef.current = false;
         transitionCoordinator.setPaused(false);
-        if (dragMode === "status"
-          && modeRef.current === "status"
-          && transitionCoordinator.requestedTarget === null) {
+        // Re-arm even when a transition is queued: a status→status request
+        // drains as a no-op and nothing else would reschedule the collapse.
+        // The timer re-checks the effective mode before collapsing, so an
+        // armed timer left behind by a real mode change is harmless.
+        if (dragMode === "status" && modeRef.current === "status") {
           scheduleStatusCollapse(phaseRef.current);
         }
       }

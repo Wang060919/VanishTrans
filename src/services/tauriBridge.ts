@@ -24,13 +24,13 @@ export type SetApiConfigRequest = {
 };
 
 export type SetHotkeysRequest = { hotkeys: [string, string][] };
+export type SetShortcutsSuspendedRequest = { suspended: boolean };
 export type SetGlossaryRequest = { glossary: [string, string][] };
 export type SetFreeTranslationRequest = { enabled: boolean };
 export type SetLoggingEnabledRequest = { enabled: boolean };
 export type LogFrontendMessageRequest = { level: string; message: string };
 export type WriteClipboardSafeRequest = { text: string };
 export type CleanupClipboardTextRequest = { text: string };
-export type TranslateRequest = { text: string; sourceLang: string; targetLang: string };
 export type TranslateWithDirectionRequest = { text: string; direction: string; forceRefresh?: boolean };
 export type TranslateStreamRequest = { text: string; direction: string; requestId: number; forceRefresh?: boolean };
 export type TranslateBatchRequest = { segments: string[]; direction: string };
@@ -41,6 +41,9 @@ export type TmDeleteRequest = { id: number };
 export type TmExportRequest = { path: string };
 export type TmImportRequest = { path: string };
 export type TmImportContentRequest = { content: string };
+export type SetTmDirRequest = { path: string; migrate: boolean };
+// Field names stay snake_case to mirror the Rust output (like TmEntry/TmStats).
+export interface TmDirInfo { path: string; is_default: boolean; }
 export interface ScreenshotPayload {
   sessionId: number;
   dataUri: string;
@@ -83,6 +86,7 @@ export type CommandName =
   | "get_api_config"
   | "set_api_config"
   | "set_hotkeys"
+  | "set_shortcuts_suspended"
   | "set_glossary"
   | "set_free_translation"
   | "set_max_records"
@@ -91,7 +95,6 @@ export type CommandName =
   | "delete_service_profile"
   | "apply_service_profile"
   | "test_connection"
-  | "translate"
   | "translate_with_direction"
   | "translate_stream"
   | "translate_batch"
@@ -106,6 +109,8 @@ export type CommandName =
   | "tm_export"
   | "tm_import"
   | "tm_import_content"
+  | "get_tm_dir"
+  | "set_tm_dir"
   | "get_screenshot_payload"
   | "run_ocr_on_crop"
   | "cancel_screenshot"
@@ -225,6 +230,10 @@ export async function setHotkeys(request: SetHotkeysRequest): Promise<void> {
   return invokeCommand<void>("set_hotkeys", request);
 }
 
+export async function setShortcutsSuspended(request: SetShortcutsSuspendedRequest): Promise<void> {
+  return invokeCommand<void>("set_shortcuts_suspended", request);
+}
+
 export async function setGlossary(request: SetGlossaryRequest): Promise<void> {
   return invokeCommand<void>("set_glossary", request);
 }
@@ -259,10 +268,6 @@ export async function applyServiceProfile(request: ApplyServiceProfileRequest): 
 
 export async function testConnection(request: SetApiConfigRequest): Promise<string> {
   return invokeCommand<string>("test_connection", request);
-}
-
-export async function translate(request: TranslateRequest): Promise<string> {
-  return invokeCommand<string>("translate", request);
 }
 
 export async function translateWithDirection(request: TranslateWithDirectionRequest): Promise<string> {
@@ -319,6 +324,14 @@ export async function importTm(request: TmImportRequest): Promise<number> {
 
 export async function importTmContent(request: TmImportContentRequest): Promise<number> {
   return invokeCommand<number>("tm_import_content", request);
+}
+
+export async function getTmDir(): Promise<TmDirInfo> {
+  return invokeCommand<TmDirInfo>("get_tm_dir");
+}
+
+export async function setTmDir(request: SetTmDirRequest): Promise<void> {
+  return invokeCommand<void>("set_tm_dir", request);
 }
 
 export async function getScreenshotPayload(): Promise<ScreenshotPayload> {

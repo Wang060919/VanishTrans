@@ -501,6 +501,26 @@ fn is_terminal_process_name(process_name: &str) -> bool {
     )
 }
 
+/// Whether the foreground window is a terminal, by window class or process.
+/// Shared by the copy path (Ctrl+Shift+C) and the replace path (terminals can
+/// never own a replaceable selection).
+#[cfg(target_os = "windows")]
+pub fn foreground_is_terminal() -> bool {
+    foreground_window_class()
+        .as_deref()
+        .map(is_terminal_window_class)
+        .unwrap_or(false)
+        || foreground_process_name()
+            .as_deref()
+            .map(is_terminal_process_name)
+            .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn foreground_is_terminal() -> bool {
+    false
+}
+
 #[cfg(target_os = "windows")]
 fn wait_for_modifiers_release(timeout: Duration) -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -530,14 +550,7 @@ fn try_send_input_copy(app: &tauri::AppHandle) -> (&'static str, Option<String>)
         return ("SendInput", None);
     }
 
-    let terminal_copy = foreground_window_class()
-        .as_deref()
-        .map(is_terminal_window_class)
-        .unwrap_or(false)
-        || foreground_process_name()
-            .as_deref()
-            .map(is_terminal_process_name)
-            .unwrap_or(false);
+    let terminal_copy = foreground_is_terminal();
     let method = if terminal_copy {
         "SendInput Ctrl+Shift+C"
     } else {
@@ -560,18 +573,35 @@ fn is_edit_control_class(class: &str) -> bool {
     class == "edit" || class.starts_with("richedit")
 }
 
-/// `EM_GETSEL` packs both offsets into the return value's two 16-bit halves,
-/// which is what makes the read work across processes. Empty or unreadable
-/// selections come back as None.
+/// `EM_GETSEL` writes both offsets through out-pointers, which Windows
+/// marshals across processes for this system message. Reading them from the
+/// return value instead would pack the positions into two 16-bit halves and
+/// truncate selections beyond 64K characters. A bare `SendMessageW` would
+/// block this worker forever on a hung target; use the same timeout pattern
+/// as `read_control_text`. Empty or unreadable selections return None.
 #[cfg(target_os = "windows")]
 fn edit_selection_offsets(hwnd: isize) -> Option<(u32, u32)> {
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::SendMessageW;
+    use windows::Win32::UI::WindowsAndMessaging::{SendMessageTimeoutW, SMTO_ABORTIFHUNG};
 
     const EM_GETSEL: u32 = 0x00B0;
-    let result = unsafe { SendMessageW(HWND(hwnd as _), EM_GETSEL, WPARAM(0), LPARAM(0)) };
-    let packed = result.0 as u32;
-    let (start, end) = (packed & 0xFFFF, (packed >> 16) & 0xFFFF);
+    let mut start = 0u32;
+    let mut end = 0u32;
+    let mut result: usize = 0;
+    let status = unsafe {
+        SendMessageTimeoutW(
+            HWND(hwnd as _),
+            EM_GETSEL,
+            WPARAM((&mut start as *mut u32) as usize),
+            LPARAM((&mut end as *mut u32) as isize),
+            SMTO_ABORTIFHUNG,
+            100,
+            Some(&mut result),
+        )
+    };
+    if status.0 == 0 {
+        return None;
+    }
     (end > start).then_some((start, end))
 }
 
@@ -678,6 +708,12 @@ fn capture_uia_target(window: ForegroundWindowToken) -> Option<SelectionTarget> 
 /// does not expose a verifiable control/selection identity.
 #[cfg(target_os = "windows")]
 pub fn capture_selection_target() -> Option<SelectionTarget> {
+    // Terminal selections are scrollback text, not editable input: pasting
+    // would type the translation into the shell prompt instead of replacing
+    // anything, so a terminal is never a verifiable replace target.
+    if foreground_is_terminal() {
+        return None;
+    }
     let window = foreground_window_token()?;
     capture_uia_target(window).or_else(|| capture_edit_target(window))
 }
@@ -773,8 +809,17 @@ pub fn copy_selection(_app: &tauri::AppHandle) -> Option<CapturedSelection> {
 }
 
 /// Paste clipboard content via simulated Ctrl+V.
+///
+/// Waits for physically held modifiers first: Alt+R may still be held when a
+/// fast translation returns, and an injected Ctrl+V would then reach the
+/// target as Ctrl+Alt+V — "Paste Special" in Office, ignored by many other
+/// apps — instead of a plain paste.
 #[cfg(target_os = "windows")]
 pub fn simulate_paste() -> bool {
+    if !wait_for_modifiers_release(Duration::from_millis(450)) {
+        log::warn!("[keyboard] Paste skipped because a modifier is still held");
+        return false;
+    }
     send_key_combo(vk::PASTE, false)
 }
 

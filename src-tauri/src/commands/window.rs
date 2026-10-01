@@ -134,6 +134,10 @@ pub(crate) fn show_quick_translation_if_current(
     text: String,
     seq: u64,
 ) -> Result<(), CommandError> {
+    // Wait BEFORE taking QUICK_SEQUENCE: the up-to-5s sleep loop inside the
+    // mutex would block claim/reserve/reveal on every other quick request
+    // (show_quick_result already follows this order).
+    wait_for_frontend(&QUICK_FRONTEND_READY)?;
     super::quick_result::with_current_quick_request(seq, || {
         let window = app
             .get_webview_window("quick")
@@ -145,7 +149,6 @@ pub(crate) fn show_quick_translation_if_current(
         window
             .set_focus()
             .map_err(|error| CommandError::internal(error.to_string()))?;
-        wait_for_frontend(&QUICK_FRONTEND_READY)?;
         window
             .emit("quick-translate", text)
             .map_err(|error| CommandError::internal(error.to_string()))

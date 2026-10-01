@@ -5,6 +5,15 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
 
+/// Grow the clip capsule outward by this many physical pixels. A GDI window
+/// region is a binary mask with no antialiasing, and its rasterized arc never
+/// lands on the same curve WebView2 draws for the CSS border-radius. Clipping
+/// exactly at the painted bounds therefore cuts through the ~1px alpha-fade
+/// band and leaves jagged edge burrs. The bleed keeps the painted capsule —
+/// including its antialiased edge — fully inside the region; the extra ring is
+/// transparent anyway, so only hit testing grows imperceptibly.
+pub(crate) const EDGE_BLEED: i32 = 2;
+
 /// Compact island modes are capsules: CSS radius is half their physical height.
 /// Exclude corners natively, even before WebView2 presents transparent pixels.
 pub(super) fn clip_capsule(hwnd: HWND, bounds: RECT) -> Result<(), CommandError> {
@@ -25,9 +34,20 @@ pub(super) fn clip_capsule(hwnd: HWND, bounds: RECT) -> Result<(), CommandError>
     let diameter = width.min(height);
     // GDI excludes the last rounded-region edge pixel; +1 preserves the requested
     // bounds. Coordinates are already physical pixels, including fractional DPI.
+    // The capsule is then dilated by EDGE_BLEED (rect grows, radius grows) so the
+    // clip never intersects the painted edge. Saturating ops: bounds already
+    // passed overflow checks, and a clamped far edge clips nothing extra.
+    let region_diameter = diameter.saturating_add(EDGE_BLEED * 2);
     // SAFETY: caller supplies a live HWND and validated window-relative bounds.
     unsafe {
-        let region = CreateRoundRectRgn(bounds.left, bounds.top, right, bottom, diameter, diameter);
+        let region = CreateRoundRectRgn(
+            bounds.left.saturating_sub(EDGE_BLEED),
+            bounds.top.saturating_sub(EDGE_BLEED),
+            right.saturating_add(EDGE_BLEED),
+            bottom.saturating_add(EDGE_BLEED),
+            region_diameter,
+            region_diameter,
+        );
         if region.0.is_null() {
             return Err(CommandError::internal("无法创建灵动岛圆角区域"));
         }

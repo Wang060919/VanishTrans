@@ -53,10 +53,20 @@ fn apply_region(hwnd: HWND) -> windows::core::Result<()> {
         if dpi == 0 {
             return Err(windows::core::Error::from_win32());
         }
-        let diameter = ((2 * CORNER_RADIUS * dpi + 48) / 96) as i32;
-        let left = origin.x - outer.left;
-        let top = origin.y - outer.top;
-        let region = CreateRoundRectRgn(left, top, left + width, top + height, diameter, diameter);
+        // Same bleed as the island: the binary GDI clip must sit outside the
+        // painted antialiased outline or it leaves jagged burrs along the edge.
+        let bleed = super::ball_region::EDGE_BLEED;
+        let diameter = ((2 * CORNER_RADIUS * dpi + 48) / 96) as i32 + bleed * 2;
+        let left = origin.x - outer.left - bleed;
+        let top = origin.y - outer.top - bleed;
+        let region = CreateRoundRectRgn(
+            left,
+            top,
+            left + width + 1 + bleed * 2,
+            top + height + 1 + bleed * 2,
+            diameter,
+            diameter,
+        );
         if region.0.is_null() {
             return Err(windows::core::Error::from_win32());
         }

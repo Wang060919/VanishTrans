@@ -111,7 +111,7 @@ describe("island result flow", () => {
     expect(screen.getByText(result.text)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制译文" })).toBeEnabled();
   });
-  it.each(["shortcut-translate", "clipboard-watch-translate", "ocr-translate"])(
+  it.each(["shortcut-translate", "clipboard-watch-translate"])(
     "keeps %s in compact status until the user requests the result", async (eventName) => {
       render(<BallWindow />);
       await waitFor(() => expect(mocks.listeners.has(eventName)).toBe(true));
@@ -126,10 +126,10 @@ describe("island result flow", () => {
   );
   it("keeps an intentionally opened editor visible for new translations", async () => {
     render(<BallWindow />);
-    await waitFor(() => expect(mocks.listeners.has("ocr-translate")).toBe(true));
+    await waitFor(() => expect(mocks.listeners.has("shortcut-translate")).toBe(true));
     act(() => mocks.listeners.get("expand-main-window")?.({ payload: undefined }));
     await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "full"));
-    act(() => mocks.listeners.get("ocr-translate")?.({ payload: result.source }));
+    act(() => mocks.listeners.get("shortcut-translate")?.({ payload: result.source }));
     expect(await screen.findByText(result.text)).toBeInTheDocument();
     expect(surface()).toHaveAttribute("data-mode", "full");
   });

@@ -21,6 +21,7 @@ impl ApiConfig {
             max_records: self.max_records.load(Ordering::Relaxed),
             profiles: self.profiles.lock_recover().clone(),
             free_translation: self.free_translation(),
+            tm_dir: self.tm_dir.lock_recover().clone(),
         }
     }
 
@@ -35,6 +36,7 @@ impl ApiConfig {
         *self.profiles.lock_recover() = snapshot.profiles.clone();
         self.free_translation
             .store(snapshot.free_translation, Ordering::Relaxed);
+        *self.tm_dir.lock_recover() = snapshot.tm_dir.clone();
     }
 
     pub fn save_to_disk(&self) -> Result<(), String> {
@@ -48,6 +50,7 @@ impl ApiConfig {
             max_records: self.max_records.load(std::sync::atomic::Ordering::Relaxed),
             profiles: self.profiles.lock_recover().clone(),
             free_translation: self.free_translation(),
+            tm_dir: self.tm_dir.lock_recover().clone(),
         };
         let value = serde_json::to_value(&cfg).map_err(|e| format!("序列化配置失败: {}", e))?;
         self.save_fields_locked(value)

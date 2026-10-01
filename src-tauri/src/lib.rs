@@ -20,7 +20,7 @@ mod translate;
 mod window_regions;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
 use tauri::{Emitter, Manager};
@@ -145,6 +145,10 @@ pub(crate) fn clamp_ball_position_to_monitor(
 pub struct AppState {
     pub pinned: AtomicBool,
     pub shortcuts_enabled: AtomicBool,
+    /// Reference count of transient hotkey suspensions (hotkey recorder).
+    /// Independent of `shortcuts_enabled` so a recorder resume can never
+    /// re-enable shortcuts the user paused from the tray.
+    pub shortcut_suspend_count: AtomicUsize,
     pub clipboard_watch_enabled: AtomicBool,
     pub clipboard_watch_signal: (Mutex<bool>, Condvar),
     pub alt_r_lock: Mutex<()>,
@@ -166,11 +170,21 @@ pub struct StartupWarnings(pub Mutex<Vec<String>>);
 pub fn run() {
     logging::init();
     tauri::Builder::default()
+        // Must be the first plugin: a second process exits here and forwards
+        // its launch to the running instance, which expands the main window.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("ball") {
+                let _ = window.show();
+                let _ = window.emit("expand-main-window", ());
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState {
             pinned: AtomicBool::new(false),
             shortcuts_enabled: AtomicBool::new(true),
+            shortcut_suspend_count: AtomicUsize::new(0),
             clipboard_watch_enabled: AtomicBool::new(false),
             clipboard_watch_signal: (Mutex::new(false), Condvar::new()),
             alt_r_lock: Mutex::new(()),
@@ -190,6 +204,9 @@ pub fn run() {
             let history_limit = api_config
                 .max_records
                 .load(std::sync::atomic::Ordering::Relaxed);
+            // Resolve before `manage` takes ownership: a configured override
+            // wins over the default app-data dir.
+            let tm_dir = api_config.tm_db_dir(&config_dir);
             let mut startup_warnings = Vec::new();
             startup_warnings.extend(api_config.startup_warning().map(str::to_owned));
             app.manage(api_config);
@@ -202,10 +219,13 @@ pub fn run() {
             // quick_frame owns the rounded outline without a second DWM surface.
 
             // Keep translation usable if persistent TM storage is unavailable.
-            let translation_memory = match tm::TranslationMemory::open(&config_dir) {
+            let translation_memory = match tm::TranslationMemory::open(&tm_dir) {
                 Ok(memory) => memory,
                 Err(error) => {
-                    log::error!("[tm] Failed to initialize persistent storage: {error}");
+                    log::error!(
+                        "[tm] Failed to initialize persistent storage at {}: {error}",
+                        tm_dir.display()
+                    );
                     startup_warnings.push(
                         "翻译记忆数据库不可用，本次运行将使用临时内存，退出后不会保留。".to_string(),
                     );
@@ -394,6 +414,7 @@ pub fn run() {
             commands::get_api_config,
             commands::set_api_config,
             commands::set_hotkeys,
+            commands::set_shortcuts_suspended,
             commands::set_glossary,
             commands::set_max_records,
             commands::set_free_translation,
@@ -402,7 +423,6 @@ pub fn run() {
             commands::delete_service_profile,
             commands::apply_service_profile,
             commands::test_connection,
-            commands::translate,
             commands::translate_with_direction,
             commands::translate_stream,
             commands::cancel_translation,
@@ -422,6 +442,8 @@ pub fn run() {
             commands::tm_export,
             commands::tm_import,
             commands::tm_import_content,
+            commands::get_tm_dir,
+            commands::set_tm_dir,
             commands::show_main_window,
             commands::hide_quick_window,
             commands::show_main_with_text,

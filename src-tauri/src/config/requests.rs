@@ -1,7 +1,6 @@
 //! Sequence checks and commits share one lock; window labels isolate cancellation.
 use super::ApiConfig;
 use crate::lock::LockRecover;
-use std::sync::atomic::Ordering;
 
 impl ApiConfig {
     /// Claim a request sequence within one webview scope.
@@ -35,15 +34,5 @@ impl ApiConfig {
             return None;
         }
         Some(commit())
-    }
-
-    /// Claim a new Alt+R replacement sequence number.
-    pub fn next_replace_request_seq(&self) -> u64 {
-        self.replace_request_seq.fetch_add(1, Ordering::SeqCst) + 1
-    }
-
-    /// Returns true if `seq` is still the latest Alt+R replacement request.
-    pub fn is_current_replace_request(&self, seq: u64) -> bool {
-        self.replace_request_seq.load(Ordering::SeqCst) == seq
     }
 }

@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { setShortcutsSuspended as setShortcutsSuspendedCmd } from "../services/tauriBridge";
 
 interface HotkeyEditorProps {
   label: string;
   value: string;
   onChange: (shortcut: string) => void;
+}
+
+/**
+ * Physical key codes (KeyboardEvent.code) are layout-independent: Shift+2 on
+ * a US layout still reports "Digit2", and an AZERTY digit row reports
+ * "DigitN" regardless of the produced character. The backend registers
+ * virtual keys derived from the same physical positions, so recording by
+ * code keeps the captured combo pressable on any layout.
+ */
+function codeToHotkeyKey(code: string): string {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (code === "Escape") return "Esc";
+  if (code === "Space") return "Space";
+  return "";
 }
 
 /**
@@ -14,6 +30,32 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
   const [recording, setRecording] = useState(false);
   const [pending, setPending] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  const suspendedRef = useRef(false);
+
+  const resumeShortcuts = useCallback(() => {
+    if (!suspendedRef.current) return;
+    suspendedRef.current = false;
+    void setShortcutsSuspendedCmd({ suspended: false }).catch(() => {});
+  }, []);
+
+  // While recording, this app's own global hotkeys must be suspended:
+  // Windows routes a registered combo to our hotkey handler instead of the
+  // focused window, which would fire a real translation and swallow the
+  // keypress before the editor can record it.
+  const handleStartRecording = useCallback(() => {
+    setPending("");
+    void (async () => {
+      if (!suspendedRef.current) {
+        try {
+          await setShortcutsSuspendedCmd({ suspended: true });
+          suspendedRef.current = true;
+        } catch {
+          // Suspension is best-effort: unregistered combos still record fine.
+        }
+      }
+      setRecording(true);
+    })();
+  }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Ignore bare modifier presses
@@ -31,18 +73,11 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
     // Skip if only modifiers were pressed
     if (parts.length === 0) return;
 
-    const key = e.key === "Escape"
-      ? "Esc"
-      : e.key === " "
-        ? "Space"
-        : e.key.length === 1
-          ? e.key.toUpperCase()
-          : "";
-    if (!/^[A-Z0-9]$/.test(key) && key !== "Esc" && key !== "Space") return;
+    const key = codeToHotkeyKey(e.code);
+    if (!key) return;
 
     parts.push(key);
-    const combo = parts.join("+");
-    setPending(combo);
+    setPending(parts.join("+"));
     setRecording(false);
   }, []);
 
@@ -57,17 +92,17 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
       onChange(pending);
       setPending("");
     }
-  }, [pending, onChange]);
+    resumeShortcuts();
+  }, [pending, onChange, resumeShortcuts]);
 
   const handleCancel = useCallback(() => {
     setPending("");
     setRecording(false);
-  }, []);
+    resumeShortcuts();
+  }, [resumeShortcuts]);
 
-  const handleStartRecording = useCallback(() => {
-    setPending("");
-    setRecording(true);
-  }, []);
+  // A settings tab switch unmounts mid-recording — release the suspension.
+  useEffect(() => resumeShortcuts, [resumeShortcuts]);
 
   const displayValue = pending || value;
 
