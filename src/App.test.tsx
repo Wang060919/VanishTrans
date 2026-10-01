@@ -160,23 +160,6 @@ describe("App", () => {
     );
   });
 
-  it("translates OCR text received via ocr-translate event", async () => {
-    render(<App />);
-    await waitFor(() => expect(listeners["ocr-translate"]).toBeDefined());
-
-    await triggerAndFlush(() => emit("ocr-translate", "scanned text"));
-
-    await waitFor(() => {
-      expect(mockedInvoke).toHaveBeenCalledWith(
-        "translate_stream",
-        expect.objectContaining({ request: expect.objectContaining({ text: "hello world" }) }),
-      );
-    });
-    await waitFor(() => {
-      expect(screen.getByText(/你好/)).toBeInTheDocument();
-    });
-  });
-
   it("sends the current direction to translate_stream", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -302,12 +285,12 @@ describe("App", () => {
     });
 
     render(<App />);
-    await waitFor(() => expect(listeners["ocr-translate"]).toBeDefined());
-    await triggerAndFlush(() => emit("ocr-translate", "first"));
+    await waitFor(() => expect(listeners["shortcut-translate"]).toBeDefined());
+    await triggerAndFlush(() => emit("shortcut-translate", "first"));
     await waitFor(() => {
       expect(mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream")).toHaveLength(1);
     });
-    await triggerAndFlush(() => emit("ocr-translate", "second"));
+    await triggerAndFlush(() => emit("shortcut-translate", "second"));
 
     await waitFor(() => {
       const calls = mockedInvoke.mock.calls.filter(([cmd]) => cmd === "translate_stream");

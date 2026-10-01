@@ -18,7 +18,6 @@ type Cleanup = () => void;
 
 const options = {
   onClipboardTranslate: vi.fn(),
-  onOcrTranslate: vi.fn(),
   onScreenshotStart: vi.fn(),
   onScreenshotError: vi.fn(),
   onShortcutConflicts: vi.fn(),
@@ -48,7 +47,6 @@ describe("useTauriEvents lifecycle", () => {
     expect(result.current).toBe(false);
     expect(released).toEqual([
       "shortcut-translate",
-      "ocr-translate",
       "clipboard-watch-translate",
     ]);
     expect(mocks.frontendReady).toHaveBeenCalledWith(false);
@@ -70,6 +68,6 @@ describe("useTauriEvents lifecycle", () => {
     unmount();
     await waitFor(() => expect(mocks.frontendReady).toHaveBeenCalledTimes(2));
     expect(mocks.frontendReady).toHaveBeenLastCalledWith(false);
-    expect(released).toHaveLength(8);
+    expect(released).toHaveLength(7);
   });
 });

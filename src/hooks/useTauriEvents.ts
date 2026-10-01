@@ -15,7 +15,6 @@ export interface ShortcutRegistrationConflict {
 
 interface TauriEventsOptions {
   onClipboardTranslate: (request: TranslationRequestEvent) => void;
-  onOcrTranslate: (text: string) => void;
   onScreenshotStart: () => void;
   onScreenshotError: (message: string) => void;
   onShortcutConflicts: (conflicts: ShortcutRegistrationConflict[]) => void;
@@ -41,7 +40,6 @@ export function normalizeTranslationRequest(payload: unknown): TranslationReques
 
 export function useTauriEvents({
   onClipboardTranslate,
-  onOcrTranslate,
   onScreenshotStart,
   onScreenshotError,
   onShortcutConflicts,
@@ -52,7 +50,6 @@ export function useTauriEvents({
   // Keep refs to the latest callbacks so event listeners never go stale
   const callbacksRef = useRef({
     onClipboardTranslate,
-    onOcrTranslate,
     onScreenshotStart,
     onScreenshotError,
     onShortcutConflicts,
@@ -61,7 +58,6 @@ export function useTauriEvents({
   });
   callbacksRef.current = {
     onClipboardTranslate,
-    onOcrTranslate,
     onScreenshotStart,
     onScreenshotError,
     onShortcutConflicts,
@@ -91,12 +87,6 @@ export function useTauriEvents({
       });
       if (cancelled) { u1(); return; }
       addCleanup(u1);
-
-      const u2 = await listen<string>("ocr-translate", (event) => {
-        callbacksRef.current.onOcrTranslate(event.payload);
-      });
-      if (cancelled) { u2(); return; }
-      addCleanup(u2);
 
       const u3 = await listen<unknown>("clipboard-watch-translate", (event) => {
         const request = normalizeTranslationRequest(event.payload);

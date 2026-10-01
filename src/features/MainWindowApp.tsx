@@ -56,14 +56,6 @@ export default function MainWindowApp({
       doTranslateStreamRef.current(request.text);
     }, []),
 
-    onOcrTranslate: useCallback((text: string) => {
-      if (text.startsWith("❌ Alt+R 失败:")) {
-        resetTranslationRef.current(text);
-        return;
-      }
-      doTranslateStreamRef.current(text);
-    }, []),
-
     onScreenshotStart: useCallback(() => {
       resetTranslationRef.current();
     }, []),
