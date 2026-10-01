@@ -41,6 +41,9 @@ export type TmDeleteRequest = { id: number };
 export type TmExportRequest = { path: string };
 export type TmImportRequest = { path: string };
 export type TmImportContentRequest = { content: string };
+export type SetTmDirRequest = { path: string; migrate: boolean };
+// Field names stay snake_case to mirror the Rust output (like TmEntry/TmStats).
+export interface TmDirInfo { path: string; is_default: boolean; }
 export interface ScreenshotPayload {
   sessionId: number;
   dataUri: string;
@@ -106,6 +109,8 @@ export type CommandName =
   | "tm_export"
   | "tm_import"
   | "tm_import_content"
+  | "get_tm_dir"
+  | "set_tm_dir"
   | "get_screenshot_payload"
   | "run_ocr_on_crop"
   | "cancel_screenshot"
@@ -319,6 +324,14 @@ export async function importTm(request: TmImportRequest): Promise<number> {
 
 export async function importTmContent(request: TmImportContentRequest): Promise<number> {
   return invokeCommand<number>("tm_import_content", request);
+}
+
+export async function getTmDir(): Promise<TmDirInfo> {
+  return invokeCommand<TmDirInfo>("get_tm_dir");
+}
+
+export async function setTmDir(request: SetTmDirRequest): Promise<void> {
+  return invokeCommand<void>("set_tm_dir", request);
 }
 
 export async function getScreenshotPayload(): Promise<ScreenshotPayload> {

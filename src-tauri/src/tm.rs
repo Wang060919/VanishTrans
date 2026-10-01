@@ -35,6 +35,8 @@ pub struct TmStats {
 
 pub struct TranslationMemory {
     conn: Mutex<Connection>,
+    /// Backing file; `None` in transient in-memory mode.
+    db_path: Option<std::path::PathBuf>,
 }
 
 impl TranslationMemory {
@@ -53,6 +55,7 @@ impl TranslationMemory {
 
         Ok(Self {
             conn: Mutex::new(conn),
+            db_path: Some(db_path),
         })
     }
 
@@ -66,7 +69,41 @@ impl TranslationMemory {
         Self::initialize_schema(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
+            db_path: None,
         })
+    }
+
+    /// Path of the backing `tm.db`; `None` in transient in-memory mode.
+    #[cfg(test)]
+    pub fn db_path(&self) -> Option<std::path::PathBuf> {
+        self.db_path.clone()
+    }
+
+    /// Flush the WAL and copy `tm.db` into `dest_dir` so a configured location
+    /// change can carry existing entries over. Refuses to overwrite an
+    /// existing database at the destination.
+    pub fn copy_db_to(&self, dest_dir: &Path) -> Result<(), String> {
+        let source = self
+            .db_path
+            .as_ref()
+            .ok_or_else(|| "翻译记忆为临时内存模式，没有可迁移的数据".to_string())?;
+        let dest = dest_dir.join("tm.db");
+        let same_file = std::fs::canonicalize(&dest)
+            .ok()
+            .zip(std::fs::canonicalize(source).ok())
+            .map(|(a, b)| a == b)
+            .unwrap_or(false);
+        if same_file {
+            return Ok(());
+        }
+        if dest.exists() {
+            return Err(format!("目标目录已存在 tm.db：{}", dest.display()));
+        }
+        let conn = self.conn.lock_recover();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .map_err(|e| format!("迁移前落盘失败: {e}"))?;
+        std::fs::copy(source, &dest).map_err(|e| format!("复制翻译记忆数据库失败: {e}"))?;
+        Ok(())
     }
 
     fn initialize_schema(conn: &mut Connection) -> Result<(), String> {
@@ -677,6 +714,41 @@ mod tests {
         );
         assert_eq!(tm.stats().total_entries, 2);
 
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn copy_db_to_carries_entries_and_refuses_to_overwrite() {
+        let (tm, dir) = temp_tm();
+        tm.store("hello", "你好", "auto", "Chinese");
+        let dest_dir = dir.join("moved");
+        std::fs::create_dir(&dest_dir).unwrap();
+
+        tm.copy_db_to(&dest_dir).unwrap();
+        let moved = TranslationMemory::open(&dest_dir).unwrap();
+        assert_eq!(
+            moved.lookup("hello", "auto", "Chinese").as_deref(),
+            Some("你好")
+        );
+
+        // An existing database at the destination is never clobbered.
+        assert!(tm.copy_db_to(&dest_dir).is_err());
+        // Copying onto itself is a no-op, not an error.
+        tm.copy_db_to(&dir).unwrap();
+
+        drop(moved);
+        drop(tm);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn in_memory_tm_has_nothing_to_migrate() {
+        let tm = TranslationMemory::open_in_memory().unwrap();
+        assert!(tm.db_path().is_none());
+        let dir = std::env::temp_dir().join(format!("vt_tm_mig_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(tm.copy_db_to(&dir).is_err());
         drop(tm);
         let _ = std::fs::remove_dir_all(dir);
     }

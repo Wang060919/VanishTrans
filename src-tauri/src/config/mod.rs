@@ -6,6 +6,7 @@ mod load;
 mod profiles;
 mod requests;
 mod storage;
+mod tm_dir;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -38,6 +39,9 @@ pub struct ApiConfig {
     /// When enabled, translation uses the free Google Translate endpoint
     /// instead of the configured OpenAI-compatible API (no key required).
     pub free_translation: std::sync::atomic::AtomicBool,
+    /// Custom directory for `tm.db`; empty means the default app-data dir.
+    /// Applied on startup only — the live TM connection never moves.
+    pub tm_dir: Mutex<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -54,6 +58,8 @@ struct PersistedConfig {
     profiles: Vec<ServiceProfile>,
     #[serde(default)]
     free_translation: bool,
+    #[serde(default)]
+    tm_dir: String,
 }
 
 #[derive(Clone)]
@@ -66,6 +72,7 @@ pub(crate) struct ConfigSnapshot {
     max_records: usize,
     profiles: Vec<ServiceProfile>,
     free_translation: bool,
+    tm_dir: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

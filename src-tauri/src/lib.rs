@@ -190,6 +190,9 @@ pub fn run() {
             let history_limit = api_config
                 .max_records
                 .load(std::sync::atomic::Ordering::Relaxed);
+            // Resolve before `manage` takes ownership: a configured override
+            // wins over the default app-data dir.
+            let tm_dir = api_config.tm_db_dir(&config_dir);
             let mut startup_warnings = Vec::new();
             startup_warnings.extend(api_config.startup_warning().map(str::to_owned));
             app.manage(api_config);
@@ -202,10 +205,13 @@ pub fn run() {
             // quick_frame owns the rounded outline without a second DWM surface.
 
             // Keep translation usable if persistent TM storage is unavailable.
-            let translation_memory = match tm::TranslationMemory::open(&config_dir) {
+            let translation_memory = match tm::TranslationMemory::open(&tm_dir) {
                 Ok(memory) => memory,
                 Err(error) => {
-                    log::error!("[tm] Failed to initialize persistent storage: {error}");
+                    log::error!(
+                        "[tm] Failed to initialize persistent storage at {}: {error}",
+                        tm_dir.display()
+                    );
                     startup_warnings.push(
                         "翻译记忆数据库不可用，本次运行将使用临时内存，退出后不会保留。".to_string(),
                     );
@@ -422,6 +428,8 @@ pub fn run() {
             commands::tm_export,
             commands::tm_import,
             commands::tm_import_content,
+            commands::get_tm_dir,
+            commands::set_tm_dir,
             commands::show_main_window,
             commands::hide_quick_window,
             commands::show_main_with_text,
