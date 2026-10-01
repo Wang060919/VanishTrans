@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { TranslationResult } from "../lib/translationResult";
+import type { LangDirection } from "../hooks/useTranslationSession";
 import { errorMessage } from "../lib/errors";
 import { writeClipboardSafe } from "../services/tauriBridge";
 import QuickTranslationView from "./QuickTranslationView";
@@ -9,6 +10,28 @@ interface Props {
   onExpand: () => void;
   onClose: () => void;
   preview?: boolean;
+}
+
+const EXPLICIT_DIRECTION_LABELS: Partial<Record<LangDirection, string>> = {
+  en2zh: "英语 → 简体中文",
+  zh2en: "简体中文 → 英语",
+  auto2zh: "自动检测 → 简体中文",
+  auto2en: "自动检测 → 英语",
+};
+
+// Same CJK ranges as translate::language::resolve_target_lang.
+const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿︰-﹏𠀀-𪛟𪜀-𫜿𫝀-𫠿𫠠-𬺯]/u;
+
+/** The stored direction is the *requested* one; resolve "auto" like the backend
+ *  (CJK ratio > 0.3 → English target) so the card never mislabels the result. */
+function directionLabelFor(direction: LangDirection, source: string): string {
+  const explicit = EXPLICIT_DIRECTION_LABELS[direction];
+  if (explicit) return explicit;
+  const chars = [...source];
+  const cjk = chars.filter((char) => CJK_PATTERN.test(char)).length;
+  return chars.length > 0 && cjk / chars.length > 0.3
+    ? "简体中文 → 英语"
+    : "英语 → 简体中文";
 }
 
 /** Presents a committed snapshot; the originating session still owns translation. */
@@ -41,7 +64,7 @@ export default function IslandResultPanel({ result, onExpand, onClose, preview =
   };
   return (
     <>
-      <QuickTranslationView embedded directionLabel={result.direction === "en2zh" ? "英语 → 简体中文" : "简体中文 → 英语"} source={result.source} output={result.text} loading={false}
+      <QuickTranslationView embedded directionLabel={directionLabelFor(result.direction, result.source)} source={result.source} output={result.text} loading={false}
         copied={copied} onCopy={() => void copy()} onExpand={onExpand}
         onClose={onClose} onRetry={() => {}} />
       {copyError && <p className="translation-island__copy-error" role="alert">{copyError}</p>}
