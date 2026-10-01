@@ -54,7 +54,7 @@ describe("island settings", () => {
     render(<SettingsPanel {...props()} initialTab={undefined} />);
     expect(screen.getByRole("navigation", { name: "设置分类" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Base URL")).not.toBeInTheDocument();
-    for (const label of ["翻译服务", "快捷键", "术语表", "翻译记忆", "隐私"]) {
+    for (const label of ["翻译服务", "快捷键", "术语表", "翻译记忆", "隐私", "关于"]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
       expect(screen.getByRole("region", { name: label + "设置" })).toHaveFocus();
       fireEvent.click(screen.getByRole("button", { name: "返回设置" }));

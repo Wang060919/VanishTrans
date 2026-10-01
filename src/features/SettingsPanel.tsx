@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { BookOpen, ChevronRight, Database, Keyboard, Server, Shield } from "lucide-react";
+import { BookOpen, ChevronRight, Database, Info, Keyboard, Server, Shield } from "lucide-react";
 import { useSaveFeedback } from "../hooks/useSaveFeedback";
 import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../types";
+import AboutTab from "./settings/AboutTab";
 import ApiTab from "./settings/ApiTab";
 import GlossaryTab from "./settings/GlossaryTab";
 import HotkeysTab from "./settings/HotkeysTab";
@@ -36,7 +37,7 @@ interface SettingsPanelProps {
   onSetFreeTranslation: (enabled: boolean) => Promise<void>;
 }
 
-export type SettingsTab = "api" | "hotkeys" | "glossary" | "tm" | "privacy";
+export type SettingsTab = "api" | "hotkeys" | "glossary" | "tm" | "privacy" | "about";
 
 export const SETTINGS_PAGES = [
   { id: "api", label: "翻译服务", icon: Server },
@@ -44,6 +45,7 @@ export const SETTINGS_PAGES = [
   { id: "glossary", label: "术语表", icon: BookOpen },
   { id: "tm", label: "翻译记忆", icon: Database },
   { id: "privacy", label: "隐私", icon: Shield },
+  { id: "about", label: "关于", icon: Info },
 ] as const;
 
 /** Native grouped navigation + shared save feedback. Content lives in settings/*Tab. */
@@ -135,6 +137,7 @@ export default function SettingsPanel({
         {activeTab === "privacy" && (
           <PrivacyTab loggingEnabled={loggingEnabled} onSetLogging={writes.logging} notifyError={notifyError} />
         )}
+        {activeTab === "about" && <AboutTab />}
       </div>
       </div>}
       <div className={"settings-feedback" + (saveError ? " settings-feedback--error" : "")}

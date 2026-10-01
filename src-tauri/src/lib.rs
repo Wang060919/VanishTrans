@@ -181,6 +181,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState {
             pinned: AtomicBool::new(false),
             shortcuts_enabled: AtomicBool::new(true),
@@ -453,6 +455,7 @@ pub fn run() {
             commands::toggle_ball,
             commands::save_ball_position,
             commands::get_ball_position,
+            commands::get_foreground_window_info,
         ])
         .build(tauri::generate_context!())
         .expect("启动 VanishTrans 失败")

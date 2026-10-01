@@ -97,6 +97,25 @@
 .settings-panel .toggle-switch[aria-checked="true"] { background: var(--color-success); }
 .settings-panel .toggle-switch[aria-checked="true"] .toggle-thumb { transform: translateX(18px); }
 .settings-back { margin: 4px 20px; align-self: flex-start; }
+
+/* About page: centered hero plus the same grouped-card rows as other tabs. */
+.about-hero { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 22px 14px 18px; border-radius: 14px; background: var(--color-surface-raised); }
+.about-icon { width: 56px; height: 56px; border-radius: 14px; }
+.about-name { margin-top: 4px; color: var(--color-ink); font-size: 15px; font-weight: 600; }
+.about-version { color: var(--color-ink-muted); font-size: 12px; }
+.about-group { display: flex; flex-direction: column; padding: 0 14px; border-radius: 14px; background: var(--color-surface-raised); }
+.about-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 6px 0; border: 0; border-radius: 0; background: transparent; color: var(--color-ink); font: inherit; font-size: 13px; text-align: left; }
+.about-row + .about-row { border-top: 1px solid var(--color-line); }
+button.about-row { cursor: pointer; }
+button.about-row:hover { color: #fff; }
+.about-row > svg { color: var(--color-ink-faint); }
+.about-row .text-action { color: var(--color-signal); font-size: 12px; }
+.about-value { color: var(--color-ink-muted); font-size: 12px; }
+.about-status { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; line-height: 1.5; }
+.about-status--ok { color: var(--color-success); }
+.about-status--error { color: var(--color-danger); }
+.about-status--update { color: var(--color-signal); }
+.about-status .text-action { color: var(--color-signal); font-size: 12px; }
 @media (max-width: 420px) {
   .settings-home { padding: 12px 18px 8px; }
   .settings-scroll { padding: 8px 18px 12px; }
