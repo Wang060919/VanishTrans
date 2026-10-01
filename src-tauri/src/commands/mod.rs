@@ -19,9 +19,9 @@ mod screenshot_visibility;
 mod tm;
 mod translate;
 mod window;
-mod window_drag;
 #[cfg(target_os = "windows")]
 mod window_bounds;
+mod window_drag;
 
 pub use app::*;
 pub use clipboard::*;

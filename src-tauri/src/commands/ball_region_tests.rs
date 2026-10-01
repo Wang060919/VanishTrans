@@ -40,9 +40,16 @@ fn assert_capsule(hwnd: HWND, expected: RECT) {
         assert_ne!(GetWindowRgn(hwnd, region).0, ERROR);
         let mut bounds = RECT::default();
         assert_ne!(GetRgnBox(region, &mut bounds).0, ERROR);
+        // The clip capsule is dilated by EDGE_BLEED so its binary edge never
+        // intersects the painted antialiased capsule outline.
         assert_eq!(
             (bounds.left, bounds.top, bounds.right, bounds.bottom),
-            (expected.left, expected.top, expected.right, expected.bottom)
+            (
+                expected.left - EDGE_BLEED,
+                expected.top - EDGE_BLEED,
+                expected.right + EDGE_BLEED,
+                expected.bottom + EDGE_BLEED
+            )
         );
         for (x, y) in [
             (bounds.left, bounds.top),
