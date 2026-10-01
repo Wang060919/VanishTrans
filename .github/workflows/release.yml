@@ -72,6 +72,11 @@ jobs:
       # GitHub release so in-app updates can fetch them.
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
+        with:
+          # Pass the tag explicitly: on tag pushes the action does not pick it
+          # up from GITHUB_REF, so without this it builds + signs but skips the
+          # release and every upload ("No releaseId or tagName provided").
+          tagName: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
