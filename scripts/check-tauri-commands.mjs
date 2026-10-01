@@ -27,27 +27,52 @@ for (const path of ["AGENTS.md"]) {
   documented.set(path, names);
 }
 
+// The bridge must expose every registered command: once in the CommandName
+// union and once in an invokeCommand("...") wrapper call.
+const bridgeSource = readFileSync("src/services/tauriBridge.ts", "utf8");
+const unionMatch = bridgeSource.match(/export type CommandName\s*=[\s\S]*?;/);
+if (!unionMatch) {
+  throw new Error("Could not locate the CommandName union in tauriBridge.ts");
+}
+const commandNames = [...unionMatch[0].matchAll(/"([A-Za-z0-9_]+)"/g)].map((match) => match[1]);
+const invoked = new Set(
+  [...bridgeSource.matchAll(/invokeCommand(?:<[^>]*>)?\(\s*"([A-Za-z0-9_]+)"/g)].map((match) => match[1]),
+);
+
 function duplicates(names) {
   return [...new Set(names.filter((name, index) => names.indexOf(name) !== index))];
 }
 
 const registeredSet = new Set(registered);
 let failed = false;
-for (const [path, names] of documented) {
-  const documentedSet = new Set(names);
-  const missing = registered.filter((name) => !documentedSet.has(name));
+
+function compareList(label, names) {
+  const nameSet = new Set(names);
+  const missing = registered.filter((name) => !nameSet.has(name));
   const extra = names.filter((name) => !registeredSet.has(name));
   const duplicateNames = duplicates(names);
   if (missing.length || extra.length || duplicateNames.length || names.length !== registered.length) {
     failed = true;
-    console.error(`${path}: command list does not match generate_handler!`);
+    console.error(`${label}: command list does not match generate_handler!`);
     if (missing.length) console.error(`  missing: ${missing.join(", ")}`);
     if (extra.length) console.error(`  extra: ${extra.join(", ")}`);
     if (duplicateNames.length) console.error(`  duplicates: ${duplicateNames.join(", ")}`);
     if (names.length !== registered.length) {
-      console.error(`  documented ${names.length}, registered ${registered.length}`);
+      console.error(`  declared ${names.length}, registered ${registered.length}`);
     }
   }
+}
+
+for (const [path, names] of documented) {
+  compareList(`${path} documentation`, names);
+}
+compareList("tauriBridge.ts CommandName", commandNames);
+
+// A registered command with no invokeCommand call is dead IPC surface.
+const uninvoked = registered.filter((name) => !invoked.has(name));
+if (uninvoked.length) {
+  failed = true;
+  console.error(`tauriBridge.ts: registered commands without a wrapper: ${uninvoked.join(", ")}`);
 }
 
 if (duplicates(registered).length) {
@@ -56,4 +81,6 @@ if (duplicates(registered).length) {
 }
 
 if (failed) process.exit(1);
-console.log(`Tauri command documentation matches ${registered.length} registered commands.`);
+console.log(
+  `Tauri command documentation, CommandName union and bridge wrappers match ${registered.length} registered commands.`,
+);
