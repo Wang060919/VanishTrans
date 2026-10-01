@@ -20,7 +20,7 @@ mod translate;
 mod window_regions;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
 use tauri::{Emitter, Manager};
@@ -145,6 +145,10 @@ pub(crate) fn clamp_ball_position_to_monitor(
 pub struct AppState {
     pub pinned: AtomicBool,
     pub shortcuts_enabled: AtomicBool,
+    /// Reference count of transient hotkey suspensions (hotkey recorder).
+    /// Independent of `shortcuts_enabled` so a recorder resume can never
+    /// re-enable shortcuts the user paused from the tray.
+    pub shortcut_suspend_count: AtomicUsize,
     pub clipboard_watch_enabled: AtomicBool,
     pub clipboard_watch_signal: (Mutex<bool>, Condvar),
     pub alt_r_lock: Mutex<()>,
@@ -171,6 +175,7 @@ pub fn run() {
         .manage(AppState {
             pinned: AtomicBool::new(false),
             shortcuts_enabled: AtomicBool::new(true),
+            shortcut_suspend_count: AtomicUsize::new(0),
             clipboard_watch_enabled: AtomicBool::new(false),
             clipboard_watch_signal: (Mutex::new(false), Condvar::new()),
             alt_r_lock: Mutex::new(()),
@@ -400,6 +405,7 @@ pub fn run() {
             commands::get_api_config,
             commands::set_api_config,
             commands::set_hotkeys,
+            commands::set_shortcuts_suspended,
             commands::set_glossary,
             commands::set_max_records,
             commands::set_free_translation,

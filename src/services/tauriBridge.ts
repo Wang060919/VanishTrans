@@ -24,6 +24,7 @@ export type SetApiConfigRequest = {
 };
 
 export type SetHotkeysRequest = { hotkeys: [string, string][] };
+export type SetShortcutsSuspendedRequest = { suspended: boolean };
 export type SetGlossaryRequest = { glossary: [string, string][] };
 export type SetFreeTranslationRequest = { enabled: boolean };
 export type SetLoggingEnabledRequest = { enabled: boolean };
@@ -86,6 +87,7 @@ export type CommandName =
   | "get_api_config"
   | "set_api_config"
   | "set_hotkeys"
+  | "set_shortcuts_suspended"
   | "set_glossary"
   | "set_free_translation"
   | "set_max_records"
@@ -228,6 +230,10 @@ export async function setApiConfig(request: SetApiConfigRequest): Promise<void> 
 
 export async function setHotkeys(request: SetHotkeysRequest): Promise<void> {
   return invokeCommand<void>("set_hotkeys", request);
+}
+
+export async function setShortcutsSuspended(request: SetShortcutsSuspendedRequest): Promise<void> {
+  return invokeCommand<void>("set_shortcuts_suspended", request);
 }
 
 export async function setGlossary(request: SetGlossaryRequest): Promise<void> {

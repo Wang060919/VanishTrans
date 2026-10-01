@@ -20,6 +20,10 @@ use crate::AppState;
 /// Each entry is (Shortcut, action_name).
 static REGISTERED_SHORTCUTS: std::sync::OnceLock<Mutex<Vec<(Shortcut, String)>>> =
     std::sync::OnceLock::new();
+/// Serializes the unregister → register → track sequence in `sync_shortcuts`:
+/// `set_hotkeys` and the tray pause toggle reach it from different threads
+/// holding different locks, and interleaving could orphan a live hotkey grab.
+static SYNC_SHORTCUTS_LOCK: Mutex<()> = Mutex::new(());
 static ALT_Q_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -103,14 +107,40 @@ where
 fn get_shortcuts() -> &'static Mutex<Vec<(Shortcut, String)>> {
     REGISTERED_SHORTCUTS.get_or_init(|| Mutex::new(Vec::new()))
 }
+
+/// Hotkeys are live only while the listener is enabled and no transient
+/// suspension (hotkey recorder) is in flight.
+fn shortcuts_are_active(app: &tauri::AppHandle) -> bool {
+    let state = app.state::<AppState>();
+    state.shortcuts_enabled.load(Ordering::SeqCst)
+        && state.shortcut_suspend_count.load(Ordering::SeqCst) == 0
+}
+
+/// Unregister tracked shortcuts, returning the entries the OS refused to
+/// release. Keeping them tracked lets the next sync retry instead of
+/// orphaning a live global hotkey that keeps swallowing keystrokes.
+fn unregister_all<E: std::fmt::Display>(
+    entries: Vec<(Shortcut, String)>,
+    mut unregister: impl FnMut(Shortcut) -> Result<(), E>,
+) -> Vec<(Shortcut, String)> {
+    let mut failed = Vec::new();
+    for (shortcut, action) in entries {
+        if let Err(error) = unregister(shortcut) {
+            log::warn!("[shortcut] Failed to unregister {shortcut:?} ({action}): {error}");
+            failed.push((shortcut, action));
+        }
+    }
+    failed
+}
+
 fn unregister_shortcuts(app: &tauri::AppHandle) {
     let previous = {
         let mut registered = get_shortcuts().lock_recover();
         std::mem::take(&mut *registered)
     };
-    for (shortcut, _) in previous {
-        let _ = app.global_shortcut().unregister(shortcut);
-    }
+    let plugin = app.global_shortcut();
+    *get_shortcuts().lock_recover() =
+        unregister_all(previous, |shortcut| plugin.unregister(shortcut));
 }
 
 /// Parse a shortcut string like "Alt+Q" into a Shortcut object.
@@ -126,6 +156,9 @@ fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
             "Shift" => modifiers |= Modifiers::SHIFT,
             "Meta" | "Super" | "Win" => modifiers |= Modifiers::SUPER,
             _ => {
+                if key_code.is_some() {
+                    return Err(format!("快捷键包含多个按键: {}", s));
+                }
                 // Map readable key names to Code
                 key_code = Some(match part {
                     "Q" | "q" => Code::KeyQ,
@@ -265,18 +298,17 @@ fn publish_shortcut_conflicts(
 /// Synchronize registered shortcuts with the current config.
 /// Called on init and whenever hotkeys are updated.
 pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
-    let api_config = app.state::<ApiConfig>();
-    let hotkeys = api_config.hotkeys.lock_recover().clone();
-    let validated = validate_shortcuts(&hotkeys)?;
+    let _sync_guard = SYNC_SHORTCUTS_LOCK.lock_recover();
     let shortcut_plugin = app.global_shortcut();
-    if !app
-        .state::<crate::AppState>()
-        .shortcuts_enabled
-        .load(Ordering::SeqCst)
-    {
+    // Releasing bindings needs no valid configuration — check activity before
+    // validating so a corrupt hotkey set cannot block pausing the listener.
+    if !shortcuts_are_active(app) {
         unregister_shortcuts(app);
         return Ok(());
     }
+    let api_config = app.state::<ApiConfig>();
+    let hotkeys = api_config.hotkeys.lock_recover().clone();
+    let validated = validate_shortcuts(&hotkeys)?;
     log::info!(
         "[sync_shortcuts] input hotkeys: {:?}, validated: {:?}",
         hotkeys,
@@ -291,9 +323,10 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
         let mut registered = get_shortcuts().lock_recover();
         std::mem::take(&mut *registered)
     };
-    for (shortcut, _) in &previous {
-        let _ = shortcut_plugin.unregister(*shortcut);
-    }
+    // Entries the OS refused to release stay tracked so a later sync retries
+    // unregistering them (and their old binding keeps working in the meantime,
+    // which beats a live grab that silently eats keys without an action).
+    let mut tracked = unregister_all(previous, |shortcut| shortcut_plugin.unregister(shortcut));
 
     let (replacement, conflicts) = register_available_shortcuts(validated, |shortcut| {
         shortcut_plugin
@@ -301,7 +334,8 @@ pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
             .map_err(|error| error.to_string())
     });
 
-    *get_shortcuts().lock_recover() = replacement;
+    tracked.extend(replacement);
+    *get_shortcuts().lock_recover() = tracked;
     publish_shortcut_conflicts(app, conflicts);
     Ok(())
 }
@@ -333,11 +367,7 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                     return;
                 }
 
-                if !app
-                    .state::<AppState>()
-                    .shortcuts_enabled
-                    .load(Ordering::SeqCst)
-                {
+                if !shortcuts_are_active(app) {
                     return;
                 }
 
@@ -775,6 +805,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_shortcuts_with_multiple_key_parts() {
+        // A second non-modifier part must be an error, not silently win.
+        assert!(parse_shortcut("Ctrl+Q+W").is_err());
+        assert!(parse_shortcut("Alt+1+2").is_err());
+        assert!(parse_shortcut("Alt+Q+Q").is_err());
+    }
+
+    #[test]
     fn rejects_duplicate_actions_and_shortcuts() {
         assert!(validate_shortcuts(&[
             ("translate".into(), "Alt+Q".into()),
@@ -817,6 +855,26 @@ mod tests {
                 error: "already registered".into(),
             }]
         );
+    }
+
+    #[test]
+    fn unregister_all_keeps_entries_the_os_refused_to_release() {
+        let stuck = parse_shortcut("Alt+R").unwrap();
+        let released = parse_shortcut("Alt+Q").unwrap();
+        let retained = unregister_all(
+            vec![
+                (released, "translate".to_string()),
+                (stuck, "replace".to_string()),
+            ],
+            |shortcut| -> Result<(), String> {
+                if shortcut == stuck {
+                    Err("still held".into())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert_eq!(retained, vec![(stuck, "replace".to_string())]);
     }
 
     #[test]
