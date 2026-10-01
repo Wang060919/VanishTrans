@@ -72,9 +72,14 @@ describe("App", () => {
 
   it("loads saved API config on mount", async () => {
     render(<App />);
-    await waitFor(() => {
-      expect(mockedInvoke).toHaveBeenCalledWith("get_api_config");
-    });
+    // First render resolves the lazily-imported window bundle, which may
+    // take longer than the default 1s waitFor on a cold transform cache.
+    await waitFor(
+      () => {
+        expect(mockedInvoke).toHaveBeenCalledWith("get_api_config");
+      },
+      { timeout: 10000 },
+    );
   });
 
   it("preserves a stored API key when saving another setting", async () => {
