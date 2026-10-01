@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Clipboard, LoaderCircle, ArrowUpRight, PanelTopOpen, ScanLine, TriangleAlert } from "lucide-react";
-import { getIslandSurfaceMs, type IslandMode, type IslandPhase, type BallAction } from "./islandModel";
+import { type IslandMode, type IslandPhase, type BallAction } from "./islandModel";
 
 const CONTENT_EASE = [0.16, 1, 0.3, 1] as const;
 interface Props {
@@ -18,7 +18,8 @@ interface Props {
 
 export default function IslandCompactContent({ mode, phase, instant, generation, contentWidth,
   notice, busyAction, hasResult, onRunAction, onCoreClick }: Props) {
-  const contentMorph = { type: "tween" as const, duration: getIslandSurfaceMs(mode) / 1000, ease: CONTENT_EASE };
+  // Width morphs ride a spring so compact content pops open like the island shell.
+  const contentMorph = { type: "spring" as const, stiffness: 380, damping: 32, mass: 0.9 };
   const statusTitle = phase === "working"
     ? "正在翻译"
     : phase === "done"
@@ -76,7 +77,11 @@ export default function IslandCompactContent({ mode, phase, instant, generation,
                     initial={instant ? false : { opacity: 0, y: 3, scale: 0.985 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -2, scale: 0.99 }}
-                    transition={instant ? { duration: 0 } : { duration: 0.16, ease: CONTENT_EASE }}
+                    transition={instant ? { duration: 0 } : {
+                      y: { type: "spring", stiffness: 460, damping: 28 },
+                      scale: { type: "spring", stiffness: 460, damping: 28 },
+                      opacity: { duration: 0.14, ease: CONTENT_EASE },
+                    }}
                   >
                     <span className="translation-island__notice-icon" aria-hidden="true">
                       <TriangleAlert size={15} />
@@ -97,10 +102,15 @@ export default function IslandCompactContent({ mode, phase, instant, generation,
                       type="button"
                       disabled={busyAction !== null}
                       data-busy={busyAction === "clipboard" || undefined}
+                      title="翻译剪贴板内容"
                       onClick={() => onRunAction("clipboard", "translate_clipboard_from_ball")}
                       initial={instant ? false : { opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={instant ? { duration: 0 } : { duration: 0.16, delay: 0.07, ease: CONTENT_EASE }}
+                      transition={instant ? { duration: 0 } : {
+                        delay: 0.07,
+                        y: { type: "spring", stiffness: 520, damping: 30 },
+                        opacity: { duration: 0.14, ease: CONTENT_EASE },
+                      }}
                     >
                       {busyAction === "clipboard" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <Clipboard size={17} strokeWidth={2.2} aria-hidden="true" />}
                       <span>剪贴板</span>
@@ -109,10 +119,15 @@ export default function IslandCompactContent({ mode, phase, instant, generation,
                       type="button"
                       disabled={busyAction !== null}
                       data-busy={busyAction === "screenshot" || undefined}
+                      title="截图翻译"
                       onClick={() => onRunAction("screenshot", "start_screenshot_from_ball")}
                       initial={instant ? false : { opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={instant ? { duration: 0 } : { duration: 0.16, delay: 0.09, ease: CONTENT_EASE }}
+                      transition={instant ? { duration: 0 } : {
+                        delay: 0.09,
+                        y: { type: "spring", stiffness: 520, damping: 30 },
+                        opacity: { duration: 0.14, ease: CONTENT_EASE },
+                      }}
                     >
                       {busyAction === "screenshot" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <ScanLine size={17} strokeWidth={2.2} aria-hidden="true" />}
                       <span>截图</span>
@@ -121,10 +136,15 @@ export default function IslandCompactContent({ mode, phase, instant, generation,
                       type="button"
                       disabled={busyAction !== null}
                       data-busy={busyAction === "main" || undefined}
+                      title={hasResult ? "查看译文" : "打开主界面"}
                       onClick={() => onRunAction("main", "")}
                       initial={instant ? false : { opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={instant ? { duration: 0 } : { duration: 0.16, delay: 0.11, ease: CONTENT_EASE }}
+                      transition={instant ? { duration: 0 } : {
+                        delay: 0.11,
+                        y: { type: "spring", stiffness: 520, damping: 30 },
+                        opacity: { duration: 0.14, ease: CONTENT_EASE },
+                      }}
                     >
                       {busyAction === "main" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <PanelTopOpen size={17} strokeWidth={2.2} aria-hidden="true" />}
                       <span>{hasResult ? "查看译文" : "主界面"}</span>
@@ -160,6 +180,7 @@ export default function IslandCompactContent({ mode, phase, instant, generation,
               </span>
               {((phase === "done" && hasResult) || phase === "error") && (
                 <button className="translation-island__status-open" type="button"
+                  title={phase === "error" ? "查看翻译错误" : "查看翻译结果"}
                   aria-label={phase === "error" ? "查看翻译错误" : "查看翻译结果"} onClick={onCoreClick}>
                   <ArrowUpRight size={16} aria-hidden="true" />
                 </button>

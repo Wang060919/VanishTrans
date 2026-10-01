@@ -50,8 +50,12 @@ body.ball-window-body #root {
   position: relative;
   flex: none;
   display: flex;
+  /* The brand core always sits at the island's leading (left) edge. */
+  flex-direction: row-reverse;
   align-items: stretch;
-  justify-content: center;
+  /* row-reverse flips the main axis: flex-end packs children to the left so
+     the core stays glued to the leading edge while content grows/shrinks. */
+  justify-content: flex-end;
   overflow: hidden;
   box-sizing: border-box;
   border: 0;
@@ -68,10 +72,13 @@ body.ball-window-body #root {
   -webkit-backface-visibility: hidden;
   transform: translateZ(0);
   contain: layout style paint;
+  --island-press-ms: 260ms;
+  --island-press-ease: cubic-bezier(0.3, 1.35, 0.45, 1);
   transition:
-    width var(--island-surface-ms, 360ms) cubic-bezier(0.16, 1, 0.3, 1),
-    height var(--island-surface-ms, 360ms) cubic-bezier(0.16, 1, 0.3, 1),
-    border-radius var(--island-surface-ms, 360ms) cubic-bezier(0.16, 1, 0.3, 1);
+    width var(--island-surface-ms, 360ms) cubic-bezier(0.3, 1.12, 0.44, 1),
+    height var(--island-surface-ms, 360ms) cubic-bezier(0.3, 1.12, 0.44, 1),
+    border-radius var(--island-surface-ms, 360ms) cubic-bezier(0.3, 1.2, 0.44, 1),
+    transform var(--island-press-ms) var(--island-press-ease);
 }
 
 .translation-island__surface::after {
@@ -87,7 +94,8 @@ body.ball-window-body #root {
   pointer-events: none;
 }
 
-.translation-island--instant .translation-island__surface {
+.translation-island--instant .translation-island__surface,
+.translation-island--instant .translation-island__core {
   transition: none;
 }
 
@@ -101,6 +109,18 @@ body.ball-window-body #root {
 .translation-island--actions .translation-island__surface:active,
 .translation-island--status .translation-island__surface:active {
   cursor: grabbing;
+}
+
+/* Press squash: the capsule compresses fast, then springs back on release.
+   The transition vars swap duration/easing without retargeting in-flight
+   geometry morphs. */
+.translation-island--idle .translation-island__surface:active,
+.translation-island--peek .translation-island__surface:active,
+.translation-island--actions .translation-island__surface:active,
+.translation-island--status .translation-island__surface:active {
+  --island-press-ms: 90ms;
+  --island-press-ease: cubic-bezier(0.3, 0.7, 0.4, 1);
+  transform: scale(0.94, 0.88) translateZ(0);
 }
 
 .translation-island__full {
@@ -132,7 +152,7 @@ body.ball-window-body #root {
   transform: translateY(0) translateZ(0);
   transition:
     opacity var(--island-enter-ms, 220ms) cubic-bezier(0.16, 1, 0.3, 1) var(--island-enter-delay, 100ms),
-    transform var(--island-enter-ms, 220ms) cubic-bezier(0.16, 1, 0.3, 1) var(--island-enter-delay, 100ms),
+    transform var(--island-enter-ms, 220ms) cubic-bezier(0.3, 1.3, 0.5, 1) var(--island-enter-delay, 100ms),
     visibility 0ms linear;
 }
 
@@ -179,10 +199,6 @@ body.ball-window-body #root {
   box-sizing: border-box;
 }
 
-.translation-island--right .translation-island__surface {
-  flex-direction: row-reverse;
-}
-
 .translation-island__content {
   min-width: 0;
   height: 100%;
@@ -207,20 +223,13 @@ body.ball-window-body #root {
   min-width: 238px;
   height: 100%;
   display: flex;
+  /* DOM order clipboard/screenshot/main renders as main/screenshot/clipboard,
+     keeping the most frequent action beside the core. */
+  flex-direction: row-reverse;
   align-items: stretch;
   gap: 4px;
-  padding: 6px 4px 6px 5px;
+  padding: 6px 5px;
   box-sizing: border-box;
-}
-
-.translation-island--left .translation-island__actions,
-.translation-island--center .translation-island__actions {
-  flex-direction: row-reverse;
-}
-
-.translation-island--right .translation-island__actions {
-  padding-right: 5px;
-  padding-left: 4px;
 }
 
 .translation-island__actions button {
@@ -356,11 +365,6 @@ body.ball-window-body #root {
   box-sizing: border-box;
 }
 
-.translation-island--right .translation-island__content--status {
-  padding-right: 30px;
-  padding-left: 10px;
-}
-
 .translation-island__state-icon {
   width: 26px;
   height: 26px;
@@ -447,7 +451,9 @@ body.ball-window-body #root {
   color: rgba(244, 244, 248, 0.82);
   cursor: pointer;
   transition:
-    color 160ms var(--ease-standard);
+    color 160ms var(--ease-standard),
+    width 260ms cubic-bezier(0.3, 1.12, 0.44, 1),
+    flex-basis 260ms cubic-bezier(0.3, 1.12, 0.44, 1);
   /* Performance optimization */
   will-change: opacity, transform;
   backface-visibility: hidden;
@@ -470,13 +476,40 @@ body.ball-window-body #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0;
   cursor: grab;
 }
 
-.island-idle-label { position: relative; font-size: 12px; font-weight: 550; white-space: nowrap; color: #d8d8df; }
-.island-idle-dot { width: 4px; height: 4px; border-radius: 50%; background: #86d9b4; flex: none; }
-.translation-island--has-result.translation-island--idle .translation-island__core { gap: 6px; }
+/* The idle capsule is bare; its label grows out of it on hover/focus. */
+.island-idle-reveal {
+  display: grid;
+  grid-template-columns: 0fr;
+  margin-left: 0;
+  opacity: 0;
+  transition:
+    grid-template-columns 180ms var(--ease-standard),
+    margin-left 180ms var(--ease-standard),
+    opacity 150ms var(--ease-standard);
+}
+
+.island-idle-label {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+  color: #d8d8df;
+}
+
+.translation-island--idle .translation-island__core:hover .island-idle-reveal,
+.translation-island--idle .translation-island__core:focus-visible .island-idle-reveal {
+  grid-template-columns: 1fr;
+  margin-left: 8px;
+  opacity: 1;
+}
+
+.island-idle-dot { width: 4px; height: 4px; margin-left: 6px; border-radius: 50%; background: #86d9b4; flex: none; }
 .translation-island--has-result.translation-island--idle .brand-mark { width: 18px; height: 18px; }
 
 .translation-island__core:hover:not(:disabled) {
@@ -536,6 +569,27 @@ body.ball-window-body #root {
   filter: none;
 }
 
+/* During the full morph the core rides the anchor corner, then dissolves into
+   the workspace header's own brand mark once it has faded in. */
+.translation-island--full .translation-island__core {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  width: 56px;
+  height: 60px;
+  flex: none;
+  padding: 0;
+  pointer-events: none;
+  animation: islandCoreHandoff 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.translation-island--full .translation-island__core { left: 7px; }
+.translation-island--instant.translation-island--full .translation-island__core { animation: none; opacity: 0; }
+
+@keyframes islandCoreHandoff {
+  0%, 55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .translation-island--status.translation-island--working .translation-island__core .brand-mark__node {
   transform-box: fill-box;
   transform-origin: center;
@@ -562,7 +616,8 @@ body.ball-window-body #root {
   .translation-island__action-loader,
   .translation-island__activity i,
   .translation-island__core .brand-lockup,
-  .translation-island__core .brand-mark__node {
+  .translation-island__core .brand-mark__node,
+  .island-idle-reveal {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }
@@ -632,21 +687,19 @@ body.ball-window-body #root {
   font: inherit;
   color: inherit;
 }
-.translation-island__status-open { position: absolute; inset: 0; border: 0; border-radius: 26px; background: transparent; color: #b9b9c1; cursor: pointer; display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; }
+.translation-island__status-open { position: absolute; inset: 0; border: 0; border-radius: 26px; background: transparent; color: #b9b9c1; cursor: pointer; display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; transition: color 150ms var(--ease-standard); }
+.translation-island__status-open:hover { color: #fff; }
 .translation-island__status-open:focus-visible { outline: 1px solid #b9b9c1; outline-offset: -5px; border-radius: 22px; }
 .translation-island__content--status:has(.translation-island__status-open:hover) .translation-island__state-copy small { color: #fff; }
 @keyframes islandResultIn {
-  to { opacity: 1; transform: translateY(0); }
+  0% { opacity: 0; transform: translateY(4px); }
+  62% { opacity: 1; transform: translateY(-0.8px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 .translation-island--instant .translation-island__result { animation: none; opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .translation-island__result { animation: none; opacity: 1; transform: none; transition: none; }
 }
 
-/* Keep the brand on the same anchored side when the status opens. */
-.translation-island--center .translation-island__result .quick-translate-header,
-.translation-island--left .translation-island__result .quick-translate-header,
-.translation-island--center .translation-island__result .quick-translate-brand,
-.translation-island--left .translation-island__result .quick-translate-brand { flex-direction: row-reverse; }
-.translation-island--center .translation-island__result .quick-translate-header,
-.translation-island--left .translation-island__result .quick-translate-header { padding-left: 14px; padding-right: 20px; }
+/* The brand core leads on the left for every dock side, so result and full
+   headers keep their natural left-aligned brand — no per-side mirroring. */

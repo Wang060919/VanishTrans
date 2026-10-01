@@ -8,7 +8,11 @@ const MAX_INPUT_CHARS = 10_000;
 
 interface InputSectionProps {
   inputText: string;
+  /** True while anything exists to clear (input, output, error, file status). */
+  canClear: boolean;
   onInputChange: (text: string) => void;
+  /** Clears the whole session (input + output + error), not just the textarea. */
+  onClear: () => void;
   onTranslate: (forceRefresh: boolean) => void;
   loading: boolean;
   inputRef: React.RefObject<HTMLTextAreaElement>;
@@ -22,7 +26,9 @@ interface InputSectionProps {
  */
 export default function InputSection({
   inputText,
+  canClear,
   onInputChange,
+  onClear,
   onTranslate,
   loading,
   inputRef,
@@ -52,16 +58,17 @@ export default function InputSection({
           )}
         </div>
         <div className="section-actions">
-          {inputText && (
+          {canClear && (
             <button
               type="button"
               className="text-action"
               disabled={loading}
-              onClick={() => onInputChange("")}
-              aria-label="清除原文"
+              onClick={() => { onClear(); inputRef.current?.focus(); }}
+              aria-label="清空输入与译文"
+              title="清空输入与译文"
             >
               <Eraser size={14} aria-hidden="true" />
-              清除
+              清空
             </button>
           )}
           <button

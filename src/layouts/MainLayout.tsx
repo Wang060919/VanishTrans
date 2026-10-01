@@ -31,9 +31,9 @@ export default function MainLayout({ shell, pinned, onPin, translation, config }
       <LanguageSwitcher value={translation.direction} onChange={translation.onDirectionChange} disabled={translation.loading} />
       <TranslatePanel {...translation} error={translation.translationError} onCancel={translation.onCancelTranslation}
         actions={<>
-          <IconButton icon={<ScanLine size={18} />} label="截图翻译" onClick={() => void ui.startScreenshot()} />
-          <IconButton icon={<History size={18} />} label="打开历史记录" active={ui.activePanel === "history"} onClick={ui.openHistory} />
-          <IconButton icon={<Settings size={18} />} label="打开设置" active={ui.activePanel === "settings"} onClick={openSettings} />
+          <IconButton icon={<ScanLine size={18} />} label="截图翻译" text="截图" onClick={() => void ui.startScreenshot()} />
+          <IconButton icon={<History size={18} />} label="打开历史记录" text="历史" active={ui.activePanel === "history"} onClick={ui.openHistory} />
+          <IconButton icon={<Settings size={18} />} label="打开设置" text="设置" active={ui.activePanel === "settings"} onClick={openSettings} />
         </>} />
       <OverlayDrawer fullSize onHeaderMouseDown={ui.handleHeaderMouseDown} open={ui.activePanel === "history"} title="翻译历史" onClose={closePanel}>
         <HistoryPanel records={ui.historyRecords} search={ui.historySearch} onSearch={ui.handleHistorySearch}

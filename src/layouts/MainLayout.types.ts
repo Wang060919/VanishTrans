@@ -24,6 +24,8 @@ export interface MainLayoutTranslationProps {
   onDirectionChange: (d: LangDirection) => void;
   glowActive: boolean;
   onClearGlow: () => void;
+  /** "清空" resets the whole session: input, output, error and file status. */
+  onClear: () => void;
   onTranslate: (forceRefresh?: boolean) => void;
   onCancelTranslation?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement>;

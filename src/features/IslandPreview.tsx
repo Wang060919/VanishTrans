@@ -118,6 +118,7 @@ export default function IslandPreview() {
                 onDirectionChange: setDirection,
                 glowActive: false,
                 onClearGlow: () => {},
+                onClear: () => { setInputText(""); setOutputText(""); },
                 onTranslate: () => setOutputText(inputText.trim()),
                 inputRef,
                 fileStatus: null,

@@ -64,10 +64,11 @@ export function useBallActions({
   }, [phase, toggleActions, transitionMode, modeRef, draggingRef, lastDragEndedAtRef, resultRef]);
 
   const openResultInFull = useCallback(async () => {
-    if (!resultRef.current || draggingRef.current) return;
+    if (!resultRef.current || draggingRef.current
+      || performance.now() - lastDragEndedAtRef.current < 250) return;
     setResultToOpen(resultRef.current);
     await transitionMode("full");
-  }, [resultRef, draggingRef, setResultToOpen, transitionMode]);
+  }, [resultRef, draggingRef, lastDragEndedAtRef, setResultToOpen, transitionMode]);
 
   const expandFull = useCallback(async () => {
     await transitionMode("full");

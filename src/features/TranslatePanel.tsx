@@ -14,6 +14,7 @@ interface TranslatePanelProps {
   loading: boolean;
   glowActive: boolean;
   onClearGlow: () => void;
+  onClear: () => void;
   onTranslate: (forceRefresh?: boolean) => void;
   onCancel?: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement>;
@@ -37,6 +38,7 @@ export default function TranslatePanel({
   loading,
   glowActive,
   onClearGlow,
+  onClear,
   onTranslate,
   onCancel,
   inputRef,
@@ -74,7 +76,9 @@ export default function TranslatePanel({
         <div className="acrylic-panel">
           <InputSection
             inputText={inputText}
+            canClear={Boolean(inputText || outputText || error || fileStatus)}
             onInputChange={onInputChange}
+            onClear={onClear}
             onTranslate={handleTranslate}
             loading={loading}
             inputRef={inputRef}
@@ -105,7 +109,7 @@ export default function TranslatePanel({
         </div>
         <footer className="translation-toolbar">
           <div className="translation-tools">
-            <IconButton icon={<FileText size={18} />} label="翻译文件" disabled={loading} onClick={() => fileInputRef.current?.click()} />
+            <IconButton icon={<FileText size={18} />} label="翻译文件" text="文件" disabled={loading} onClick={() => fileInputRef.current?.click()} />
             {actions}
           </div>
           <div className="translation-submit">

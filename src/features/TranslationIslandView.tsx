@@ -142,13 +142,19 @@ export default function TranslationIslandView({
           </div>
         )}
 
-        {mode !== "full" && mode !== "result" && (
+        {/* The core stays mounted through the full morph: pinned to the anchor
+            corner it reads as the card brand's origin, then hands off via the
+            CSS crossfade once the workspace has faded in. */}
+        {mode !== "result" && (
           <motion.button
             type="button"
             className="translation-island__core"
-            disabled={mode === "status" && phase === "working"}
+            disabled={(mode === "status" && phase === "working") || mode === "full"}
             aria-expanded={showsActions}
+            aria-hidden={mode === "full" ? true : undefined}
+            tabIndex={mode === "full" ? -1 : undefined}
             aria-label={coreLabel}
+            title={mode === "full" ? undefined : coreLabel}
             onClick={onCoreClick}
           >
             <VanishMark
@@ -156,7 +162,11 @@ export default function TranslationIslandView({
               animated={false}
               decorative
             />
-            {mode === "idle" && <span className="island-idle-label" aria-hidden="true">{hasResult ? "译文就绪" : "翻译"}</span>}
+            {mode === "idle" && (
+              <span className="island-idle-reveal" aria-hidden="true">
+                <span className="island-idle-label">{hasResult ? "译文就绪" : "VanishTrans"}</span>
+              </span>
+            )}
             {mode === "idle" && hasResult && <span className="island-idle-dot" aria-hidden="true" />}
           </motion.button>
         )}

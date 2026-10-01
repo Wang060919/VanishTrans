@@ -26,9 +26,19 @@ export default function QuickTranslationView({
   const compactResult = Boolean(output) && !loading && !error;
   const status = copied ? "已复制" : error ? "未完成" : loading ? "翻译中" : output ? "译文" : "即时翻译";
 
+  // Embedded in the island, the header doubles as an expand affordance:
+  // press-and-move drags the card (window-level pointer handlers), a plain
+  // click expands it — the same contract as the island core.
+  const handleHeaderClick: MouseEventHandler<HTMLElement> | undefined = embedded
+    ? (event) => {
+        if (event.target instanceof Element && event.target.closest("button")) return;
+        onExpand();
+      }
+    : undefined;
+
   return (
     <section ref={shellRef} className={"quick-translate-shell" + (compactResult ? " quick-translate-shell--result" : "")} data-state={error ? "error" : loading ? "working" : output ? "done" : "idle"} aria-label="即时翻译">
-      <header className="quick-translate-header" onMouseDown={onDrag} data-tauri-drag-region={embedded ? undefined : true}>
+      <header className="quick-translate-header" onMouseDown={onDrag} onClick={handleHeaderClick} data-tauri-drag-region={embedded ? undefined : true}>
         <div className="quick-translate-brand">
           <VanishMark compact animated={false} decorative />
           <span className={loading ? "quick-translate-status quick-translate-status--active" : "quick-translate-status"}>

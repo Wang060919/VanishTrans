@@ -6,7 +6,7 @@ import TranslatePanel from "../TranslatePanel";
 vi.mock("../../services/tauriBridge", () => ({ readClipboardSafe: vi.fn(), writeClipboardSafe: vi.fn() }));
 
 function props(): ComponentProps<typeof TranslatePanel> {
-  return { inputText: "Hello", outputText: "你好", onInputChange: vi.fn(), loading: false,
+  return { inputText: "Hello", outputText: "你好", onInputChange: vi.fn(), onClear: vi.fn(), loading: false,
     glowActive: false, onClearGlow: vi.fn(), onTranslate: vi.fn(), inputRef: createRef<HTMLTextAreaElement>(),
     fileStatus: null, onTranslateFile: vi.fn(), translationKey: 1 };
 }
@@ -21,6 +21,22 @@ describe("native translation controls", () => {
     expect(config.onTranslate).not.toHaveBeenCalled();
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
     expect(config.onTranslate).toHaveBeenCalledWith(false);
+  });
+
+  it("resets the whole session and refocuses the input via 清空", () => {
+    const config = props();
+    render(<TranslatePanel {...config} />);
+    const input = screen.getByRole("textbox", { name: "原文" });
+    fireEvent.click(screen.getByRole("button", { name: "清空输入与译文" }));
+    expect(config.onClear).toHaveBeenCalled();
+    expect(config.onInputChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("keeps 清空 available while only output remains", () => {
+    const config = props();
+    render(<TranslatePanel {...config} inputText="" />);
+    expect(screen.getByRole("button", { name: "清空输入与译文" })).toBeInTheDocument();
   });
 
   it("uses the same cache preference for the toolbar and keyboard", () => {

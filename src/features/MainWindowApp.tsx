@@ -147,6 +147,7 @@ export default function MainWindowApp({
         onDirectionChange: translation.updateDirection,
         glowActive: translation.glowActive,
         onClearGlow: translation.clearGlow,
+        onClear: translation.resetTranslation,
         onTranslate: handleTranslate,
         onCancelTranslation: translation.cancelTranslation,
         inputRef: inputRef as React.RefObject<HTMLTextAreaElement>,

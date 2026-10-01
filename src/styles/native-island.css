@@ -2,9 +2,12 @@
 .translation-island { --island-accent: 0, 170, 255; --island-edge: transparent; --island-depth: transparent; }
 .translation-island__surface::after { box-shadow: none; }
 .translation-island__actions, .translation-island__notice { width: calc(var(--island-width) - 58px); min-width: 0; }
-.translation-island__actions { align-items: center; gap: 4px; padding: 4px; }
-.translation-island__actions button { height: 36px; padding: 0; border-radius: 18px; }
-.translation-island__actions button:nth-child(n) svg { color: var(--color-ink); stroke-width: 1.8; }
+/* Three discrete circular controls spread across the strip — empty air between
+   them keeps the compact layout breathing like the native island. */
+.translation-island__actions { align-items: center; justify-content: space-between; gap: 0; padding: 4px 10px; }
+.translation-island__actions button { flex: none; width: 36px; height: 36px; padding: 0; border-radius: 50%; }
+/* Per-action accent colors come from island.css; only the stroke thins out. */
+.translation-island__actions button svg { stroke-width: 1.9; }
 .translation-island__actions button span {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -35,16 +38,25 @@
 .quick-result-text--streaming::after, .quick-loading i { background: var(--color-signal); }
 .quick-translate-shell--result .quick-translate-header { height: 40px; padding: 6px 18px 0 24px; }
 .quick-translate-shell--result .quick-result-text { font-size: 18px; font-weight: 450; }
-.island-result-footer { justify-content: flex-end; gap: 10px; padding: 0 20px 12px; }
+/* Copy is a universal glyph and stays an icon circle at the far end; the
+   primary continuation keeps its label so the affordance reads at a glance. */
+.island-result-footer { justify-content: space-between; gap: 10px; padding: 0 20px 12px; }
 .island-result-footer button { width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; background: transparent; color: var(--color-ink); }
 .island-result-footer button:hover { background: var(--color-surface-raised); color: #fff; }
-.island-result-footer button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+.island-result-footer .island-result-copy span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+.island-result-footer .island-result-expand {
+  width: auto;
+  height: 30px;
+  min-height: 30px;
+  padding: 0 12px;
+  gap: 6px;
+  border-radius: 15px;
+  color: var(--color-ink-secondary);
+  font-size: 12px;
+}
+.island-result-footer .island-result-expand:hover { color: #fff; background: var(--color-surface-raised); }
+/* The core leads on the left for every dock side, so result headers always
+   keep their natural left-aligned brand. */
 .translation-island__result .quick-translate-header, .translation-island__result .quick-translate-brand { flex-direction: row; }
-.translation-island--center .translation-island__result .quick-translate-header,
-.translation-island--left .translation-island__result .quick-translate-header,
-.translation-island--center .translation-island__result .quick-translate-brand,
-.translation-island--left .translation-island__result .quick-translate-brand { flex-direction: row; }
-.translation-island--center .translation-island__result .quick-translate-header,
-.translation-island--left .translation-island__result .quick-translate-header { padding-left: 24px; padding-right: 18px; }
 
 .quick-translate-brand .brand-mark, .quick-translate-actions button { color: var(--color-ink); }
