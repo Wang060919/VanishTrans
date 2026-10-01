@@ -91,6 +91,11 @@ jobs:
 
       - name: Build installer
         run: pnpm tauri build
+        env:
+          # Updater artifacts are signed during build; forked PRs have no
+          # secrets and will skip signing the same way local builds do.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
