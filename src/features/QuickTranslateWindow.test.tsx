@@ -28,10 +28,11 @@ vi.mock("@tauri-apps/api/dpi", () => ({
 }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 
 const mockedInvoke = invoke as unknown as ReturnType<typeof vi.fn>;
 const mockedEmit = emit as unknown as ReturnType<typeof vi.fn>;
+const mockedListen = listen as unknown as ReturnType<typeof vi.fn>;
 
 function dispatch(name: string, payload: unknown) {
   listeners[name]?.({ payload });
@@ -76,6 +77,26 @@ describe("QuickTranslateWindow", () => {
     expect(listeners["translate-stream-done"]).toBeDefined();
   });
 
+  it("retries listener registration when the first attempt fails", async () => {
+    const baseImpl = mockedListen.getMockImplementation();
+    let rejectedOnce = false;
+    mockedListen.mockImplementation((name: string, listener: Listener) => {
+      if (name === "quick-translate" && !rejectedOnce) {
+        rejectedOnce = true;
+        return Promise.reject(new Error("ipc gone"));
+      }
+      listeners[name] = listener;
+      return Promise.resolve(() => delete listeners[name]);
+    });
+
+    render(<QuickTranslateWindow />);
+
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("quick_frontend_ready", { ready: true }));
+    expect(listeners["quick-translate"]).toBeDefined();
+    expect(listeners["translate-stream-done"]).toBeDefined();
+    if (baseImpl) mockedListen.mockImplementation(baseImpl);
+  });
+
   it("keeps the native quick-window body style for the lifetime of the view", () => {
     const { unmount } = render(<QuickTranslateWindow />);
     expect(document.body).toHaveClass("quick-window-body");
@@ -103,6 +124,37 @@ describe("QuickTranslateWindow", () => {
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("write_clipboard_safe", {
       text: "你好世界",
     }));
+  });
+
+  it("surfaces a copy failure instead of showing 已复制", async () => {
+    render(<QuickTranslateWindow />);
+    await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
+    await triggerAndFlush(() => dispatch("quick-translate", "hello"));
+    await waitFor(() => expect(screen.getByText("你好世界")).toBeInTheDocument());
+
+    mockedInvoke.mockImplementation((command: string, args?: { text?: string }) => {
+      if (command === "write_clipboard_safe") {
+        return Promise.reject({ code: "CLIPBOARD", message: "剪贴板占用" });
+      }
+      if (command === "cleanup_clipboard_text") return Promise.resolve(args?.text?.trim() ?? "");
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "复制译文" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("剪贴板占用");
+  });
+
+  it("applies the window size once and does not repeat identical setSize calls", async () => {
+    render(<QuickTranslateWindow />);
+    await waitFor(() => expect(setSize).toHaveBeenCalled());
+    const callsAfterMount = setSize.mock.calls.length;
+
+    await triggerAndFlush(() => dispatch("quick-translate", "hello"));
+    await waitFor(() => expect(screen.getByText("你好世界")).toBeInTheDocument());
+
+    // jsdom reports no measurable layout, so the clamped height never changes:
+    // streaming chunks must not translate into repeated native setSize calls.
+    expect(setSize.mock.calls.length).toBe(callsAfterMount);
   });
 
   it("shows selection capture failures without starting translation", async () => {

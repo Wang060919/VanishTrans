@@ -67,18 +67,22 @@ export function useConfig() {
   }, []);
 
   const saveConfig = async (forcedApiKey?: string) => {
-    // Only send apiKey when user actually changed it — avoid overwriting with null
-    const apiKey = forcedApiKey === undefined ? apiKeyUpdate : forcedApiKey;
+    // Send apiKey only for a real change: the 清除 button forces "", while a
+    // blank or whitespace-only edit means "keep the stored key" — otherwise an
+    // emptied field would overwrite the credential with an empty string.
+    const apiKey = forcedApiKey === undefined
+      ? (apiKeyUpdate === null ? undefined : apiKeyUpdate.trim() || undefined)
+      : forcedApiKey;
     const request = {
       baseUrl,
-      apiKey: apiKey !== null ? apiKey : undefined,
+      apiKey,
       model,
     };
     await enqueueWrite(() => setApiConfig(request));
-    if (apiKey !== null) {
+    if (apiKey !== undefined) {
       setHasStoredApiKey(apiKey.length > 0);
-      setApiKeyUpdate(null);
     }
+    if (apiKeyUpdate !== null) setApiKeyUpdate(null);
   };
 
   const saveGlossary = async (entries: GlossaryEntry[]) => {
@@ -96,7 +100,7 @@ export function useConfig() {
   const testConnectionApi = async (): Promise<string> => {
     return testConnection({
       baseUrl,
-      apiKey: apiKeyUpdate !== null && apiKeyUpdate !== undefined ? apiKeyUpdate : undefined,
+      apiKey: apiKeyUpdate?.trim() ? apiKeyUpdate.trim() : undefined,
       model,
     });
   };

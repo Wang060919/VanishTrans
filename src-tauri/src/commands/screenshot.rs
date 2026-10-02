@@ -1,6 +1,8 @@
+use std::sync::atomic::AtomicBool;
+
 use tauri::Manager;
 
-use crate::commands::window::{show_quick_translation, show_without_activation};
+use crate::commands::window::{show_quick_translation_async, show_without_activation};
 use crate::error::CommandError;
 use crate::lock::LockRecover;
 use crate::ocr::{OcrOutput, ScreenshotBuffer, ScreenshotPayload, ScreenshotWindowState};
@@ -8,6 +10,11 @@ use crate::ocr::{OcrOutput, ScreenshotBuffer, ScreenshotPayload, ScreenshotWindo
 // -----------------------------------------------------------
 // Screenshot + OCR commands
 // -----------------------------------------------------------
+
+/// Whether the quick window was visible before capture hid it. Kept outside
+/// ScreenshotWindowState (owned by ocr.rs) but with the same lifecycle: set
+/// only after a session begins, consumed by restore_windows.
+static QUICK_WAS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 pub fn get_screenshot_payload(
@@ -24,6 +31,15 @@ pub(crate) fn prepare_screenshot(app: &tauri::AppHandle) -> Result<Option<u64>, 
     use super::screenshot_visibility::{hide_for_capture, wait_for_window_compositor};
 
     let ball = app.get_webview_window("ball");
+    // The quick window is always-on-top: it would land in the capture and
+    // float above the overlay, so it must be hidden like ball.
+    let quick = app.get_webview_window("quick");
+    let quick_was_visible = quick
+        .as_ref()
+        .map(|window| window.is_visible())
+        .transpose()
+        .map_err(|e| CommandError::internal(e.to_string()))?
+        .unwrap_or(false);
     let windows = ScreenshotWindowState {
         ball_was_visible: ball
             .as_ref()
@@ -35,11 +51,12 @@ pub(crate) fn prepare_screenshot(app: &tauri::AppHandle) -> Result<Option<u64>, 
     let Some(session_id) = app.state::<ScreenshotBuffer>().begin(windows) else {
         return Ok(None);
     };
+    QUICK_WAS_VISIBLE.store(quick_was_visible, std::sync::atomic::Ordering::SeqCst);
     let prepared = (|| {
-        if let Some(window) = app.get_webview_window("screenshot") {
-            hide_for_capture(&window)?;
-        }
-        if let Some(window) = ball {
+        for window in [app.get_webview_window("screenshot"), ball, quick]
+            .into_iter()
+            .flatten()
+        {
             hide_for_capture(&window)?;
         }
         wait_for_window_compositor()
@@ -51,17 +68,14 @@ pub(crate) fn prepare_screenshot(app: &tauri::AppHandle) -> Result<Option<u64>, 
     Ok(Some(session_id))
 }
 
-fn restore_windows_after_cancel(app: &tauri::AppHandle, windows: ScreenshotWindowState) {
+fn restore_windows(app: &tauri::AppHandle, windows: ScreenshotWindowState) {
     if windows.ball_was_visible {
         if let Some(window) = app.get_webview_window("ball") {
             show_without_activation(&window);
         }
     }
-}
-
-fn restore_windows_after_ocr(app: &tauri::AppHandle, windows: ScreenshotWindowState) {
-    if windows.ball_was_visible {
-        if let Some(window) = app.get_webview_window("ball") {
+    if QUICK_WAS_VISIBLE.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        if let Some(window) = app.get_webview_window("quick") {
             show_without_activation(&window);
         }
     }
@@ -153,7 +167,10 @@ fn run_ocr_on_crop_blocking(
 }
 
 pub(crate) fn dismiss_screenshot(app: &tauri::AppHandle, session_id: u64) {
+    // A stale or unknown id ends nothing — a newer session's overlay and
+    // restored windows stay untouched.
     let Some(windows) = app.state::<ScreenshotBuffer>().cancel(session_id) else {
+        log::debug!("[screenshot] cancel for stale/unknown session {session_id}; no-op");
         return;
     };
     // Close instead of hide: a hidden WebView2 renderer keeps ~80–100MB
@@ -161,27 +178,60 @@ pub(crate) fn dismiss_screenshot(app: &tauri::AppHandle, session_id: u64) {
     if let Some(w) = app.get_webview_window("screenshot") {
         let _ = w.close();
     }
-    restore_windows_after_cancel(app, windows);
+    restore_windows(app, windows);
 }
 
+/// Idempotent: the frontend may call this for a session that was never
+/// claimed (already cancelled/expired/stale), which is a graceful no-op.
+/// `session_id == 0` is the overlay's "I never learned the id" cancel —
+/// resolve it to the session bound to the calling overlay window (or the
+/// active one when the binding hasn't landed yet) instead of no-oping.
 #[tauri::command]
-pub fn cancel_screenshot(app: tauri::AppHandle, session_id: u64) -> Result<(), CommandError> {
-    dismiss_screenshot(&app, session_id);
+pub fn cancel_screenshot(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    session_id: u64,
+) -> Result<(), CommandError> {
+    if window.label() != "screenshot" {
+        return Err(CommandError::validation("该命令只能由截图窗口调用"));
+    }
+    let state = app.state::<ScreenshotBuffer>();
+    let resolved = if session_id == 0 {
+        #[cfg(target_os = "windows")]
+        let from_window = window
+            .hwnd()
+            .ok()
+            .and_then(|hwnd| state.session_id_for_window(hwnd.0 as u64));
+        #[cfg(not(target_os = "windows"))]
+        let from_window = state.session_id_for_window(0);
+        from_window.or_else(|| state.active_session_id())
+    } else {
+        Some(session_id)
+    };
+    if let Some(id) = resolved {
+        dismiss_screenshot(&app, id);
+    } else {
+        log::debug!("[screenshot] cancel with no active session; no-op");
+    }
     Ok(())
 }
 
 #[tauri::command]
-pub fn finish_ocr(
+pub async fn finish_ocr(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     session_id: u64,
     text: String,
 ) -> Result<(), CommandError> {
+    if window.label() != "screenshot" {
+        return Err(CommandError::validation("该命令只能由截图窗口调用"));
+    }
     let Some(windows) = app.state::<ScreenshotBuffer>().complete(session_id) else {
         return Err(CommandError::cancelled());
     };
     if let Some(w) = app.get_webview_window("screenshot") {
         let _ = w.close();
     }
-    restore_windows_after_ocr(&app, windows);
-    show_quick_translation(&app, text)
+    restore_windows(&app, windows);
+    show_quick_translation_async(&app, text).await
 }

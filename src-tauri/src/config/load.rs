@@ -74,7 +74,9 @@ impl ApiConfig {
             .unwrap_or_default();
         let mut this = Self {
             base_url: Mutex::new(base_url),
-            api_key: Mutex::new(api_key),
+            // Normalize keys persisted before trimming at the set boundary,
+            // so an old padded credential cannot be sent verbatim.
+            api_key: Mutex::new(api_key.trim().to_string()),
             model: Mutex::new(model),
             client: Mutex::new(client),
             config_path,

@@ -107,9 +107,10 @@ pub(super) fn validate_and_get_config(
     }
 
     // 2. Use the same snapshot as provider routing and the TM fingerprint.
+    //    Trim the key so a whitespace-padded credential can't reach the wire.
     let (base_url, api_key, model) = (
         state.base_url.clone(),
-        state.api_key.clone(),
+        state.api_key.trim().to_owned(),
         state.model.clone(),
     );
 

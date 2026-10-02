@@ -81,8 +81,13 @@ export default function GlossaryTab({ glossary, onGlossaryChange, notifyError }:
   );
 
   const addTerm = useCallback(() => {
-    setDraftRows((current) => [...current, { id: nextRowId.current++, entry: { source: "", target: "" } }]);
-  }, []);
+    userEditedRef.current = true;
+    const next = [...draftRows, { id: nextRowId.current++, entry: { source: "", target: "" } }];
+    setDraftRows(next);
+    // Persist through the same debounced flow so an unmount flush does not
+    // silently drop a freshly added row (empty rows are saved literally).
+    scheduleSave(next.map((row) => row.entry));
+  }, [draftRows, scheduleSave]);
 
   const deleteTerm = useCallback(
     (index: number) => {

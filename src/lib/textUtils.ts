@@ -18,20 +18,6 @@ export function formatNumber(num: number): string {
 }
 
 /**
- * Check if text starts with error marker.
- */
-export function isErrorMessage(text: string): boolean {
-  return text.startsWith("❌");
-}
-
-/**
- * Remove error marker prefix from text.
- */
-export function stripErrorMarker(text: string): string {
-  return text.replace(/^❌\s*/, "");
-}
-
-/**
  * Check if text is non-empty after trimming.
  */
 export function hasContent(text: string): boolean {

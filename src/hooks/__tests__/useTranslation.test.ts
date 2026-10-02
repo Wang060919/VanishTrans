@@ -160,4 +160,46 @@ describe("translation operations share a window-local lifecycle", () => {
     expect(first.result.current.outputText).toBe("first window result");
     expect(second.result.current.outputText).toBe("");
   });
+
+  it("does not fabricate a cancellation error when nothing is in flight", async () => {
+    const { result } = renderHook(useTranslation);
+    await act(async () => { await result.current.cancelTranslation(); });
+    expect(result.current.translationError).toBeNull();
+    expect(bridge.cancelTranslation).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not mark a completed result as cancelled", async () => {
+    const { result } = renderHook(useTranslation);
+    await act(async () => { await result.current.doTranslateStream("hello"); });
+    expect(result.current.outputText).toBe("new translation");
+    await act(async () => { await result.current.cancelTranslation(); });
+    expect(result.current.outputText).toBe("new translation");
+    expect(result.current.translationError).toBeNull();
+  });
+
+  it("sends .txt file content verbatim, without clipboard cleanup", async () => {
+    const content = "computa-\ntion\r\n  spaced  ";
+    bridge.translateStream.mockResolvedValue("translated file");
+    const { result } = renderHook(useTranslation);
+    await act(async () => { await result.current.doTranslateFile("a.txt", content); });
+    expect(bridge.cleanupClipboardText).not.toHaveBeenCalled();
+    expect(bridge.translateStream).toHaveBeenCalledWith(
+      expect.objectContaining({ text: content }),
+    );
+    expect(result.current.inputText).toBe(content);
+    expect(result.current.outputText).toBe("translated file");
+  });
+
+  it("reports no translatable content for an all-blank SRT file", async () => {
+    const { result } = renderHook(useTranslation);
+    await act(async () => {
+      await result.current.doTranslateFile(
+        "empty.srt",
+        "1\n00:00:00,000 --> 00:00:01,000\n\n2\n00:00:02,000 --> 00:00:03,000\n\n",
+      );
+    });
+    expect(result.current.translationError).toBe("文件中没有可翻译的文本");
+    expect(result.current.fileStatus).toBeNull();
+    expect(bridge.translateBatch).not.toHaveBeenCalled();
+  });
 });

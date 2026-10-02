@@ -10,7 +10,8 @@ import {
 import { measureExpandedBounds, paddedTargetCanvas } from "./ballGeometry";
 import { clipExpandedSurface, clipExpandedSurfaceDetached } from "./ballSurfaceClip";
 import { collapseBallWindow } from "./ballCollapse";
-import { IDLE_WIDTH, IDLE_HEIGHT, setBallWindowBounds } from "./ballNative";
+import { rollbackIslandToIdle } from "./ballRollback";
+import { setBallWindowBounds } from "./ballNative";
 import { type BallState } from "./useBallState";
 
 type BallTransitionState = Pick<BallState,
@@ -176,22 +177,7 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
       phase: "stable",
       generation: context.generation,
     });
-    try {
-      const scale = await win.scaleFactor();
-      const anchor = anchorPositionRef.current;
-      if (anchor) {
-        nativeTargetModeRef.current = "idle";
-        await setBallWindowBounds({
-          x: anchor.x,
-          y: anchor.y,
-          width: Math.round(IDLE_WIDTH * scale),
-          height: Math.round(IDLE_HEIGHT * scale),
-        });
-        nativeModeRef.current = "idle";
-      }
-    } catch (rollbackError) {
-      logError("ball.transition", "rollback translation island failed", rollbackError);
-    }
+    await rollbackIslandToIdle(state);
   }
 
 }

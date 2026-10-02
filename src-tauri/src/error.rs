@@ -10,7 +10,6 @@ use serde::Serialize;
 pub mod code {
     pub const CANCELLED: &str = "CANCELLED";
     pub const SEGMENT_COUNT_MISMATCH: &str = "SEGMENT_COUNT_MISMATCH";
-    pub const SKIP_OWN_CONTENT: &str = "SKIP_OWN_CONTENT";
     pub const VALIDATION: &str = "VALIDATION";
     pub const NOT_FOUND: &str = "NOT_FOUND";
     pub const IO: &str = "IO";

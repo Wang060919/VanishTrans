@@ -39,6 +39,9 @@ pub(super) fn parse_google_response(bytes: &[u8]) -> Result<String, String> {
 /// Translate `text` via the free Google Translate endpoint.
 /// `target_lang` is the resolved "Chinese" / "English" label from
 /// [`super::resolve_target_lang`]; source language is auto-detected server-side.
+///
+/// Note: `translate_a/single` is used via GET, so `text` is percent-encoded into
+/// the request URL; near-limit inputs produce very long URLs.
 pub async fn do_free_translate_async(
     state: &ApiConfig,
     text: &str,
@@ -84,4 +87,20 @@ pub async fn do_free_translate_async(
 
     let bytes = read_response_body_limited(resp).await?;
     parse_google_response(&bytes)
+}
+
+/// Whether an error string produced above is worth retrying: rate limiting,
+/// 5xx service errors and transport failures are transient; validation and
+/// malformed-response errors are permanent. The batched caller uses this to
+/// bound retries without changing the error strings seen elsewhere.
+pub(crate) fn is_transient_free_error(message: &str) -> bool {
+    message.starts_with("免费翻译请求过于频繁")
+        || message
+            .strip_prefix("免费翻译服务错误 (")
+            .and_then(|rest| rest.trim_end_matches(')').parse::<u16>().ok())
+            .is_some_and(|status| status == 429 || status >= 500)
+        || message.starts_with("请求超时")
+        || message.starts_with("无法连接到")
+        || message.starts_with("网络请求失败")
+        || message.starts_with("读取响应失败")
 }

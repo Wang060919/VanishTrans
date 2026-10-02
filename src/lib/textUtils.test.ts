@@ -2,8 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   countChars,
   formatNumber,
-  isErrorMessage,
-  stripErrorMarker,
   hasContent,
   truncateText,
   isWithinLimit,
@@ -31,28 +29,6 @@ describe("textUtils", () => {
       // Different locales may format differently, just verify it's a string
       expect(typeof result).toBe("string");
       expect(result).toContain("000");
-    });
-  });
-
-  describe("isErrorMessage", () => {
-    it("should detect error messages", () => {
-      expect(isErrorMessage("❌ 翻译失败")).toBe(true);
-    });
-
-    it("should return false for normal text", () => {
-      expect(isErrorMessage("翻译成功")).toBe(false);
-      expect(isErrorMessage("")).toBe(false);
-    });
-  });
-
-  describe("stripErrorMarker", () => {
-    it("should remove error marker and whitespace", () => {
-      expect(stripErrorMarker("❌ 翻译失败")).toBe("翻译失败");
-      expect(stripErrorMarker("❌  多个空格")).toBe("多个空格");
-    });
-
-    it("should not modify text without error marker", () => {
-      expect(stripErrorMarker("正常文本")).toBe("正常文本");
     });
   });
 

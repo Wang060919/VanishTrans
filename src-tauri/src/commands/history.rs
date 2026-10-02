@@ -6,7 +6,7 @@ use crate::history::HistoryStore;
 // -----------------------------------------------------------
 
 #[tauri::command]
-pub fn get_history(
+pub async fn get_history(
     history: tauri::State<'_, HistoryStore>,
     query: Option<String>,
 ) -> Result<Vec<serde_json::Value>, CommandError> {
@@ -29,7 +29,7 @@ pub fn get_history(
 }
 
 #[tauri::command]
-pub fn delete_history_record(
+pub async fn delete_history_record(
     history: tauri::State<'_, HistoryStore>,
     id: u64,
 ) -> Result<(), CommandError> {
@@ -37,6 +37,6 @@ pub fn delete_history_record(
 }
 
 #[tauri::command]
-pub fn clear_history(history: tauri::State<'_, HistoryStore>) -> Result<(), CommandError> {
+pub async fn clear_history(history: tauri::State<'_, HistoryStore>) -> Result<(), CommandError> {
     history.clear().map_err(CommandError::io)
 }

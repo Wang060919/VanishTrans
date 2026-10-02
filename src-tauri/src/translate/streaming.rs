@@ -64,6 +64,7 @@ pub async fn do_translate_stream_async(
     let mut response_bytes = 0usize;
 
     let mut saw_done = false;
+    let mut saw_finish_reason = false;
     'stream: loop {
         // Check if a newer request has superseded this one — abort early to free the connection
         if !state.is_current_request(scope, seq) {
@@ -99,7 +100,9 @@ pub async fn do_translate_stream_async(
 
         while let Some(line_end) = buffer.iter().position(|byte| *byte == b'\n') {
             let line: Vec<u8> = buffer.drain(..=line_end).collect();
-            if process_sse_line(&line, &mut full_text, &on_chunk)? {
+            let outcome = process_sse_line(&line, &mut full_text, &on_chunk)?;
+            saw_finish_reason |= outcome.finish_seen;
+            if outcome.done {
                 saw_done = true;
                 break 'stream;
             }
@@ -107,7 +110,9 @@ pub async fn do_translate_stream_async(
     }
 
     if !saw_done && !buffer.is_empty() {
-        saw_done = process_sse_line(&buffer, &mut full_text, &on_chunk)?;
+        let outcome = process_sse_line(&buffer, &mut full_text, &on_chunk)?;
+        saw_finish_reason |= outcome.finish_seen;
+        saw_done = outcome.done;
     }
-    finalize_stream_result(full_text, saw_done)
+    finalize_stream_result(full_text, saw_done, saw_finish_reason)
 }

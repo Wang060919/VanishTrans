@@ -38,6 +38,18 @@ export function normalizeTranslationRequest(payload: unknown): TranslationReques
   return null;
 }
 
+// A webview reload leaves FRONTEND_READY true until this bundle runs, so the
+// backend could emit hotkey events into dead listeners for a moment. Reset it
+// at module evaluation, before React even mounts the hook.
+void Promise.resolve().then(() => frontendReadyCmd(false)).catch(() => {});
+
+const LISTENER_SETUP_ATTEMPTS = 3;
+const LISTENER_RETRY_DELAY_MS = 250;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function useTauriEvents({
   onClipboardTranslate,
   onScreenshotStart,
@@ -68,6 +80,7 @@ export function useTauriEvents({
   useEffect(() => {
     setListenersReady(false);
     let cancelled = false;
+    let readyReported = false;
     const cleanups: (() => void)[] = [];
 
     const addCleanup = (cleanup: () => void) => {
@@ -124,24 +137,39 @@ export function useTauriEvents({
       });
       if (cancelled) { conflictCleanup(); return; }
       addCleanup(conflictCleanup);
-      if (!cancelled) setListenersReady(true);
-
+      if (!cancelled) {
+        readyReported = true;
+        setListenersReady(true);
+      }
     };
 
-    void setup().catch((error: unknown) => {
-      cleanups.splice(0).forEach((cleanup) => cleanup());
-      if (!cancelled) {
-        setListenersReady(false);
-        void frontendReadyCmd(false).catch(() => {});
+    // A failed attempt releases partial registrations and retries briefly:
+    // a single rejected listen() must not leave the window deaf to hotkey and
+    // screenshot events until a manual reload.
+    void (async () => {
+      for (let attempt = 0; attempt < LISTENER_SETUP_ATTEMPTS && !cancelled; attempt += 1) {
+        try {
+          await setup();
+          return;
+        } catch (error) {
+          cleanups.splice(0).forEach((cleanup) => cleanup());
+          if (cancelled) return;
+          if (attempt + 1 >= LISTENER_SETUP_ATTEMPTS) {
+            setListenersReady(false);
+            void frontendReadyCmd(false).catch(() => {});
+            logError("tauri-events", "failed to register event listeners", error);
+            return;
+          }
+          await wait(LISTENER_RETRY_DELAY_MS);
+        }
       }
-      logError("tauri-events", "failed to register event listeners", error);
-    });
+    })();
 
     return () => {
       cancelled = true;
       setListenersReady(false);
       cleanups.splice(0).forEach((fn) => fn());
-      void frontendReadyCmd(false).catch(() => {});
+      if (readyReported) void frontendReadyCmd(false).catch(() => {});
     };
   }, []);
   return listenersReady;

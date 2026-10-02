@@ -13,6 +13,9 @@ use crate::translate::{test_connection_async, ApiConfig, ServiceProfile};
 pub fn get_api_config(
     state: tauri::State<'_, ApiConfig>,
 ) -> Result<serde_json::Value, CommandError> {
+    // Hold the write lock while reading every field so a save that lands
+    // mid-read cannot produce a mixed old/new snapshot.
+    let _write_guard = state.lock_for_write();
     Ok(serde_json::json!({
         "baseUrl": *state.base_url.lock_recover(),
         "hasApiKey": !state.api_key.lock_recover().is_empty(),
@@ -49,7 +52,10 @@ pub fn set_api_config(
     let _write_guard = state.lock_for_write();
     let snapshot = state.snapshot();
     if let Some(new_key) = api_key.as_ref() {
-        *state.api_key.lock_recover() = new_key.clone();
+        // Store the key exactly as it will be sent: test_connection trims
+        // before use, so persisting an untrimmed key would test OK and then
+        // 401 on real calls.
+        *state.api_key.lock_recover() = new_key.trim().to_string();
     }
     *state.base_url.lock_recover() = base_url;
     *state.model.lock_recover() = model;
@@ -105,8 +111,12 @@ pub fn set_shortcuts_suspended(
     suspended: bool,
 ) -> Result<(), CommandError> {
     let counter = &state.shortcut_suspend_count;
-    let previous = if suspended {
-        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    // Remember whether this call actually moved the count so a failed
+    // sync can undo exactly our own delta instead of restoring a stale
+    // value that would erase a concurrent suspend/resume.
+    let changed = if suspended {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        true
     } else {
         // An unmatched resume (e.g. a recorder that never suspended) must not
         // underflow the count.
@@ -116,10 +126,24 @@ pub fn set_shortcuts_suspended(
                 std::sync::atomic::Ordering::SeqCst,
                 |count| count.checked_sub(1),
             )
-            .unwrap_or_else(|count| count)
+            .is_ok()
     };
     if let Err(error) = crate::setup::sync_shortcuts(&app) {
-        counter.store(previous, std::sync::atomic::Ordering::SeqCst);
+        if changed {
+            // Compare-exchange undo: removes only the delta this call added,
+            // leaving increments/decrements from racing callers untouched.
+            let _ = counter.fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |count| {
+                    if suspended {
+                        count.checked_sub(1)
+                    } else {
+                        count.checked_add(1)
+                    }
+                },
+            );
+        }
         return Err(CommandError::internal(format!(
             "快捷键状态更新失败: {error}"
         )));
@@ -200,6 +224,13 @@ pub fn save_service_profile(
     if base_url.is_empty() {
         return Err(CommandError::validation("Base URL 不能为空"));
     }
+    // Match set_api_config: a stored profile must never carry a URL the
+    // live config would reject, or apply would poison it.
+    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+        return Err(CommandError::validation(
+            "Base URL 必须以 http:// 或 https:// 开头",
+        ));
+    }
     if model.is_empty() {
         return Err(CommandError::validation("模型名称不能为空"));
     }
@@ -209,8 +240,7 @@ pub fn save_service_profile(
             base_url,
             model,
         })
-        .map_err(CommandError::io)?;
-    Ok(state.profiles.lock_recover().clone())
+        .map_err(CommandError::io)
 }
 
 #[tauri::command]
@@ -218,10 +248,7 @@ pub fn delete_service_profile(
     state: tauri::State<'_, ApiConfig>,
     name: String,
 ) -> Result<Vec<ServiceProfile>, CommandError> {
-    state
-        .delete_profile(name.trim())
-        .map_err(CommandError::io)?;
-    Ok(state.profiles.lock_recover().clone())
+    state.delete_profile(name.trim()).map_err(CommandError::io)
 }
 
 #[tauri::command]
@@ -229,13 +256,9 @@ pub fn apply_service_profile(
     state: tauri::State<'_, ApiConfig>,
     name: String,
 ) -> Result<ServiceProfile, CommandError> {
-    state.apply_profile(name.trim()).map_err(CommandError::io)?;
-    let profiles = state.profiles.lock_recover();
-    profiles
-        .iter()
-        .find(|profile| profile.name == name.trim())
-        .cloned()
-        .ok_or_else(|| CommandError::not_found("找不到服务档案"))
+    // The applied profile is returned from inside the write lock, so a
+    // successful apply can never report not-found after the fact.
+    state.apply_profile(name.trim()).map_err(CommandError::io)
 }
 
 #[tauri::command]
@@ -245,8 +268,12 @@ pub async fn test_connection(
     api_key: Option<String>,
     model: String,
 ) -> Result<String, CommandError> {
+    // Trim at the command boundary: everything downstream treats these as
+    // exact strings, and only whitespace differs from what we persist.
+    let base_url = base_url.trim().to_string();
+    let model = model.trim().to_string();
     let api_key = match api_key {
-        Some(key) if !key.trim().is_empty() => key,
+        Some(key) if !key.trim().is_empty() => key.trim().to_string(),
         _ => state.api_key.lock_recover().clone(),
     };
     test_connection_async(&state, &base_url, &api_key, &model)

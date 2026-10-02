@@ -24,7 +24,7 @@ export function useTranslation(resultToOpen?: IslandResult | null) {
     restoreResult(resultToOpen);
   }, [resultToOpen, restoreResult, updateDirection]);
   const text = useTextTranslation(session, directionRef);
-  const file = useFileTranslation(session, directionRef, text.doTranslateStream);
+  const file = useFileTranslation(session, directionRef, text.doTranslateFileText);
   const { cancel, reset } = session;
   const cancelTranslation = useCallback(async () => {
     cancel();

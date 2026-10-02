@@ -1226,4 +1226,42 @@ describe("BallWindow", () => {
       reposition: false,
     });
   });
+
+  it("surfaces a quick-session error inside the island instead of opening the workspace", async () => {
+    vi.useFakeTimers();
+    render(<BallWindow />);
+    await advanceTimers(0);
+
+    act(() => dispatchTranslationState({
+      state: "error", sourceId: "quick:B", requestId: 7, revision: 1, message: "连接超时",
+    }));
+    await advanceTimers(ISLAND_TIMING.compactMs + 200);
+    expect(getSurface()).toHaveAttribute("data-mode", "status");
+    expect(screen.getByText("翻译遇到问题")).toBeInTheDocument();
+
+    fireEvent.click(document.querySelector(".translation-island__status-open")!);
+    await advanceTimers(ISLAND_TIMING.surfaceMs + 100);
+
+    expect(getSurface()).toHaveAttribute("data-mode", "actions");
+    expect(screen.getByText("操作失败")).toBeInTheDocument();
+    expect(screen.getByText("连接超时")).toBeInTheDocument();
+  });
+
+  it("still routes a main-session error click to the full workspace", async () => {
+    vi.useFakeTimers();
+    render(<BallWindow />);
+    await advanceTimers(0);
+
+    act(() => dispatchTranslationState({
+      state: "error", sourceId: "main:A", requestId: 3, revision: 1, message: "rate limited",
+    }));
+    await advanceTimers(ISLAND_TIMING.compactMs + 200);
+    expect(getSurface()).toHaveAttribute("data-mode", "status");
+
+    fireEvent.click(document.querySelector(".translation-island__status-open")!);
+    await advanceTimers(ISLAND_TIMING.surfaceMs + 200);
+
+    expect(getSurface()).toHaveAttribute("data-mode", "full");
+    expect(screen.queryByText("操作失败")).not.toBeInTheDocument();
+  });
 });

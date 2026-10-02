@@ -90,6 +90,35 @@ describe("useConfig persistence queue", () => {
     });
     expect(bridge.setGlossary).toHaveBeenCalledTimes(2);
   });
+
+  it("does not send apiKey when the field holds an empty or blank string", async () => {
+    const { result } = renderHook(() => useConfig());
+    await act(async () => { await Promise.resolve(); });
+
+    await act(async () => { result.current.setApiKeyUpdate(""); });
+    await act(async () => { await result.current.saveConfig(); });
+    let request = bridge.setApiConfig.mock.calls.at(-1)?.[0] as { apiKey?: string };
+    expect(request.apiKey).toBeUndefined();
+
+    await act(async () => { result.current.setApiKeyUpdate("   "); });
+    await act(async () => { await result.current.saveConfig(); });
+    request = bridge.setApiConfig.mock.calls.at(-1)?.[0] as { apiKey?: string };
+    expect(request.apiKey).toBeUndefined();
+  });
+
+  it("sends a trimmed apiKey for real edits and an empty string only for the explicit clear", async () => {
+    const { result } = renderHook(() => useConfig());
+    await act(async () => { await Promise.resolve(); });
+
+    await act(async () => { result.current.setApiKeyUpdate(" sk-new  "); });
+    await act(async () => { await result.current.saveConfig(); });
+    let request = bridge.setApiConfig.mock.calls.at(-1)?.[0] as { apiKey?: string };
+    expect(request.apiKey).toBe("sk-new");
+
+    await act(async () => { await result.current.saveConfig(""); });
+    request = bridge.setApiConfig.mock.calls.at(-1)?.[0] as { apiKey?: string };
+    expect(request.apiKey).toBe("");
+  });
 });
 
 function deferred<T>() {

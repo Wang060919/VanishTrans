@@ -23,10 +23,41 @@ function downloadPercent(received: number, total: number | null): number | null 
   return Math.min(100, Math.round((received / total) * 100));
 }
 
+// Settings tabs unmount/remount on every switch; update state lives at module
+// level so a revisit reuses the last result instead of re-hitting GitHub, and
+// a download still running in the background keeps its progress visible.
+const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000;
+let updateInFlight = false;
+let installInFlight = false;
+let lastCheckedAt = 0;
+let updateCache: UpdateState | null = null;
+const updateListeners = new Set<(state: UpdateState | null) => void>();
+
+function publishUpdate(next: UpdateState | null): void {
+  updateCache = next;
+  updateListeners.forEach((listener) => listener(next));
+}
+
+/** Test hook: tests render several mounts in one module registry. */
+export function resetAboutUpdateCache(): void {
+  updateInFlight = false;
+  installInFlight = false;
+  lastCheckedAt = 0;
+  publishUpdate(null);
+}
+
 /** About tab: version info plus signed auto-updates via the updater plugin. */
 export default function AboutTab() {
   const [version, setVersion] = useState<string | null>(null);
-  const [update, setUpdate] = useState<UpdateState | null>(null);
+  const [update, setUpdate] = useState<UpdateState | null>(updateCache);
+
+  // Live instances follow the shared cache so an in-flight check or download
+  // started by a previous mount still updates the visible tab.
+  useEffect(() => {
+    const listener = (next: UpdateState | null) => setUpdate(next);
+    updateListeners.add(listener);
+    return () => { updateListeners.delete(listener); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,14 +72,25 @@ export default function AboutTab() {
     return () => { cancelled = true; };
   }, []);
 
-  const checkForUpdates = useCallback(async () => {
-    setUpdate({ kind: "checking" });
+  const checkForUpdates = useCallback(async (forced = false) => {
+    // Skip re-checking on a mere tab revisit while a check is running or the
+    // last result is still fresh; the button bypasses the cache.
+    if (!forced && (updateInFlight
+      || (updateCache !== null && Date.now() - lastCheckedAt < UPDATE_CACHE_TTL_MS))) {
+      return;
+    }
+    updateInFlight = true;
+    publishUpdate({ kind: "checking" });
     try {
       const found = await check();
-      setUpdate(found ? { kind: "available", update: found } : { kind: "none" });
+      publishUpdate(found ? { kind: "available", update: found } : { kind: "none" });
+      lastCheckedAt = Date.now();
     } catch (error) {
       logError("about", "检查更新失败", error);
-      setUpdate({ kind: "checkFailed" });
+      publishUpdate({ kind: "checkFailed" });
+      lastCheckedAt = Date.now();
+    } finally {
+      updateInFlight = false;
     }
   }, []);
 
@@ -56,7 +98,9 @@ export default function AboutTab() {
   useEffect(() => { void checkForUpdates(); }, [checkForUpdates]);
 
   const installUpdate = useCallback(async (pending: Update) => {
-    setUpdate({ kind: "downloading", percent: null });
+    if (installInFlight) return;
+    installInFlight = true;
+    publishUpdate({ kind: "downloading", percent: null });
     let received = 0;
     let total: number | null = null;
     try {
@@ -68,12 +112,14 @@ export default function AboutTab() {
         } else {
           received = total ?? received;
         }
-        setUpdate({ kind: "downloading", percent: downloadPercent(received, total) });
+        publishUpdate({ kind: "downloading", percent: downloadPercent(received, total) });
       });
-      setUpdate({ kind: "installed" });
+      publishUpdate({ kind: "installed" });
     } catch (error) {
       logError("about", "下载或安装更新失败", error);
-      setUpdate({ kind: "installFailed", update: pending });
+      publishUpdate({ kind: "installFailed", update: pending });
+    } finally {
+      installInFlight = false;
     }
   }, []);
 
@@ -105,7 +151,7 @@ export default function AboutTab() {
             type="button"
             className="text-action"
             disabled={busy}
-            onClick={() => void checkForUpdates()}
+            onClick={() => void checkForUpdates(true)}
           >
             {update?.kind === "checking" ? "检查中…" : "检查"}
           </button>

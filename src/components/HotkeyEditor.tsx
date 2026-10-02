@@ -31,6 +31,10 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
   const [pending, setPending] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const suspendedRef = useRef(false);
+  // The backend suspend count is reference-counted: every suspended: true
+  // needs exactly one suspended: false. An in-flight suspend must be resumed
+  // by its own continuation, not by whatever cleanup happens to run first.
+  const suspendPromiseRef = useRef<Promise<void> | null>(null);
 
   const resumeShortcuts = useCallback(() => {
     if (!suspendedRef.current) return;
@@ -44,17 +48,26 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
   // keypress before the editor can record it.
   const handleStartRecording = useCallback(() => {
     setPending("");
-    void (async () => {
-      if (!suspendedRef.current) {
-        try {
-          await setShortcutsSuspendedCmd({ suspended: true });
-          suspendedRef.current = true;
-        } catch {
-          // Suspension is best-effort: unregistered combos still record fine.
-        }
+    let suspend = suspendPromiseRef.current;
+    if (!suspend) {
+      if (suspendedRef.current) {
+        suspend = Promise.resolve();
+      } else {
+        suspend = (async () => {
+          try {
+            await setShortcutsSuspendedCmd({ suspended: true });
+            suspendedRef.current = true;
+          } catch {
+            // Suspension is best-effort: unregistered combos still record fine.
+          }
+        })();
+        suspendPromiseRef.current = suspend;
+        void suspend.finally(() => {
+          if (suspendPromiseRef.current === suspend) suspendPromiseRef.current = null;
+        }).catch(() => {});
       }
-      setRecording(true);
-    })();
+    }
+    void suspend.then(() => setRecording(true));
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -102,7 +115,19 @@ export default function HotkeyEditor({ label, value, onChange }: HotkeyEditorPro
   }, [resumeShortcuts]);
 
   // A settings tab switch unmounts mid-recording — release the suspension.
-  useEffect(() => resumeShortcuts, [resumeShortcuts]);
+  // If a suspend is still in flight, resume only once it resolves so the
+  // backend count always returns to zero.
+  useEffect(
+    () => () => {
+      const pendingSuspend = suspendPromiseRef.current;
+      if (pendingSuspend) {
+        void pendingSuspend.then(resumeShortcuts);
+      } else {
+        resumeShortcuts();
+      }
+    },
+    [resumeShortcuts]
+  );
 
   const displayValue = pending || value;
 

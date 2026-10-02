@@ -62,3 +62,43 @@ fn translation_context_hash_is_stable_and_tracks_settings() {
 
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// Regression: a ball-position save must never produce a config.json that
+// deserializes as corrupt on next launch (which would wipe all settings).
+#[test]
+fn ball_position_save_writes_complete_config_when_file_is_missing() {
+    let dir = std::env::temp_dir().join(format!("vt_ball_missing_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let config = ApiConfig::load_for_test(dir.clone());
+    *config.model.lock_recover() = "live-model".into();
+    // Delete the file so save_fields_locked has nothing to merge onto.
+    std::fs::remove_file(dir.join("config.json")).unwrap();
+
+    config.save_ball_position_fields(11, 22).unwrap();
+
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap()).unwrap();
+    assert_eq!(saved["ball_x"], 11);
+    assert_eq!(saved["ball_y"], 22);
+    let parsed: PersistedConfig = serde_json::from_value(saved).unwrap();
+    assert_eq!(parsed.model, "live-model");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn ball_position_save_writes_complete_config_when_file_is_unparsable() {
+    let dir = std::env::temp_dir().join(format!("vt_ball_corrupt_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let config = ApiConfig::load_for_test(dir.clone());
+    // Simulate corruption that appears after startup: merge cannot run.
+    std::fs::write(dir.join("config.json"), b"\xff\xfe garbage").unwrap();
+
+    config.save_ball_position_fields(7, 9).unwrap();
+
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("config.json")).unwrap()).unwrap();
+    assert_eq!(saved["ball_x"], 7);
+    assert_eq!(saved["ball_y"], 9);
+    serde_json::from_value::<PersistedConfig>(saved).unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}

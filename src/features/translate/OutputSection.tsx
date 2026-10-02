@@ -3,7 +3,6 @@ import AnimatedContent from "../../components/AnimatedContent";
 import SignalBurst from "../../components/SignalBurst";
 import VanishMark from "../../components/brand/VanishMark";
 import { useCopyFeedback } from "../../hooks/useCopyFeedback";
-import { isErrorMessage, stripErrorMarker } from "../../lib/textUtils";
 
 interface OutputSectionProps {
   outputText: string;
@@ -33,9 +32,9 @@ export default function OutputSection({
   const { copiedKey, copy } = useCopyFeedback<string>();
   const copied = copiedKey === "output";
 
-  const hasError = isErrorMessage(outputText);
-  const displayError = error ?? (hasError ? stripErrorMarker(outputText) : null);
-  const copyableText = hasError ? "" : outputText;
+  // Errors live in `error`; outputText is always genuine model output, even
+  // when the translation itself happens to start with a marker like "❌".
+  const displayError = error ?? null;
   const isStreamingActive = loading && streaming;
 
   return (
@@ -49,7 +48,7 @@ export default function OutputSection({
           {isStreamingActive && (
             <span className="section-meta section-meta--active">流式生成中</span>
           )}
-          {!loading && outputText && !hasError && !displayError && (
+          {!loading && outputText && !displayError && (
             <span className="section-meta section-meta--success">已完成</span>
           )}
         </div>
@@ -69,8 +68,8 @@ export default function OutputSection({
             <button
               type="button"
               className="text-action"
-              disabled={!copyableText}
-              onClick={() => { void copy("output", copyableText); }}
+              disabled={!outputText}
+              onClick={() => { void copy("output", outputText); }}
               aria-label="复制译文"
             >
               {copied ? (
@@ -100,11 +99,9 @@ export default function OutputSection({
         {loading && !outputText && !displayError ? (
           <LoadingState />
         ) : outputText ? (
-          !hasError && (
-            <AnimatedContent key={translationKey} preset="slide-up">
-              <p className="translation-copy">{outputText}</p>
-            </AnimatedContent>
-          )
+          <AnimatedContent key={translationKey} preset="slide-up">
+            <p className="translation-copy">{outputText}</p>
+          </AnimatedContent>
         ) : displayError ? null : (
           <EmptyState />
         )}

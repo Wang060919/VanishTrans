@@ -21,6 +21,10 @@ export function useBallFullPosition({ modeRef, dockSideRef, anchorPositionRef, i
         draggedPosition.y + Math.min(24, outerSize.height / 2),
       ) ?? await currentMonitor();
       const scale = monitor?.scaleFactor ?? await win.scaleFactor();
+      // Everything above is measured against the window as it was; a collapse
+      // queued meanwhile recomputes the anchor itself, so re-check currency
+      // before writing anything the island's idle state will trust.
+      if (modeRef.current !== "full") return;
       const chromeWidth = outerSize.width - innerSize.width;
       const chromeHeight = outerSize.height - innerSize.height;
       const idleOuterWidth = Math.round(IDLE_WIDTH * scale) + chromeWidth;
@@ -52,6 +56,9 @@ export function useBallFullPosition({ modeRef, dockSideRef, anchorPositionRef, i
         await win.setPosition(new PhysicalPosition(position.x, position.y));
       }
 
+      // Final guard before persisting: a collapse committed while the move
+      // IPC was in flight owns the anchor now; this stale write must not win.
+      if (modeRef.current !== "full") return;
       const anchor = {
         x: getIdleAnchorX(
           dockSideRef.current,

@@ -5,7 +5,7 @@ use std::{fs, io};
 
 #[test]
 fn recovery_history_preserves_corrupt_bytes_before_flush() {
-    for bytes in [b"broken\xff\x00\r\n".as_slice(), b"{}", b"[{\"id\":1}]"] {
+    for bytes in [b"broken\xff\x00\r\n".as_slice(), b"{}", b"[{\"id\":\"x\"}]"] {
         let dir = TempDir::new();
         let path = dir.path().join("history.json");
         fs::write(&path, bytes).unwrap();
@@ -24,6 +24,45 @@ fn recovery_history_preserves_corrupt_bytes_before_flush() {
         assert_eq!(records[0].original, "hello");
         assert!(!history.dirty.load(Ordering::Relaxed));
     }
+}
+
+#[test]
+fn history_with_missing_fields_loads_via_defaults() {
+    // A cross-version record missing fields must not corrupt the whole file.
+    let dir = TempDir::new();
+    let path = dir.path().join("history.json");
+    fs::write(
+        &path,
+        r#"[{"id":7,"original":"a"},{"id":8,"original":"b","translated":"乙","direction":"en2zh","timestamp":3}]"#
+            .as_bytes(),
+    )
+    .unwrap();
+    let history = HistoryStore::load_or_default_with_max(dir.path().to_path_buf(), 200);
+    assert!(history.startup_warning().is_none());
+    let all = history.get_all();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[1].id, 7);
+    assert_eq!(all[1].translated, "");
+    history.add("next", "新", "en2zh");
+    assert_eq!(history.get_all()[0].id, 9);
+}
+
+#[test]
+fn crafted_max_record_id_is_renumbered_not_panicked() {
+    let dir = TempDir::new();
+    let path = dir.path().join("history.json");
+    let bytes = format!(
+        r#"[{{"id":{},"original":"a","translated":"甲","direction":"en2zh","timestamp":1}}]"#,
+        u64::MAX
+    );
+    fs::write(&path, bytes).unwrap();
+    let history = HistoryStore::load_or_default_with_max(dir.path().to_path_buf(), 200);
+    history.add("next", "新", "en2zh");
+    let all = history.get_all();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].original, "next");
+    assert_eq!(all[0].id, 2);
+    assert_eq!(all[1].id, 1);
 }
 
 fn assert_history_blocked(

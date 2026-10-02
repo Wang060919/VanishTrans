@@ -24,18 +24,22 @@ src/
 
 src-tauri/src/
 ├── main.rs                   # Windows entry point (windows_subsystem)
-├── lib.rs                    # Module wiring, app setup, generate_handler! registration
+├── lib.rs                    # Module wiring, run() builder, generate_handler! registration
+├── app_state.rs              # AppState, tray menu-item newtypes and StartupWarnings
+├── ball_position.rs          # Island geometry constants, clamping and position tests
+├── ball_emit.rs              # Readiness-gated emits to the ball webview (BALL_EMIT_LOCK)
+├── tray_actions.rs           # Tray menu callbacks (toggle main/pin/shortcuts/clipboard watch)
 ├── commands/                 # Tauri commands + helper modules; translate.rs owns TM/history commits
 ├── config/                   # Settings, credentials, persistence and request scopes
 ├── error.rs                  # CommandError { code, message } and stable error codes
 ├── translate.rs              # Provider routing and scoped cancellation facade
 ├── translate/                # Requests, completion, SSE, Google provider and language helpers
-├── tm.rs + tm_csv.rs         # Translation memory (SQLite) and versioned CSV import/export
+├── tm/                       # Translation memory (SQLite); store/query/csv_io + tm_csv row encoding
 ├── history.rs                # Translation history
-├── ocr.rs                    # Windows OCR
+├── ocr/                      # Screenshot session buffer, image preparation and Windows OCR
 ├── window_regions.rs         # Smart-region hit testing for screenshots
 ├── clipboard.rs              # Clipboard read/write backend
-├── keyboard.rs               # Copy/paste simulation and selection capture
+├── keyboard/                 # Copy/paste simulation, selection capture, replace-target identity
 ├── selection.rs              # Selection identity for Alt+R auto-replace
 ├── cursor.rs                 # Cursor position and edge detection for window placement
 ├── persistence.rs            # Lossless JSON store recovery
@@ -77,7 +81,7 @@ wrapper in `tauriBridge.ts`. Update all four when adding or removing a command.
 
 ## Hard Constraints
 1. **NO direct `invoke()` outside the bridge** → All IPC via `src/services/tauriBridge.ts` (tests may mock `@tauri-apps/api/core`).
-2. **Module size budget**: ≤200 lines per file in the enforced scope — `src/features/ball/`, `src-tauri/src/config/`, `src-tauri/src/translate/`, plus the files listed in `scripts/check-architecture.mjs`. Oversized legacy modules (`shortcuts.rs`, `keyboard.rs`, `tm.rs`, `ocr.rs`, `lib.rs`, …) are documented debt: prefer extracting logic over growing them further.
+2. **Module size budget**: ≤200 lines per file in the enforced scope — `src/features/ball/`, `src-tauri/src/config/`, `src-tauri/src/translate/`, plus the files listed in `scripts/check-architecture.mjs`. Oversized legacy modules (`lib.rs`, larger files under `setup/shortcuts/` and `tm/`, …) are documented debt: prefer extracting logic over growing them further.
 3. **Strict TypeScript**: NO `any` types in production code (ESLint `no-explicit-any` = error, fails `pnpm check`).
 4. **Rust errors**: Fallible Tauri commands return `Result<T, CommandError>` with stable `code` and `message` fields (`src-tauri/src/error.rs`); infallible commands may return plain values.
 5. **Naming conflicts**: Import bridge functions `as XxxCmd` when local functions have same name.
@@ -93,6 +97,9 @@ wrapper in `tauriBridge.ts`. Update all four when adding or removing a command.
 ## Wire Format
 - Rust `base_url` (snake_case) → TS `baseUrl` (camelCase) at bridge boundary
 - TmEntry/TmStats keep snake_case fields matching Rust output
+- TM CSV exports now write `vanishtrans-csv-v2` rows (extra `context_hash`, `created_at`, `hit_count` columns); the importer keeps `vanishtrans-csv-v1` files and unmarked files working literally — v1/unmarked rows import under the current context with file-order upserts, v2 rows restore their own context and only overwrite same-key rows when not older.
+- TM imports commit per 500 rows so `tm.conn` is released between chunks; a mid-file failure is a partial import and the error message says how many rows were already committed.
+- `set_tm_dir` repoints the live `TranslationMemory` connection after the config is saved, so a successful directory change takes effect without restart.
 - Failing commands throw `CommandError { code, message }`; the bridge normalizes non-conforming errors to `{ code: "UNKNOWN" }`
 
 ## Dev Commands

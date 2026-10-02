@@ -3,6 +3,13 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import ScreenshotOverlay from "./ScreenshotOverlay";
 
 const listeners: Record<string, (event: { payload: unknown }) => void> = {};
+const windowHide = vi.fn(() => Promise.resolve());
+
+// jsdom lacks PointerEvent; the overlay's pointer handlers only need the
+// MouseEvent init shape, so aliasing is enough for fireEvent.pointer*.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = window.MouseEvent as unknown as typeof PointerEvent;
+}
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -18,7 +25,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: vi.fn(() => ({ hide: vi.fn().mockResolvedValue(undefined) })),
+  getCurrentWindow: vi.fn(() => ({ hide: windowHide })),
 }));
 
 import { invoke } from "@tauri-apps/api/core";
@@ -60,6 +67,7 @@ function emit(eventName: string, payload: unknown = undefined) {
 describe("ScreenshotOverlay", () => {
   beforeEach(() => {
     mockedInvoke.mockReset();
+    windowHide.mockClear();
     for (const key of Object.keys(listeners)) delete listeners[key];
     canvasContext = {
       setTransform: vi.fn(),
@@ -160,9 +168,9 @@ describe("ScreenshotOverlay", () => {
     fireEvent.load(img);
 
     const overlay = container.firstElementChild as HTMLElement;
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 100, clientY: 50 });
-    fireEvent.mouseMove(overlay, { clientX: 300, clientY: 150 });
-    fireEvent.mouseUp(overlay, { button: 0 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 100, clientY: 50 });
+    fireEvent.pointerMove(overlay, { clientX: 300, clientY: 150 });
+    fireEvent.pointerUp(overlay, { button: 0 });
 
     expect(canvasContext.fillRect).not.toHaveBeenCalledWith(0, 0, 1920, 1080);
     expect(canvasContext.fillRect).toHaveBeenCalledWith(100, 50, 200, 100);
@@ -199,10 +207,10 @@ describe("ScreenshotOverlay", () => {
     fireEvent.load(img);
 
     const overlay = container.firstElementChild as HTMLElement;
-    fireEvent.mouseMove(overlay, { clientX: 300, clientY: 200 });
+    fireEvent.pointerMove(overlay, { clientX: 300, clientY: 200 });
     expect(canvasContext.fillRect).toHaveBeenCalledWith(200, 100, 600, 400);
-    fireEvent.mouseDown(overlay, { button: 0, clientX: 300, clientY: 200 });
-    fireEvent.mouseUp(overlay, { button: 0 });
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 300, clientY: 200 });
+    fireEvent.pointerUp(overlay, { button: 0 });
 
     await waitFor(() => {
       expect(mockedInvoke).toHaveBeenCalledWith("run_ocr_on_crop", {
@@ -232,5 +240,46 @@ describe("ScreenshotOverlay", () => {
     await waitFor(() => expect((second.container.querySelector("img") as HTMLImageElement).src).toContain("data:image/png;base64,AAA"));
     fireEvent.contextMenu(second.container.firstElementChild as HTMLElement);
     await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("cancel_screenshot", { sessionId: 1 }));
+  });
+
+  it("still reports cancel_screenshot when the payload never arrived", async () => {
+    // Payload fetch in flight (e.g. Esc pressed during image load): the backend
+    // session stays active unless we still send the cancel command — a bare
+    // window.hide() would leave Alt+W dead until restart.
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_screenshot_payload") return new Promise(() => {});
+      return Promise.resolve(undefined);
+    });
+
+    render(<ScreenshotOverlay />);
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("cancel_screenshot", { sessionId: 0 }));
+    await waitFor(() => expect(windowHide).toHaveBeenCalled());
+  });
+
+  it("clears the selection rectangle when OCR reports an empty result", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1920 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 1080 });
+    mockedInvoke.mockImplementation((cmd: string) => {
+      if (cmd === "get_screenshot_payload") return Promise.resolve(screenshotPayload);
+      if (cmd === "run_ocr_on_crop") return Promise.resolve({ text: "" });
+      return Promise.resolve(undefined);
+    });
+
+    const { container, getByText } = render(<ScreenshotOverlay />);
+    const img = container.querySelector("img") as HTMLImageElement;
+    await waitFor(() => expect(img.src).toContain("data:image/png;base64,AAA"));
+    fireEvent.load(img);
+
+    const overlay = container.firstElementChild as HTMLElement;
+    fireEvent.pointerDown(overlay, { button: 0, clientX: 100, clientY: 50 });
+    fireEvent.pointerMove(overlay, { clientX: 300, clientY: 150 });
+    fireEvent.pointerUp(overlay, { button: 0 });
+
+    await waitFor(() => expect(getByText("未识别到文字，点击任意位置重试")).toBeInTheDocument());
+    const lastFill = canvasContext.fillRect.mock.invocationCallOrder.slice(-1)[0];
+    const lastClear = canvasContext.clearRect.mock.invocationCallOrder.slice(-1)[0];
+    expect(lastClear).toBeGreaterThan(lastFill);
   });
 });

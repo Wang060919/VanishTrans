@@ -40,7 +40,3 @@ export function isSegmentCountMismatch(error: unknown): boolean {
     || errorMessage(error) === "SEGMENT_COUNT_MISMATCH"
   );
 }
-
-export function isSkipOwnContent(error: unknown): boolean {
-  return errorCode(error) === "SKIP_OWN_CONTENT" || errorMessage(error) === "SKIP_OWN_CONTENT";
-}

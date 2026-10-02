@@ -42,6 +42,27 @@ impl ApiConfig {
     pub fn save_to_disk(&self) -> Result<(), String> {
         self.persistence.ensure_writable()?;
         let _lock = CONFIG_FILE_LOCK.lock_recover();
+        self.save_fields_locked(serde_json::Value::Object(self.persisted_fields()?))
+    }
+
+    pub(crate) fn save_ball_position_fields(&self, x: i32, y: i32) -> Result<(), String> {
+        self.persistence.ensure_writable()?;
+        // Serialize with other config writes so a save mid-update never
+        // captures a torn field set.
+        let _write_guard = self.lock_for_write();
+        let _lock = CONFIG_FILE_LOCK.lock_recover();
+        // Always write a complete PersistedConfig plus the ball position:
+        // if the existing file is missing or unparsable the merge below is
+        // skipped, and a bare {"ball_x","ball_y"} skeleton would fail
+        // deserialization on next launch and wipe every saved setting.
+        let mut fields = self.persisted_fields()?;
+        fields.insert("ball_x".to_string(), x.into());
+        fields.insert("ball_y".to_string(), y.into());
+        self.save_fields_locked(serde_json::Value::Object(fields))
+    }
+
+    // Caller holds CONFIG_FILE_LOCK (and normally the write lock).
+    fn persisted_fields(&self) -> Result<serde_json::Map<String, serde_json::Value>, String> {
         let cfg = PersistedConfig {
             base_url: self.base_url.lock_recover().clone(),
             model: self.model.lock_recover().clone(),
@@ -52,14 +73,10 @@ impl ApiConfig {
             free_translation: self.free_translation(),
             tm_dir: self.tm_dir.lock_recover().clone(),
         };
-        let value = serde_json::to_value(&cfg).map_err(|e| format!("序列化配置失败: {}", e))?;
-        self.save_fields_locked(value)
-    }
-
-    pub(crate) fn save_ball_position_fields(&self, x: i32, y: i32) -> Result<(), String> {
-        self.persistence.ensure_writable()?;
-        let _lock = CONFIG_FILE_LOCK.lock_recover();
-        self.save_fields_locked(serde_json::json!({ "ball_x": x, "ball_y": y }))
+        match serde_json::to_value(&cfg).map_err(|e| format!("序列化配置失败: {}", e))? {
+            serde_json::Value::Object(fields) => Ok(fields),
+            _ => Err("序列化配置失败: 结果不是对象".to_string()),
+        }
     }
 
     // The caller holds CONFIG_FILE_LOCK; never acquire it again in this helper.

@@ -19,12 +19,13 @@ const EXPLICIT_DIRECTION_LABELS: Partial<Record<LangDirection, string>> = {
   auto2en: "自动检测 → 英语",
 };
 
-// Same CJK ranges as translate::language::resolve_target_lang.
-const CJK_PATTERN = /[㐀-䶿一-鿿豈-﫿︰-﹏𠀀-𪛟𪜀-𫜿𫝀-𫠿𫠠-𬺯]/u;
+// Same CJK code points as translate::language::cjk_ratio — written as escapes
+// so the ranges are reviewable; literal glyphs normalize and hide typos.
+const CJK_PATTERN = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\u{20000}-\u{2A6DF}\u{2A700}-\u{2B73F}\u{2B740}-\u{2B81F}\u{2B820}-\u{2CEAF}]/u;
 
 /** The stored direction is the *requested* one; resolve "auto" like the backend
  *  (CJK ratio > 0.3 → English target) so the card never mislabels the result. */
-function directionLabelFor(direction: LangDirection, source: string): string {
+export function directionLabelFor(direction: LangDirection, source: string): string {
   const explicit = EXPLICIT_DIRECTION_LABELS[direction];
   if (explicit) return explicit;
   const chars = [...source];

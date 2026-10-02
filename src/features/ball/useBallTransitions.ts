@@ -29,22 +29,29 @@ type BallTransitionsState = Pick<BallState,
   "dockSideRef" | "anchorPositionRef" | "idleOuterSizeRef" | "noticeRef" |
   "commitPresentation" | "setDockSide" | "setNotice" | "shouldReduceMotion" |
   "transitionCoordinator" | "statusTimerRef" | "expectingTranslationRef" |
-  "fullPinnedRef" | "focusCollapseTimerRef" | "transitionSettledAtRef"
+  "fullPinnedRef" | "focusCollapseTimerRef" | "transitionSettledAtRef" |
+  "busyActionRef" | "draggingRef"
 >;
 
 export function useBallTransitions({
   modeRef, nativeModeRef, nativeTargetModeRef, presentationRef, dockSideRef, anchorPositionRef,
   idleOuterSizeRef, noticeRef, commitPresentation, setDockSide, setNotice, shouldReduceMotion,
   transitionCoordinator, statusTimerRef, expectingTranslationRef, fullPinnedRef,
-  focusCollapseTimerRef, transitionSettledAtRef,
+  focusCollapseTimerRef, transitionSettledAtRef, busyActionRef, draggingRef,
 }: BallTransitionsState) {
   const runTransition = useCallback((request: IslandTransitionRequest, context: IslandTransitionContext) =>
+    // The settle timestamp is the click guard's reference: stamp it only for
+    // tasks the coordinator actually ran — a pending task displaced before
+    // draining resolves without touching the native surface.
     runBallTransition({
       modeRef, nativeModeRef, nativeTargetModeRef, presentationRef, dockSideRef, anchorPositionRef,
       idleOuterSizeRef, noticeRef, commitPresentation, setDockSide, setNotice, transitionCoordinator,
-    }, request, context), [
+    }, request, context).finally(() => {
+      transitionSettledAtRef.current = performance.now();
+    }), [
     modeRef, nativeModeRef, nativeTargetModeRef, presentationRef, dockSideRef, anchorPositionRef,
     idleOuterSizeRef, noticeRef, commitPresentation, setDockSide, setNotice, transitionCoordinator,
+    transitionSettledAtRef,
   ]);
   const transitionMode = useCallback((
     target: IslandMode,
@@ -60,11 +67,8 @@ export function useBallTransitions({
       reason: options.reason ?? "user",
     };
     const task = transitionCoordinator.request(request, runTransition);
-    void task.finally(() => {
-      transitionSettledAtRef.current = performance.now();
-    });
     return task;
-  }, [runTransition, shouldReduceMotion, transitionCoordinator, statusTimerRef, transitionSettledAtRef]);
+  }, [runTransition, shouldReduceMotion, transitionCoordinator, statusTimerRef]);
 
   const cancelFocusCollapse = useCallback(() => {
     if (focusCollapseTimerRef.current) {
@@ -96,16 +100,27 @@ export function useBallTransitions({
         } catch { /* fall through to collapse */ }
       }
       const effectiveMode = transitionCoordinator.requestedTarget ?? modeRef.current;
+      // Re-check the DOM-blur gate at decision time: the blur was 220ms ago,
+      // so a running action, a notice or an active drag that appeared
+      // meanwhile must veto the collapse the same way the DOM handler would.
+      // An in-flight transition only vets the actions branch — a queued full
+      // collapse must still supersede a pending expansion.
+      const focusCollapseGuarded = busyActionRef.current !== null
+        || !!noticeRef.current
+        || draggingRef.current;
       const collapseActions = (effectiveMode === "peek" || effectiveMode === "actions")
+        && !transitionCoordinator.isTransitioning
+        && !focusCollapseGuarded
         && !expectingTranslationRef.current;
-      const collapseFull = effectiveMode === "result"
-        || (effectiveMode === "full" && !fullPinnedRef.current);
+      const collapseFull = !focusCollapseGuarded
+        && (effectiveMode === "result"
+          || (effectiveMode === "full" && !fullPinnedRef.current));
       if (collapseActions || collapseFull) void transitionMode("idle", { motion, reason: "focus-loss" });
     };
     focusCollapseTimerRef.current = setTimeout(() => void settle(), FOCUS_COLLAPSE_DELAY_MS);
   }, [
     cancelFocusCollapse, transitionCoordinator, transitionMode, modeRef,
-    expectingTranslationRef, fullPinnedRef, focusCollapseTimerRef,
+    expectingTranslationRef, fullPinnedRef, focusCollapseTimerRef, busyActionRef, noticeRef, draggingRef,
   ]);
 
   return { transitionMode, requestFocusCollapse, cancelFocusCollapse };

@@ -155,7 +155,7 @@ VanishTrans/
 │       ├── config/               # 配置、凭据、持久化与请求序号
 │       ├── tm.rs                 # 翻译记忆 (SQLite)
 │       ├── history.rs            # 翻译历史存储
-│       ├── ocr.rs                # Windows OCR 截图识别
+│       ├── ocr/                  # 截图会话缓冲、图像预处理与 Windows OCR
 │       ├── keyboard.rs           # 键盘模拟（Ctrl+C/V）
 │       ├── clipboard.rs          # 剪贴板守卫
 │       ├── logging.rs            # 文件日志（轮转）

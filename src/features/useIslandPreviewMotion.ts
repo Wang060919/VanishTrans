@@ -6,11 +6,16 @@ export function useIslandPreviewMotion(initialMode: IslandMode, animated: boolea
   const [mode, commitMode] = useState(initialMode);
   const [phase, setPhase] = useState<IslandPresentation["phase"]>("stable");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The exit timer delays the commit; remember its target so the next setMode
+  // resolves against the pending mode instead of the render-captured one.
+  const pendingRef = useRef<IslandMode | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
   const setMode = useCallback((update: SetStateAction<IslandMode>) => {
+    const current = pendingRef.current ?? mode;
+    const target = typeof update === "function" ? update(current) : update;
     if (timer.current) clearTimeout(timer.current);
-    const target = typeof update === "function" ? update(mode) : update;
-    if (animated && (mode === "full" || mode === "result") && target !== mode) {
+    pendingRef.current = target;
+    if (animated && (current === "full" || current === "result") && target !== current) {
       setPhase("full-exit");
       timer.current = setTimeout(() => {
         timer.current = null;

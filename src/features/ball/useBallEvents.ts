@@ -13,14 +13,15 @@ import { type BallDrag } from "./useBallDrag";
 type BallEventsState = Pick<BallState,
   "mode" | "modeRef" | "draggingRef" | "transitionCoordinator" |
   "coordinatorLifetimeRef" | "expectingTranslationRef" | "expectedActivityTimerRef" | "noticeTimerRef" |
-  "statusTimerRef" | "fullPinnedRef" | "phaseRef" | "phase" |
-  "setPhase" | "commitResult"
+  "statusTimerRef" | "fullPinnedRef" | "phaseRef" | "phase" | "busyActionRef" | "noticeRef" |
+  "setPhase" | "commitResult" | "statusErrorRef"
 > & Pick<BallTransitions, "transitionMode" | "requestFocusCollapse" | "cancelFocusCollapse">
   & Pick<BallActions, "scheduleStatusCollapse"> & Pick<BallDrag, "clearPointerOrigin">;
 
 export function useBallEvents({
   mode, modeRef, draggingRef, transitionCoordinator, coordinatorLifetimeRef, expectingTranslationRef,
   expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef, phaseRef, phase, setPhase, commitResult,
+  busyActionRef, noticeRef, statusErrorRef,
   transitionMode, requestFocusCollapse, cancelFocusCollapse, scheduleStatusCollapse, clearPointerOrigin,
 }: BallEventsState) {
   const activityAggregator = useRef(new TranslationActivityAggregator());
@@ -69,10 +70,16 @@ export function useBallEvents({
         requested: transitionCoordinator.requestedTarget,
       });
       commitResult(activityAggregator.current.completedResult);
-      expectingTranslationRef.current = false;
-      if (expectedActivityTimerRef.current) {
-        clearTimeout(expectedActivityTimerRef.current);
-        expectedActivityTimerRef.current = null;
+      statusErrorRef.current = activityAggregator.current.errorDetail;
+      // Only an event from the session the action launched resolves the
+      // expectation; cross-source and anonymous events leave it armed.
+      if (expectingTranslationRef.current !== null
+        && activityAggregator.current.lastAcceptedSourceId?.startsWith(expectingTranslationRef.current)) {
+        expectingTranslationRef.current = null;
+        if (expectedActivityTimerRef.current) {
+          clearTimeout(expectedActivityTimerRef.current);
+          expectedActivityTimerRef.current = null;
+        }
       }
       if (statusTimerRef.current) {
         clearTimeout(statusTimerRef.current);
@@ -106,10 +113,19 @@ export function useBallEvents({
       // an automatic collapse that would run as soon as dragging ends.
       if (draggingRef.current) return;
       const effectiveMode = transitionCoordinator.requestedTarget ?? modeRef.current;
+      // Same gate as the DOM blur path: a running action or a visible notice
+      // means the island is intentionally open. An in-flight transition only
+      // vets the actions branch — a queued full collapse must still supersede
+      // a pending expansion so the window doesn't stay half-open.
+      const focusCollapseGuarded = busyActionRef.current !== null
+        || !!noticeRef.current;
       const shouldCollapseActions = (effectiveMode === "peek" || effectiveMode === "actions")
+        && !transitionCoordinator.isTransitioning
+        && !focusCollapseGuarded
         && !expectingTranslationRef.current;
-      const shouldCollapseFull = effectiveMode === "result"
-        || (effectiveMode === "full" && !fullPinnedRef.current);
+      const shouldCollapseFull = !focusCollapseGuarded
+        && (effectiveMode === "result"
+          || (effectiveMode === "full" && !fullPinnedRef.current));
       // Identify which window holds the foreground right now — the focus
       // thief is already foreground by the time this event lands.
       void getForegroundWindowInfo()
@@ -157,7 +173,7 @@ export function useBallEvents({
   }, [
     clearPointerOrigin, transitionCoordinator, transitionMode, modeRef, draggingRef, expectingTranslationRef,
     expectedActivityTimerRef, clearNoticeTimer, statusTimerRef, fullPinnedRef, phaseRef, setPhase, commitResult,
-    requestFocusCollapse, cancelFocusCollapse,
+    busyActionRef, noticeRef, statusErrorRef, requestFocusCollapse, cancelFocusCollapse,
   ]);
 
   useEffect(() => {

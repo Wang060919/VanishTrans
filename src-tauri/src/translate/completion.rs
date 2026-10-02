@@ -38,9 +38,13 @@ pub async fn do_translate_async(
     // 5. Handle response
     let status = resp.status();
     if !status.is_success() {
-        let b =
-            String::from_utf8_lossy(&read_response_body_limited(resp).await.unwrap_or_default())
-                .to_string();
+        // Surface a failed/truncated error-body read like the streaming path's
+        // read_error_response instead of masking it behind an empty message.
+        let bytes = match read_response_body_limited(resp).await {
+            Ok(bytes) => bytes,
+            Err(error) => return Err(error),
+        };
+        let b = String::from_utf8_lossy(&bytes).to_string();
         return Err(match status.as_u16() {
             401 => "API Key 无效或已过期，请在设置中更新".into(),
             429 => "API 请求频率超限，请稍后重试".into(),
@@ -119,9 +123,11 @@ pub async fn test_connection_async(
 
     let status = resp.status();
     if !status.is_success() {
-        let b =
-            String::from_utf8_lossy(&read_response_body_limited(resp).await.unwrap_or_default())
-                .to_string();
+        let bytes = match read_response_body_limited(resp).await {
+            Ok(bytes) => bytes,
+            Err(error) => return Err(error),
+        };
+        let b = String::from_utf8_lossy(&bytes).to_string();
         return Err(match status.as_u16() {
             401 => "API Key 无效或已过期".into(),
             404 => "模型名称无效或服务不支持该模型".into(),

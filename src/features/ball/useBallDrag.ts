@@ -38,7 +38,12 @@ export function useBallDrag({
       requested: transitionCoordinator.requestedTarget,
       skipped: !modeIsDraggable || transitionCoordinator.isTransitioning || event.button !== 0,
     });
-    if (!modeIsDraggable || transitionCoordinator.isTransitioning || event.button !== 0) return;
+    if (!modeIsDraggable || event.button !== 0) return;
+    // A refused press drops any leftover origin so pre-transition travel can't count.
+    if (transitionCoordinator.isTransitioning) {
+      pointerOriginRef.current = null;
+      return;
+    }
     if (modeRef.current === "result" && event.target instanceof Element
       && !event.target.closest(".quick-translate-header")) return;
     if (modeRef.current === "result" && event.target instanceof Element
@@ -60,6 +65,11 @@ export function useBallDrag({
     const origin = pointerOriginRef.current;
     const dragMode = modeRef.current;
     const modeIsDraggable = dragMode !== "full";
+    // Moves ignored mid-transition still drop the origin, or a press that
+    // began just before it would count the whole pre-transition travel.
+    if (transitionCoordinator.isTransitioning && origin) {
+      pointerOriginRef.current = null;
+    }
     if (!origin || draggingRef.current || !modeIsDraggable || transitionCoordinator.isTransitioning) {
       return;
     }

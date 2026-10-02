@@ -11,6 +11,7 @@ interface Props {
   error?: string | null;
   loading: boolean;
   copied: boolean;
+  copyError?: string;
   onDrag?: MouseEventHandler<HTMLElement>;
   onCopy: () => void;
   onExpand: () => void;
@@ -20,7 +21,7 @@ interface Props {
 
 /** Shared visual surface for the native quick window and browser preview. */
 export default function QuickTranslationView({
-  shellRef, source, output, error, loading, copied, embedded = false, directionLabel,
+  shellRef, source, output, error, loading, copied, copyError, embedded = false, directionLabel,
   onDrag, onCopy, onExpand, onClose, onRetry,
 }: Props) {
   const compactResult = Boolean(output) && !loading && !error;
@@ -92,6 +93,7 @@ export default function QuickTranslationView({
           <span>查看详情</span><ArrowUpRight size={16} />
         </button>
       </footer>}
+      {copyError && <p className="translation-island__copy-error" role="alert">{copyError}</p>}
     </section>
   );
 }

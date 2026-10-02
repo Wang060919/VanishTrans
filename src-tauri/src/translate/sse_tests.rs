@@ -6,11 +6,12 @@ fn sse_line_decodes_chinese_and_accepts_missing_space() {
     let mut full_text = String::new();
     let chunks = std::sync::Mutex::new(Vec::new());
     let line = r#"data:{"choices":[{"delta":{"content":"你好"}}]}"#;
-    let done = process_sse_line(line.as_bytes(), &mut full_text, &|chunk| {
+    let outcome = process_sse_line(line.as_bytes(), &mut full_text, &|chunk| {
         chunks.lock_recover().push(chunk);
     })
     .unwrap();
-    assert!(!done);
+    assert!(!outcome.done);
+    assert!(!outcome.finish_seen);
     assert_eq!(full_text, "你好");
     assert_eq!(*chunks.lock_recover(), vec!["你好"]);
 }
@@ -42,25 +43,61 @@ fn sse_missing_choices_is_returned() {
 }
 
 #[test]
-fn stream_result_requires_done_and_text() {
-    assert!(finalize_stream_result("partial".to_string(), false).is_err());
-    assert!(finalize_stream_result("   ".to_string(), true).is_err());
+fn stream_result_requires_done_or_finish_reason_and_text() {
+    // Abrupt EOF: neither [DONE] nor a finish_reason was observed.
+    assert!(finalize_stream_result("partial".to_string(), false, false).is_err());
+    // Clean EOF after a terminal chunk counts as completion.
     assert_eq!(
-        finalize_stream_result("done".to_string(), true).unwrap(),
+        finalize_stream_result("done".to_string(), false, true).unwrap(),
         "done"
     );
+    // A finish_reason without text still cannot succeed.
+    assert!(finalize_stream_result("   ".to_string(), false, true).is_err());
+    assert_eq!(
+        finalize_stream_result("done".to_string(), true, false).unwrap(),
+        "done"
+    );
+    assert!(finalize_stream_result("   ".to_string(), true, false).is_err());
 }
 
 #[test]
 fn sse_stop_finish_reason_keeps_success_behavior() {
     let mut full_text = String::new();
-    process_sse_line(
+    let outcome = process_sse_line(
         r#"data:{"choices":[{"delta":{"content":"你好"},"finish_reason":"stop"}]}"#.as_bytes(),
         &mut full_text,
         &|_| {},
     )
     .unwrap();
-    assert_eq!(finalize_stream_result(full_text, true).unwrap(), "你好");
+    assert!(outcome.finish_seen);
+    assert_eq!(
+        finalize_stream_result(full_text, true, outcome.finish_seen).unwrap(),
+        "你好"
+    );
+}
+
+#[test]
+fn sse_eof_after_finish_reason_stop_completes_without_done() {
+    // Proxies/Azure deployments may close the stream right after the terminal
+    // chunk without ever sending `data: [DONE]`.
+    let mut full_text = String::new();
+    process_sse_line(
+        r#"data:{"choices":[{"delta":{"content":"你好"}}]}"#.as_bytes(),
+        &mut full_text,
+        &|_| {},
+    )
+    .unwrap();
+    let outcome = process_sse_line(
+        br#"data:{"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+        &mut full_text,
+        &|_| {},
+    )
+    .unwrap();
+    assert!(!outcome.done && outcome.finish_seen);
+    assert_eq!(
+        finalize_stream_result(full_text, false, true).unwrap(),
+        "你好"
+    );
 }
 
 #[test]
@@ -97,13 +134,13 @@ fn sse_content_filter_finish_reason_fails() {
 #[test]
 fn sse_terminal_chunk_with_only_finish_reason_is_handled() {
     let mut full_text = String::from("已有译文");
-    let done = process_sse_line(
+    let outcome = process_sse_line(
         br#"data:{"choices":[{"finish_reason":"stop"}]}"#,
         &mut full_text,
         &|_| {},
     )
     .unwrap();
-    assert!(!done);
+    assert!(!outcome.done && outcome.finish_seen);
     assert_eq!(full_text, "已有译文");
     let error = process_sse_line(
         br#"data:{"choices":[{"finish_reason":"length"}]}"#,
@@ -117,30 +154,26 @@ fn sse_terminal_chunk_with_only_finish_reason_is_handled() {
 #[test]
 fn sse_missing_or_null_finish_reason_keeps_existing_behavior() {
     let mut full_text = String::new();
-    process_sse_line(
+    for line in [
         r#"data:{"choices":[{"delta":{"content":"你好"}}]}"#.as_bytes(),
-        &mut full_text,
-        &|_| {},
-    )
-    .unwrap();
-    process_sse_line(
         r#"data:{"choices":[{"delta":{"content":"世界"},"finish_reason":null}]}"#.as_bytes(),
-        &mut full_text,
-        &|_| {},
-    )
-    .unwrap();
+    ] {
+        let outcome = process_sse_line(line, &mut full_text, &|_| {}).unwrap();
+        assert!(!outcome.finish_seen);
+    }
     assert_eq!(full_text, "你好世界");
-    assert!(finalize_stream_result(full_text, false).is_err());
+    assert!(finalize_stream_result(full_text, false, false).is_err());
 }
 
 #[test]
 fn sse_unknown_finish_reason_keeps_existing_behavior() {
     let mut full_text = String::new();
-    process_sse_line(
+    let outcome = process_sse_line(
         r#"data:{"choices":[{"delta":{"content":"你好"},"finish_reason":"end_turn"}]}"#.as_bytes(),
         &mut full_text,
         &|_| {},
     )
     .unwrap();
+    assert!(outcome.finish_seen);
     assert_eq!(full_text, "你好");
 }

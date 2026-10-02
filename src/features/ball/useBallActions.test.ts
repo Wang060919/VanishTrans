@@ -22,6 +22,41 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("error status click", () => {
+  it("surfaces a quick-session error in the island instead of the empty workspace", async () => {
+    const transitionMode = vi.fn<BallTransitions["transitionMode"]>().mockResolvedValue();
+    const { result } = setup(transitionMode);
+    result.current.state.modeRef.current = "status";
+    result.current.state.statusErrorRef.current = {
+      sourceId: "quick:B",
+      message: "连接超时",
+    };
+    await act(async () => {
+      result.current.state.setPhase("error");
+    });
+    await act(async () => { await result.current.actions.handleCoreClick(); });
+    expect(transitionMode).toHaveBeenCalledWith("actions");
+    expect(transitionMode).not.toHaveBeenCalledWith("full");
+    expect(result.current.state.notice).toBe("连接超时");
+  });
+
+  it.each([
+    { sourceId: null, label: "anonymous" },
+    { sourceId: "main:A", label: "main-session" },
+  ])("routes a $label error to the full workspace", async ({ sourceId }) => {
+    const transitionMode = vi.fn<BallTransitions["transitionMode"]>().mockResolvedValue();
+    const { result } = setup(transitionMode);
+    result.current.state.modeRef.current = "status";
+    result.current.state.statusErrorRef.current = { sourceId, message: "boom" };
+    await act(async () => {
+      result.current.state.setPhase("error");
+    });
+    await act(async () => { await result.current.actions.handleCoreClick(); });
+    expect(transitionMode).toHaveBeenCalledWith("full");
+    expect(result.current.state.notice).toBe("");
+  });
+});
+
 describe("screenshot action lifecycle", () => {
   it("waits for the instant collapse before allowing the native command to hide the island", async () => {
     let finishCollapse: (() => void) | undefined;

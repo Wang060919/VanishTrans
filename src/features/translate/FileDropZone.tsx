@@ -9,6 +9,25 @@ interface FileDropZoneProps {
 }
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Decode dropped file bytes. Many .srt/.txt files are saved as GBK/GB18030, so
+ * try strict UTF-8 first (honouring a UTF-16 BOM like readAsText did), then fall
+ * back to GB18030 instead of letting mojibake reach the translator.
+ */
+function decodeFileText(data: Uint8Array): string {
+  if (data.length >= 2 && data[0] === 0xFF && data[1] === 0xFE) {
+    return new TextDecoder("utf-16le").decode(data);
+  }
+  if (data.length >= 2 && data[0] === 0xFE && data[1] === 0xFF) {
+    return new TextDecoder("utf-16be").decode(data);
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(data);
+  } catch {
+    return new TextDecoder("gb18030").decode(data);
+  }
+}
 /**
  * FileDropZone - handles file drag-and-drop overlay.
  * Single responsibility: file drop interaction and parsing.
@@ -53,13 +72,12 @@ export default function FileDropZone({ onDrop, disabled = false, children, input
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const content = reader.result as string;
-      onDrop(file.name, content);
+      onDrop(file.name, decodeFileText(new Uint8Array(reader.result as ArrayBuffer)));
     };
     reader.onerror = () => {
       window.alert("读取文件失败，请检查文件是否可访问。");
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }, [disabled, onDrop]);
 
   const handleDrop = useCallback((event: React.DragEvent) => {

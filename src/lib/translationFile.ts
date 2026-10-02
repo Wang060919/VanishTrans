@@ -1,6 +1,11 @@
 import { countChars } from "./textUtils";
 import { detectFileType, parseSrt, rebuildSrt, parseJson, rebuildJson, MAX_TRANSLATION_CHARS } from "./fileParser";
 
+// The backend may substitute a longer ===VANISHTRANS_SEGMENT_{i}=== marker when
+// the default one collides with source text; estimating with the worst case keeps
+// a file that passes here from tripping the backend's MAX_INPUT_CHARS check.
+const WORST_CASE_SEGMENT_MARKER = "\n\n===VANISHTRANS_SEGMENT_1000===\n\n";
+
 /** Parsing/reassembly is independent of requests and UI state. */
 export function prepareTranslationFile(filename: string, content: string) {
   const type = detectFileType(filename);
@@ -24,7 +29,8 @@ export function prepareTranslationFile(filename: string, content: string) {
   } else {
     throw new Error(`不支持的文件类型: ${filename}`);
   }
-  const length = countChars(segments.join("\n\n===SEGMENT_BREAK===\n\n"));
+  if (!segments.length) throw new Error("文件中没有可翻译的文本");
+  const length = countChars(segments.join(WORST_CASE_SEGMENT_MARKER));
   if (length > MAX_TRANSLATION_CHARS) {
     throw new Error(`文件内容过长（批处理共 ${length.toLocaleString()} 字符），最多支持 ${MAX_TRANSLATION_CHARS.toLocaleString()} 字符`);
   }

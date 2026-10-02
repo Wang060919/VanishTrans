@@ -7,6 +7,7 @@ const listeners: Record<string, Listener> = {};
 const bridge = vi.hoisted(() => ({
   reserveQuickRequest: vi.fn(), revealQuickResult: vi.fn(), quickFrontendReady: vi.fn(),
   cleanupClipboardText: vi.fn(), translateStream: vi.fn(),
+  cancelTranslation: vi.fn(), logFrontendMessage: vi.fn(),
 }));
 vi.mock("../../services/tauriBridge", () => bridge);
 vi.mock("@tauri-apps/api/event", () => ({
@@ -36,6 +37,8 @@ describe("quick fallback request ordering", () => {
     bridge.revealQuickResult.mockImplementation(async ({ requestSeq }: { requestSeq: number }) =>
       requestSeq === sequence);
     bridge.cleanupClipboardText.mockImplementation(async ({ text }: { text: string }) => text);
+    bridge.cancelTranslation.mockResolvedValue(undefined);
+    bridge.logFrontendMessage.mockResolvedValue(undefined);
   });
 
   it.each(["return", "error"] as const)(
@@ -140,5 +143,96 @@ describe("quick fallback request ordering", () => {
     expect(result.current.outputText).toBe("");
     expect(bridge.revealQuickResult).not.toHaveBeenCalled();
     await act(async () => pendingClaim.resolve(++sequence));
+  });
+
+  it("applies a deferred fallback once the pending claim settles", async () => {
+    // Alt+R claimed its sequence while the frontend's reserve IPC was in flight:
+    // the native seq was current at emit time but arrives before our claim lands.
+    const claim = deferred<number>();
+    bridge.reserveQuickRequest.mockReturnValue(claim.promise);
+    const { result } = renderHook(useQuickTranslation);
+    await waitFor(() => expect(listeners["quick-translate-result"]).toBeDefined());
+    act(() => dispatch("quick-translate", "own text"));
+    act(() => dispatch("quick-translate-result", {
+      source: "B source", text: "B translated", requestSeq: ++sequence,
+    }));
+    expect(result.current.outputText).toBe("");
+    expect(bridge.revealQuickResult).not.toHaveBeenCalled();
+    // The reservation settles with a lower seq than the deferred payload.
+    await act(async () => claim.resolve(sequence - 1));
+    expect(result.current.inputText).toBe("B source");
+    expect(result.current.outputText).toBe("B translated");
+    expect(bridge.revealQuickResult).toHaveBeenCalledExactlyOnceWith({ requestSeq: sequence });
+    expect(bridge.translateStream).not.toHaveBeenCalled();
+  });
+
+  it("drops a deferred fallback that the settled claim renders stale", async () => {
+    const claim = deferred<number>();
+    bridge.reserveQuickRequest.mockReturnValue(claim.promise);
+    const pending = deferred<string>();
+    bridge.translateStream.mockReturnValue(pending.promise);
+    const { result } = renderHook(useQuickTranslation);
+    await waitFor(() => expect(listeners["quick-translate-result"]).toBeDefined());
+    act(() => dispatch("quick-translate", "own text"));
+    const nativeSeq = ++sequence;
+    act(() => dispatch("quick-translate-result", {
+      source: "old source", text: "old result", requestSeq: nativeSeq,
+    }));
+    // Our own claim lands after the native one and supersedes its sequence.
+    await act(async () => claim.resolve(nativeSeq + 1));
+    expect(result.current.outputText).toBe("");
+    expect(result.current.loading).toBe(true);
+    expect(bridge.revealQuickResult).not.toHaveBeenCalled();
+    await act(async () => pending.resolve("own translation"));
+    expect(result.current.outputText).toBe("own translation");
+  });
+
+  it("fails closed while a claim failure lasts, then recovers on the next claim", async () => {
+    const { result } = renderHook(useQuickTranslation);
+    await waitFor(() => expect(listeners["quick-translate-result"]).toBeDefined());
+    // A rejected reservation must not fail the user's own translation.
+    bridge.reserveQuickRequest.mockRejectedValueOnce(new Error("ipc down"));
+    bridge.translateStream.mockResolvedValue("A translated");
+    await act(async () => dispatch("quick-translate", "A source"));
+    await waitFor(() => expect(result.current.outputText).toBe("A translated"));
+    expect(result.current.translationError).toBeNull();
+    // While the latch is set no unversioned fallback is accepted.
+    act(() => dispatch("quick-translate-result", {
+      source: "B source", text: "B translated", requestSeq: ++sequence,
+    }));
+    expect(result.current.outputText).toBe("A translated");
+    expect(bridge.revealQuickResult).not.toHaveBeenCalled();
+    // The next successful claim clears the latch so later fallbacks work again.
+    await act(async () => dispatch("quick-translate", "C source"));
+    act(() => dispatch("quick-translate-result", {
+      source: "D source", text: "D translated", requestSeq: ++sequence,
+    }));
+    expect(result.current.outputText).toBe("D translated");
+  });
+
+  it("cancels the superseded backend stream when a fallback wins", async () => {
+    const pending = deferred<string>();
+    bridge.translateStream.mockReturnValue(pending.promise);
+    const { result } = renderHook(useQuickTranslation);
+    await waitFor(() => expect(listeners["quick-translate-result"]).toBeDefined());
+    act(() => dispatch("quick-translate", "A source"));
+    await waitFor(() => expect(bridge.translateStream).toHaveBeenCalledTimes(1));
+    act(() => dispatch("quick-translate-result", {
+      source: "B source", text: "B translated", requestSeq: ++sequence,
+    }));
+    expect(result.current.outputText).toBe("B translated");
+    expect(bridge.cancelTranslation).toHaveBeenCalledTimes(1);
+    await act(async () => pending.resolve("A late IPC"));
+    expect(result.current.outputText).toBe("B translated");
+  });
+
+  it("does not cancel the backend when a fallback lands on an idle session", async () => {
+    const { result } = renderHook(useQuickTranslation);
+    await waitFor(() => expect(listeners["quick-translate-result"]).toBeDefined());
+    act(() => dispatch("quick-translate-result", {
+      source: "B source", text: "B translated", requestSeq: ++sequence,
+    }));
+    expect(result.current.outputText).toBe("B translated");
+    expect(bridge.cancelTranslation).not.toHaveBeenCalled();
   });
 });

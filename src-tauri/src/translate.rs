@@ -12,12 +12,14 @@ pub use crate::config::{ApiConfig, ServiceProfile};
 use completion::do_translate_async;
 pub use completion::test_connection_async;
 use google::do_free_translate_async;
+pub(crate) use google::is_transient_free_error;
 pub use language::resolve_target_lang;
 use std::time::Duration;
 pub use streaming::do_translate_stream_async;
 
 /// Shared cancellation signal for streaming and non-streaming transports.
-async fn wait_for_request_superseded(state: &ApiConfig, scope: &str, seq: u64) {
+/// `pub(crate)` so the batch command can supersede-aware sleep between retries.
+pub(crate) async fn wait_for_request_superseded(state: &ApiConfig, scope: &str, seq: u64) {
     while state.is_current_request(scope, seq) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }

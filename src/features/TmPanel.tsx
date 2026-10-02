@@ -172,7 +172,7 @@ export default function TmPanel({ searchQuery, onSearchChange }: TmPanelProps) {
               <div
                 key={entry.id}
                 className="history-item"
-                style={{ ["--item-index" as string]: i }}
+                style={{ ["--item-index" as string]: Math.min(i, 7) }}
               >
                 <div className="history-copy">
                   <p className="history-original">{entry.source}</p>

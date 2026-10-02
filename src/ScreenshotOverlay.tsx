@@ -78,7 +78,12 @@ export default function ScreenshotOverlay() {
         if (requestId === payloadRequestRef.current) loadNewImage(payload);
       })
       .catch(() => {
-        if (requestId === payloadRequestRef.current) setStatus("截图加载失败，点击重试");
+        if (requestId !== payloadRequestRef.current) return;
+        rectRef.current = null;
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext("2d");
+        if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setStatus("截图加载失败，点击重试");
       });
   }, [loadNewImage]);
 
@@ -182,6 +187,7 @@ export default function ScreenshotOverlay() {
     ocrPendingRef.current = true;
     const session = sessionRef.current;
     setStatus("OCR 识别中...");
+    redraw(null);
     const scaleX = payload.imageWidth / window.innerWidth;
     const scaleY = payload.imageHeight / window.innerHeight;
     const cropX = Math.round(x * scaleX);
@@ -203,6 +209,7 @@ export default function ScreenshotOverlay() {
         drawingRef.current = false;
         smartCandidateRef.current = null;
         rectRef.current = null;
+        redraw(null);
       }
     } catch (error) {
       if (session !== sessionRef.current) return;
@@ -210,14 +217,15 @@ export default function ScreenshotOverlay() {
       drawingRef.current = false;
       smartCandidateRef.current = null;
       rectRef.current = null;
+      redraw(null);
     } finally {
       if (session === sessionRef.current) {
         ocrPendingRef.current = false;
       }
     }
-  }, []);
+  }, [redraw]);
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     if (!imgLoaded) {
       if (status) {
@@ -239,12 +247,23 @@ export default function ScreenshotOverlay() {
     const r = smart ?? { startX: e.clientX, startY: e.clientY, curX: e.clientX, curY: e.clientY };
     rectRef.current = r;
     redraw(r, Boolean(smart));
+    // Capture the pointer so a release outside the window still finishes the
+    // drag here instead of leaving drawingRef armed.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic test events and older webviews may not support capture.
+    }
   }, [fetchLatest, findSmartRegion, imgLoaded, redraw, status]);
 
-  const onMouseMove = useCallback((e: React.MouseEvent) => {
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Pointer capture can deliver coordinates outside the window; clamp to
+    // the visible area so crop math stays inside the screenshot.
+    const clientX = Math.max(0, Math.min(e.clientX, window.innerWidth - 1));
+    const clientY = Math.max(0, Math.min(e.clientY, window.innerHeight - 1));
     if (!drawingRef.current) {
       if (!imgLoaded || ocrPendingRef.current || status) return;
-      const smart = findSmartRegion(e.clientX, e.clientY);
+      const smart = findSmartRegion(clientX, clientY);
       smartCandidateRef.current = smart;
       rectRef.current = smart;
       redraw(smart, Boolean(smart));
@@ -252,7 +271,7 @@ export default function ScreenshotOverlay() {
     }
     const pointerDown = pointerDownRef.current;
     if (!pointerDown) return;
-    const distance = Math.hypot(e.clientX - pointerDown.x, e.clientY - pointerDown.y);
+    const distance = Math.hypot(clientX - pointerDown.x, clientY - pointerDown.y);
     if (distance >= MANUAL_DRAG_THRESHOLD) manualDragRef.current = true;
     if (!manualDragRef.current && smartCandidateRef.current) {
       rectRef.current = smartCandidateRef.current;
@@ -262,25 +281,39 @@ export default function ScreenshotOverlay() {
     const r = {
       startX: pointerDown.x,
       startY: pointerDown.y,
-      curX: e.clientX,
-      curY: e.clientY,
+      curX: clientX,
+      curY: clientY,
     };
     rectRef.current = r;
     redraw(r);
   }, [findSmartRegion, imgLoaded, redraw, status]);
 
-  const onMouseUp = useCallback(async () => {
-    if (!drawingRef.current || !rectRef.current) return;
+  const endDrawing = useCallback(() => {
+    if (!drawingRef.current) return;
     drawingRef.current = false;
     pointerDownRef.current = null;
-    const selection = rectRef.current;
     smartCandidateRef.current = null;
     manualDragRef.current = false;
-    await doOcr(selection);
-  }, [doOcr]);
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    if (!drawingRef.current || !rectRef.current) return;
+    const selection = rectRef.current;
+    endDrawing();
+    void doOcr(selection);
+  }, [doOcr, endDrawing]);
+
+  const onPointerCancel = useCallback(() => {
+    endDrawing();
+    rectRef.current = null;
+    redraw(null);
+  }, [endDrawing, redraw]);
 
   const cancelScreenshot = useCallback(async () => {
-    const sessionId = payloadRef.current?.sessionId;
+    // Always report the cancel: a bare hide() would leave the backend session
+    // active, permanently blocking the next Alt+W capture. The backend treats
+    // a stale/unknown sessionId as a no-op, so 0 covers a missing payload.
+    const sessionId = payloadRef.current?.sessionId ?? 0;
     sessionRef.current += 1;
     payloadRef.current = null;
     ocrPendingRef.current = false;
@@ -291,13 +324,10 @@ export default function ScreenshotOverlay() {
     rectRef.current = null;
     setStatus("");
     try {
-      if (sessionId !== undefined) {
-        await cancelScreenshotCmd({ sessionId });
-      } else {
-        await getCurrentWindow().hide();
-      }
+      await cancelScreenshotCmd({ sessionId });
+      await getCurrentWindow().hide().catch(() => {});
     } catch {
-      await getCurrentWindow().hide();
+      await getCurrentWindow().hide().catch(() => {});
     }
   }, []);
 
@@ -319,15 +349,20 @@ export default function ScreenshotOverlay() {
   return (
     <div
       className="fixed inset-0 cursor-crosshair select-none"
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onContextMenu={onContextMenu}
     >
       <img
         ref={imgRef}
         onLoad={handleImgLoad}
-        onError={() => setStatus("截图加载失败，点击重试")}
+        onError={() => {
+          rectRef.current = null;
+          redraw(null);
+          setStatus("截图加载失败，点击重试");
+        }}
         draggable={false}
         className="absolute inset-0 w-full h-full object-fill block"
       />

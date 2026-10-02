@@ -267,7 +267,10 @@ fn choose_segment_marker(segments: &[String]) -> String {
     {
         return SEGMENT_MARKER.to_string();
     }
-    for index in 1..=1000 {
+    // Keep extending the counter until the marker provably cannot collide —
+    // once it is longer than every segment, no segment can contain it.
+    let mut index = 1u64;
+    loop {
         let marker = format!("\n\n===VANISHTRANS_SEGMENT_{}===\n\n", index);
         if segments
             .iter()
@@ -275,9 +278,8 @@ fn choose_segment_marker(segments: &[String]) -> String {
         {
             return marker;
         }
+        index += 1;
     }
-    // This is practically unreachable, but keeps the fallback deterministic.
-    format!("\n\n===VANISHTRANS_SEGMENT_{}===\n\n", segments.len())
 }
 
 /// Join segments with a marker that cannot already occur in the source.
@@ -292,18 +294,73 @@ fn join_segments(segments: &[String]) -> String {
     join_segments_with_marker(segments, &marker)
 }
 
-/// Split a batched translation result back into segments, trimming surrounding
-/// whitespace the model may have introduced. Returns `SEGMENT_COUNT_MISMATCH`
-/// when the model merged or dropped segments, so the caller can fall back to
-/// showing raw text instead of a broken reassembly.
+/// Count leading whitespace characters of `text`, capped at `limit`.
+fn leading_whitespace_bounded(text: &str, limit: usize) -> usize {
+    text.chars()
+        .take(limit)
+        .take_while(|c| c.is_whitespace())
+        .count()
+}
+
+/// Count trailing whitespace characters of `text`, capped at `limit`.
+fn trailing_whitespace_bounded(text: &str, limit: usize) -> usize {
+    text.chars()
+        .rev()
+        .take(limit)
+        .take_while(|c| c.is_whitespace())
+        .count()
+}
+
+/// Split a batched translation result back into segments, removing only the
+/// whitespace the marker join introduced around each boundary. Inner
+/// whitespace is part of the segment (JSON values may be significant, e.g.
+/// `" padded "`) and must survive the round trip. Returns
+/// `SEGMENT_COUNT_MISMATCH` when the model merged or dropped segments, so the
+/// caller can fall back to showing raw text instead of a broken reassembly.
 fn split_translated_with_marker(
     result: &str,
     expected_len: usize,
     marker: &str,
 ) -> Result<Vec<String>, CommandError> {
-    let translated: Vec<String> = result
-        .split(marker.trim())
-        .map(|segment| segment.trim().to_string())
+    // The sentinel sits between segments; the marker's own leading whitespace
+    // frames the *previous* segment's tail and its trailing whitespace frames
+    // the *next* segment's head. Strip at most that many whitespace chars.
+    let sentinel = marker.trim();
+    let head_budget = marker.chars().count() - marker.trim_start().chars().count();
+    let tail_budget = marker.chars().count() - marker.trim_end().chars().count();
+    let pieces: Vec<&str> = result.split(sentinel).collect();
+    let translated: Vec<String> = pieces
+        .iter()
+        .enumerate()
+        .map(|(index, piece)| {
+            let head = if index == 0 {
+                0
+            } else {
+                leading_whitespace_bounded(piece, tail_budget)
+            };
+            let tail = if index + 1 == pieces.len() {
+                0
+            } else {
+                trailing_whitespace_bounded(piece, head_budget)
+            };
+            let start = piece
+                .char_indices()
+                .nth(head)
+                .map_or(piece.len(), |(offset, _)| offset);
+            let end = if tail == 0 {
+                piece.len()
+            } else {
+                piece
+                    .char_indices()
+                    .rev()
+                    .nth(tail - 1)
+                    .map_or(0, |(offset, _)| offset)
+            };
+            if start >= end {
+                return String::new();
+            }
+            piece[start..end].to_string()
+        })
         .collect();
     if translated.len() != expected_len {
         return Err(CommandError::new(
@@ -348,13 +405,49 @@ pub async fn translate_batch(
 
     // The free Google provider does not understand the segment-break marker, so
     // translate each segment individually instead of sending one batched prompt.
+    // Transient per-segment failures (429 / 5xx / network) retry with a short
+    // supersede-aware backoff; exhausting attempts fails the batch naming the
+    // segment index so the frontend can report where it stopped.
     if snapshot.free_translation {
+        const FREE_BATCH_MAX_ATTEMPTS: u32 = 3;
+        const FREE_BATCH_BACKOFF_MS: u64 = 400;
         let mut translated = Vec::with_capacity(segments.len());
-        for segment in &segments {
-            let text =
-                do_translate_unified_scoped(&state, &snapshot, segment, "auto", target, scope, seq)
-                    .await
-                    .map_err(map_translation_error)?;
+        for (index, segment) in segments.iter().enumerate() {
+            let mut attempt = 0u32;
+            let text = loop {
+                attempt += 1;
+                match do_translate_unified_scoped(
+                    &state, &snapshot, segment, "auto", target, scope, seq,
+                )
+                .await
+                {
+                    Ok(text) => break text,
+                    Err(error) if error == "CANCELLED" => {
+                        return Err(CommandError::cancelled());
+                    }
+                    Err(error)
+                        if attempt < FREE_BATCH_MAX_ATTEMPTS
+                            && crate::translate::is_transient_free_error(&error) =>
+                    {
+                        tokio::select! {
+                            _ = tokio::time::sleep(
+                                std::time::Duration::from_millis(FREE_BATCH_BACKOFF_MS)
+                            ) => {}
+                            _ = crate::translate::wait_for_request_superseded(
+                                &state, scope, seq,
+                            ) => return Err(CommandError::cancelled()),
+                        }
+                    }
+                    Err(error) => {
+                        return Err(map_translation_error(format!(
+                            "第 {}/{} 段翻译失败: {}",
+                            index + 1,
+                            segments.len(),
+                            error
+                        )));
+                    }
+                }
+            };
             if !state.is_current_request(scope, seq) {
                 return Err(CommandError::cancelled());
             }
@@ -403,9 +496,43 @@ mod tests {
     }
 
     #[test]
-    fn split_translated_trims_surrounding_whitespace() {
+    fn batch_marker_fallback_is_guaranteed_collision_free() {
+        // The segment collides with the default sentinel plus several numbered
+        // candidates — the counter loop has no fixed cap and must keep going.
+        let mut blockers = vec![SEGMENT_SPLIT_MARKER.to_string()];
+        blockers.extend((1..=5).map(|index| format!("===VANISHTRANS_SEGMENT_{}===", index)));
+        let segments = vec![blockers.join(" ")];
+        let marker = choose_segment_marker(&segments);
+        assert!(marker.trim().contains("VANISHTRANS_SEGMENT_"));
+        assert!(!segments[0].contains(marker.trim()));
+    }
+
+    #[test]
+    fn split_translated_strips_only_join_framing() {
+        // The joined framing around the sentinel is absorbed; stray model-added
+        // whitespace beyond it stays with the segment.
         let translated = split_translated(" 你好 \n\n===SEGMENT_BREAK===\n\n world ", 2).unwrap();
-        assert_eq!(translated, vec!["你好".to_string(), "world".to_string()]);
+        assert_eq!(
+            translated,
+            vec![" 你好 ".to_string(), " world ".to_string()]
+        );
+    }
+
+    #[test]
+    fn split_translated_preserves_significant_inner_whitespace() {
+        // Whitespace-significant values (e.g. JSON `" padded "`) must survive
+        // the batch round trip untrimmed.
+        let segments = vec![" padded ".to_string(), "\tindented\n".to_string()];
+        let marker = choose_segment_marker(&segments);
+        let joined = join_segments_with_marker(&segments, &marker);
+        let translated = split_translated_with_marker(&joined, 2, &marker).unwrap();
+        assert_eq!(translated, segments);
+    }
+
+    #[test]
+    fn split_translated_keeps_whitespace_on_a_single_segment() {
+        let translated = split_translated("  hello  ", 1).unwrap();
+        assert_eq!(translated, vec!["  hello  ".to_string()]);
     }
 
     #[test]

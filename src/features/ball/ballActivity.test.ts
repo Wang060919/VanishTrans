@@ -79,4 +79,44 @@ describe("TranslationActivityAggregator", () => {
     expect(activity.accept("working")).toBeNull();
     expect(activity.accept({ state: "idle" })).toBe("idle");
   });
+
+  it("tracks the accepted event's source and leaves it null for anonymous payloads", () => {
+    const activity = new TranslationActivityAggregator();
+    activity.accept(event("main:A", "working", 1));
+    expect(activity.lastAcceptedSourceId).toBe("main:A");
+    activity.accept({ state: "done" });
+    expect(activity.lastAcceptedSourceId).toBeNull();
+    activity.accept(true);
+    expect(activity.lastAcceptedSourceId).toBeNull();
+    activity.accept(event("quick:B", "error", 1));
+    expect(activity.lastAcceptedSourceId).toBe("quick:B");
+    // Rejected stale events don't move the marker.
+    activity.accept(event("quick:B", "idle", 1));
+    expect(activity.lastAcceptedSourceId).toBe("quick:B");
+  });
+
+  it("clears a displayed result only for its own session's later events", () => {
+    const activity = new TranslationActivityAggregator();
+    const result = { source: "hi", text: "你好", direction: "en2zh" };
+    activity.accept({ ...event("quick:B", "done", 2), result });
+    expect(activity.completedResult?.sourceId).toBe("quick:B");
+    expect(activity.accept(event("main:A", "idle", 1))).toBe("idle");
+    expect(activity.completedResult?.sourceId).toBe("quick:B");
+    expect(activity.accept({ state: "idle" })).toBe("idle");
+    expect(activity.completedResult?.sourceId).toBe("quick:B");
+    expect(activity.accept(event("quick:B", "idle", 3))).toBe("idle");
+    expect(activity.completedResult).toBeNull();
+  });
+
+  it("records the error's source and message only on error activity", () => {
+    const activity = new TranslationActivityAggregator();
+    activity.accept(event("main:A", "working", 1));
+    expect(activity.errorDetail).toEqual({ sourceId: null, message: null });
+    activity.accept({ ...event("quick:B", "error", 1), message: " 连接超时 " });
+    expect(activity.errorDetail).toEqual({ sourceId: "quick:B", message: "连接超时" });
+    activity.accept({ ...event("main:A", "error", 2), error: "rate limited" });
+    expect(activity.errorDetail).toEqual({ sourceId: "main:A", message: "rate limited" });
+    activity.accept({ state: "error" });
+    expect(activity.errorDetail).toEqual({ sourceId: null, message: null });
+  });
 });

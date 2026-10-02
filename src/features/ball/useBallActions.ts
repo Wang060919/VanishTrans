@@ -3,6 +3,7 @@ import { errorMessage } from "../../lib/errors";
 import { logInfo } from "../../lib/logger";
 import { type BallAction, type IslandPhase } from "../islandModel";
 import { invokeCommand } from "./ballNative";
+import { QUICK_SESSION_SCOPE } from "./ballActivity";
 import { type BallState } from "./useBallState";
 import { type BallTransitions } from "./useBallTransitions";
 
@@ -10,13 +11,17 @@ type BallActionsState = Pick<BallState,
   "modeRef" | "draggingRef" | "transitionCoordinator" | "lastDragEndedAtRef" |
   "expectingTranslationRef" | "busyActionRef" | "noticeRef" | "expectedActivityTimerRef" |
   "noticeTimerRef" | "statusTimerRef" | "phase" | "setBusyAction" |
-  "setNotice" | "resultRef" | "setResultToOpen" | "transitionSettledAtRef"
+  "setNotice" | "resultRef" | "setResultToOpen" | "transitionSettledAtRef" | "statusErrorRef"
 > & Pick<BallTransitions, "transitionMode" | "requestFocusCollapse">;
+
+/** The status-mode collapse leaves errors up twice as long as done notices;
+ *  the same budget applies when a click surfaces the failure in the island. */
+const ERROR_NOTICE_MS = 6000;
 
 export function useBallActions({
   modeRef, draggingRef, transitionCoordinator, lastDragEndedAtRef, expectingTranslationRef, busyActionRef,
   noticeRef, expectedActivityTimerRef, noticeTimerRef, statusTimerRef, phase, setBusyAction, setNotice,
-  transitionMode, resultRef, setResultToOpen, transitionSettledAtRef, requestFocusCollapse,
+  transitionMode, resultRef, setResultToOpen, transitionSettledAtRef, statusErrorRef, requestFocusCollapse,
 }: BallActionsState) {
   const scheduleStatusCollapse = useCallback((statusPhase: IslandPhase) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
@@ -46,6 +51,17 @@ export function useBallActions({
     noticeRef,
   ]);
 
+  const showNotice = useCallback((message: string, durationMs = 2200) => {
+    noticeRef.current = message;
+    setNotice(message);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => {
+      noticeTimerRef.current = null;
+      noticeRef.current = "";
+      setNotice("");
+    }, durationMs);
+  }, [noticeRef, noticeTimerRef, setNotice]);
+
   const toggleActions = useCallback(async () => {
     if (modeRef.current === "actions") {
       // While an open transition is in flight — and for a beat after it ends
@@ -74,7 +90,21 @@ export function useBallActions({
     if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
     if (modeRef.current === "status") {
       if (phase !== "working") {
-        const target = phase === "error" ? "full" : phase === "done" && resultRef.current ? "result" : "idle";
+        if (phase === "error") {
+          // The error belongs to the session that failed. A quick-session
+          // failure already displays in the quick window, so the island shows
+          // the message itself; main-session failures live in the embedded
+          // workspace, so open it. Anonymous errors keep the old "full" route.
+          const detail = statusErrorRef.current;
+          if (detail.sourceId !== null && detail.sourceId.startsWith(QUICK_SESSION_SCOPE)) {
+            showNotice(detail.message ?? "翻译失败，请重试", ERROR_NOTICE_MS);
+            await transitionMode("actions");
+          } else {
+            await transitionMode("full");
+          }
+          return;
+        }
+        const target = phase === "done" && resultRef.current ? "result" : "idle";
         await transitionMode(target);
       }
       return;
@@ -82,7 +112,7 @@ export function useBallActions({
     await toggleActions();
   }, [
     phase, toggleActions, transitionMode, modeRef, draggingRef, lastDragEndedAtRef, resultRef,
-    busyActionRef, expectingTranslationRef, transitionCoordinator,
+    busyActionRef, expectingTranslationRef, transitionCoordinator, showNotice, statusErrorRef,
   ]);
 
   const openResultInFull = useCallback(async () => {
@@ -99,17 +129,6 @@ export function useBallActions({
   const collapseFull = useCallback(async () => {
     await transitionMode("idle");
   }, [transitionMode]);
-
-  const showNotice = useCallback((message: string) => {
-    noticeRef.current = message;
-    setNotice(message);
-    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = setTimeout(() => {
-      noticeTimerRef.current = null;
-      noticeRef.current = "";
-      setNotice("");
-    }, 2200);
-  }, [noticeRef, noticeTimerRef, setNotice]);
 
   const runAction = useCallback(async (action: BallAction, command: string) => {
     if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
@@ -128,7 +147,9 @@ export function useBallActions({
 
     const expectsTranslationState = action === "clipboard";
     if (expectsTranslationState) {
-      expectingTranslationRef.current = true;
+      // Clipboard translations run in the quick session; only "quick:" events
+      // resolve this expectation (see useBallEvents).
+      expectingTranslationRef.current = QUICK_SESSION_SCOPE;
       if (expectedActivityTimerRef.current) clearTimeout(expectedActivityTimerRef.current);
     }
     busyActionRef.current = action;
@@ -143,7 +164,7 @@ export function useBallActions({
       if (expectsTranslationState) {
         if (expectingTranslationRef.current) {
           expectedActivityTimerRef.current = setTimeout(() => {
-            expectingTranslationRef.current = false;
+            expectingTranslationRef.current = null;
             expectedActivityTimerRef.current = null;
             if (modeRef.current === "peek" || modeRef.current === "actions") {
               void transitionMode("idle");
@@ -154,7 +175,7 @@ export function useBallActions({
         await transitionMode("idle");
       }
     } catch (error) {
-      expectingTranslationRef.current = false;
+      expectingTranslationRef.current = null;
       if (expectedActivityTimerRef.current) {
         clearTimeout(expectedActivityTimerRef.current);
         expectedActivityTimerRef.current = null;

@@ -9,10 +9,17 @@ use crate::persistence::{load_json, LoadSafety, LoadedJson};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TranslationRecord {
+    // Field defaults keep older/newer files loadable: a schema gap must never
+    // mark the whole history corrupt.
+    #[serde(default)]
     pub id: u64,
+    #[serde(default)]
     pub original: String,
+    #[serde(default)]
     pub translated: String,
+    #[serde(default)]
     pub direction: String,
+    #[serde(default)]
     pub timestamp: u64,
 }
 
@@ -45,7 +52,24 @@ impl HistoryStore {
             let keep_from = records.len() - max_records;
             records.drain(..keep_from);
         }
-        let next_id = records.iter().map(|r| r.id).max().unwrap_or(0) + 1;
+        let next_id = records
+            .iter()
+            .map(|r| r.id)
+            .max()
+            .unwrap_or(0)
+            .checked_add(1)
+            // A crafted id at u64::MAX has no successor; renumber the loaded
+            // records so ids stay unique and increasing instead of panicking.
+            .unwrap_or_else(|| {
+                log::warn!(
+                    "[history] record id overflow; renumbering {} records",
+                    records.len()
+                );
+                for (index, record) in records.iter_mut().enumerate() {
+                    record.id = index as u64 + 1;
+                }
+                records.len() as u64 + 1
+            });
         Self {
             records: Mutex::new(records),
             path,
@@ -159,7 +183,10 @@ impl HistoryStore {
         let tmp = self.path.with_extension("json.tmp");
         let json = serde_json::to_string_pretty(records)
             .map_err(|error| format!("序列化历史记录失败: {error}"))?;
-        std::fs::write(&tmp, json).map_err(|error| format!("写入历史临时文件失败: {error}"))?;
+        if let Err(error) = std::fs::write(&tmp, json) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("写入历史临时文件失败: {error}"));
+        }
         if let Err(error) = std::fs::rename(&tmp, &self.path) {
             let _ = std::fs::remove_file(&tmp);
             return Err(format!("替换历史记录失败: {error}"));

@@ -46,4 +46,18 @@ describe("GlossaryTab row identity", () => {
       { source: "same", target: "第二条" }, { source: "new", target: "" },
     ]));
   });
+
+  it("persists an added row through the unmount flush when the tab is left early", async () => {
+    const onGlossaryChange = vi.fn(async (_entries: GlossaryEntry[]) => {});
+    const { unmount } = render(<GlossaryTab
+      glossary={[{ source: "same", target: "相同" }]}
+      onGlossaryChange={onGlossaryChange} notifyError={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    unmount();
+
+    await waitFor(() => expect(onGlossaryChange).toHaveBeenCalledWith([
+      { source: "same", target: "相同" }, { source: "", target: "" },
+    ]));
+  });
 });

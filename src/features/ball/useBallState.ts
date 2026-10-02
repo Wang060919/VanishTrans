@@ -5,6 +5,7 @@ import {
   type BallAction, type DockSide, type IslandMode, type IslandPhase, type IslandPresentation,
 } from "../islandModel";
 import { IslandTransitionCoordinator } from "../islandTransitionCoordinator";
+import { type IslandErrorDetail } from "./ballActivity";
 import type { IslandResult } from "../../lib/translationResult";
 
 /** Owns island state and synchronous refs. Other hooks receive only their required fields. */
@@ -47,7 +48,10 @@ export function useBallState() {
   const lastDragEndedAtRef = useRef(Number.NEGATIVE_INFINITY);
   const anchorPositionRef = useRef<{ x: number; y: number } | null>(null);
   const idleOuterSizeRef = useRef<{ width: number; height: number } | null>(null);
-  const expectingTranslationRef = useRef(false);
+  // Null or the session scope ("quick:") a launched action waits on; only
+  // events carrying that sourceId may clear the expectation.
+  const expectingTranslationRef = useRef<string | null>(null);
+  const statusErrorRef = useRef<IslandErrorDetail>({ sourceId: null, message: null });
   const busyActionRef = useRef<BallAction | null>(null);
   const noticeRef = useRef("");
   const expectedActivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,7 +72,7 @@ export function useBallState() {
     pointerOriginRef, pointerCaptureTargetRef, draggingRef, transitionCoordinatorRef, transitionCoordinator,
     coordinatorLifetimeRef, lastDragEndedAtRef, anchorPositionRef, idleOuterSizeRef, expectingTranslationRef,
     busyActionRef, noticeRef, expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef,
-    focusCollapseTimerRef, transitionSettledAtRef,
+    focusCollapseTimerRef, transitionSettledAtRef, statusErrorRef,
     phaseRef, commitPresentation, presentation, setPresentation, phase, setPhase, dockSide, setDockSide,
     busyAction, setBusyAction, notice, setNotice,
     result, resultRef, commitResult, resultToOpen, setResultToOpen,

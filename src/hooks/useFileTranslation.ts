@@ -9,12 +9,12 @@ import type { LangDirection, TranslationSession } from "./useTranslationSession"
 export function useFileTranslation(
   { begin, lifecycle, setInputText, setFileStatus, complete, fail }: TranslationSession,
   direction: RefObject<LangDirection>,
-  doTranslateStream: (text: string) => Promise<void>,
+  translateFileText: (text: string) => Promise<void>,
 ) {
   const doTranslateFile = useCallback(async (filename: string, content: string) => {
     if (detectFileType(filename) === "txt" && content.trim()
       && countChars(content) <= MAX_TRANSLATION_CHARS) {
-      await doTranslateStream(content);
+      await translateFileText(content);
       return;
     }
     const requestId = begin("file");
@@ -43,6 +43,6 @@ export function useFileTranslation(
     } catch (error) {
       fail(requestId, error);
     }
-  }, [begin, complete, direction, doTranslateStream, fail, lifecycle, setFileStatus, setInputText]);
+  }, [begin, complete, direction, fail, lifecycle, setFileStatus, setInputText, translateFileText]);
   return { doTranslateFile };
 }
