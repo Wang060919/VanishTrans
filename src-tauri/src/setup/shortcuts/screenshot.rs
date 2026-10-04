@@ -130,86 +130,76 @@ pub(crate) fn start_screenshot(app: tauri::AppHandle) {
                 return;
             }
         }
-        if let Some(w) = app.get_webview_window("screenshot") {
-            let _ = w.set_fullscreen(false);
-            let _ = w.set_shadow(false);
-            let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                x: payload.monitor_x,
-                y: payload.monitor_y,
-            }));
-            let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                width: payload.monitor_width,
-                height: payload.monitor_height,
-            }));
-            let _ = w.emit("screenshot-ready", payload);
-            let bound =
-                bind_session_window(&app.state::<crate::ocr::ScreenshotBuffer>(), session_id, &w);
-            if !bound {
-                // Session ended while we configured the window; do not leave an
-                // orphaned overlay behind.
-                let _ = w.close();
-                return;
+        // Window ops all dispatch to the event loop; keep them strictly after
+        // capture. A warm overlay pre-created at startup (or left hidden by a
+        // previous session) skips the build entirely.
+        let overlay = match app.get_webview_window("screenshot") {
+            Some(w) => {
+                let _ = w.set_fullscreen(false);
+                let _ = w.set_shadow(false);
+                w
             }
-            if let Err(error) = w.show().and_then(|_| w.set_focus()) {
-                log::error!("[screenshot] Failed to show overlay: {}", error);
-                crate::commands::dismiss_screenshot(&app, session_id);
-            }
-        } else {
-            let window = tauri::WebviewWindowBuilder::new(
-                &app,
-                "screenshot",
-                tauri::WebviewUrl::App("index.html".into()),
-            )
-            .title("VanishTrans Screenshot")
-            .inner_size(1.0, 1.0)
-            .always_on_top(true)
-            .decorations(false)
-            // Undecorated windows with shadows gain hidden frame insets on
-            // Windows (tao computes an offset for the shadow border), which
-            // shifts the overlay content right/down by a few pixels. The
-            // screenshot overlay must cover the monitor pixel-exactly.
-            .shadow(false)
-            .resizable(false)
-            .visible(false)
-            .skip_taskbar(true)
-            .build();
-
-            match window {
-                Ok(w) => {
-                    let _ = w.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                        x: payload.monitor_x,
-                        y: payload.monitor_y,
-                    }));
-                    let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                        width: payload.monitor_width,
-                        height: payload.monitor_height,
-                    }));
-                    let _ = w.emit("screenshot-ready", payload);
-                    let bound = bind_session_window(
-                        &app.state::<crate::ocr::ScreenshotBuffer>(),
-                        session_id,
-                        &w,
-                    );
-                    if !bound {
-                        let _ = w.close();
-                        return;
-                    }
-                    if let Err(error) = w.show().and_then(|_| w.set_focus()) {
-                        log::error!("[screenshot] Failed to show overlay: {}", error);
+            None => {
+                let built = tauri::WebviewWindowBuilder::new(
+                    &app,
+                    "screenshot",
+                    tauri::WebviewUrl::App("index.html".into()),
+                )
+                .title("VanishTrans Screenshot")
+                .inner_size(1.0, 1.0)
+                .always_on_top(true)
+                .decorations(false)
+                // Undecorated windows with shadows gain hidden frame insets on
+                // Windows (tao computes an offset for the shadow border),
+                // which shifts the overlay content right/down by a few
+                // pixels. The overlay must cover the monitor pixel-exactly.
+                .shadow(false)
+                .resizable(false)
+                .visible(false)
+                .skip_taskbar(true)
+                .build();
+                match built {
+                    Ok(w) => w,
+                    Err(error) => {
+                        log::error!("[screenshot] Failed to create overlay: {}", error);
                         crate::commands::dismiss_screenshot(&app, session_id);
                         crate::emit_to_ball_when_ready(
                             &app,
                             "screenshot-error",
                             "无法打开截图窗口",
                         );
+                        return;
                     }
                 }
-                Err(error) => {
-                    log::error!("[screenshot] Failed to create overlay: {}", error);
-                    crate::commands::dismiss_screenshot(&app, session_id);
-                    crate::emit_to_ball_when_ready(&app, "screenshot-error", "无法打开截图窗口");
-                }
             }
+        };
+        let _ = overlay.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: payload.monitor_x,
+            y: payload.monitor_y,
+        }));
+        let _ = overlay.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+            width: payload.monitor_width,
+            height: payload.monitor_height,
+        }));
+        // Notify without the payload: pushing a 300KB+ base64 string through
+        // evaluate_script on the event loop adds visible latency. The overlay
+        // treats an empty payload as "fetch via get_screenshot_payload".
+        let _ = overlay.emit("screenshot-ready", ());
+        let bound = bind_session_window(
+            &app.state::<crate::ocr::ScreenshotBuffer>(),
+            session_id,
+            &overlay,
+        );
+        if !bound {
+            // Session ended while we configured the window; do not leave an
+            // orphaned overlay behind.
+            let _ = overlay.close();
+            return;
+        }
+        if let Err(error) = overlay.show().and_then(|_| overlay.set_focus()) {
+            log::error!("[screenshot] Failed to show overlay: {}", error);
+            crate::commands::dismiss_screenshot(&app, session_id);
+            crate::emit_to_ball_when_ready(&app, "screenshot-error", "无法打开截图窗口");
         }
     });
 }

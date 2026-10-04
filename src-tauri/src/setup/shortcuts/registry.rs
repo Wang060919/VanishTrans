@@ -302,18 +302,20 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
                     return;
                 }
 
-                // Alt+Esc — dismiss screenshot overlay (always active)
+                // Alt+Esc — dismiss the capture overlay (always registered).
+                // Plain Escape is handled by the session's key watcher in the
+                // screenshot worker, not a global grab: the plugin's
+                // register/unregister block on the main thread and would
+                // deadlock when invoked from this event-loop handler.
+                // No visibility check: Esc must also abort mid-capture, while
+                // the overlay is still hidden.
                 let esc = Shortcut::new(Some(Modifiers::ALT), Code::Escape);
                 if *sc == esc {
-                    if let Some(w) = app.get_webview_window("screenshot") {
-                        if w.is_visible().unwrap_or(false) {
-                            if let Some(session_id) = app
-                                .state::<crate::ocr::ScreenshotBuffer>()
-                                .active_session_id()
-                            {
-                                crate::commands::dismiss_screenshot(app, session_id);
-                            }
-                        }
+                    if let Some(session_id) = app
+                        .state::<crate::ocr::ScreenshotBuffer>()
+                        .active_session_id()
+                    {
+                        crate::commands::dismiss_screenshot(app, session_id);
                     }
                     return;
                 }

@@ -157,6 +157,30 @@ pub fn run() {
             setup::setup_shortcuts(app)?;
             setup::setup_clipboard_watch(app);
 
+            // Pre-create the screenshot overlay hidden: at startup nothing
+            // races it, and the first Alt+W then only pays for the capture —
+            // not a cold WebView2 boot. The overlay must stay hidden until a
+            // capture exists, so `visible(false)` is load-bearing.
+            if app.get_webview_window("screenshot").is_none() {
+                if let Err(error) = tauri::WebviewWindowBuilder::new(
+                    app.handle(),
+                    "screenshot",
+                    tauri::WebviewUrl::App("index.html".into()),
+                )
+                .title("VanishTrans Screenshot")
+                .inner_size(1.0, 1.0)
+                .always_on_top(true)
+                .decorations(false)
+                .shadow(false)
+                .resizable(false)
+                .visible(false)
+                .skip_taskbar(true)
+                .build()
+                {
+                    log::warn!("[screenshot] failed to pre-create overlay: {error}");
+                }
+            }
+
             // Restore ball window position from config, clamped to visible monitor bounds
             if let Some(ball_w) = app.get_webview_window("ball") {
                 let scale = ball_w.scale_factor().unwrap_or(1.0);

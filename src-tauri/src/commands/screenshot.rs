@@ -16,6 +16,81 @@ use crate::ocr::{OcrOutput, ScreenshotBuffer, ScreenshotPayload, ScreenshotWindo
 /// only after a session begins, consumed by restore_windows.
 static QUICK_WAS_VISIBLE: AtomicBool = AtomicBool::new(false);
 
+/// Idle delay before the hidden overlay is actually destroyed.
+const OVERLAY_IDLE_CLOSE_SECS: u64 = 60;
+
+/// Hide the overlay now but close it after a quiet period: an immediate close
+/// frees the ~80–100MB WebView2 renderer at the cost of a cold webview boot on
+/// the next capture, while a hidden window kept forever wastes that memory.
+/// The timer closes only when NO session is active (covers the begun-but-
+/// unbound window) AND the managed window is still the one we hid (HWND token
+/// on Windows). Both guards are post-sleep reads, so a session that started
+/// or a window that got replaced while we slept is never closed underneath.
+fn hide_overlay(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("screenshot") else {
+        return;
+    };
+    let _ = window.hide();
+    #[cfg(target_os = "windows")]
+    let token = window.hwnd().map(|hwnd| hwnd.0 as u64).unwrap_or(0);
+    #[cfg(not(target_os = "windows"))]
+    let token = 0u64;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(OVERLAY_IDLE_CLOSE_SECS));
+        if app
+            .state::<ScreenshotBuffer>()
+            .active_session_id()
+            .is_some()
+        {
+            return;
+        }
+        let Some(window) = app.get_webview_window("screenshot") else {
+            return;
+        };
+        #[cfg(target_os = "windows")]
+        let same_window = window.hwnd().map(|hwnd| hwnd.0 as u64).unwrap_or(0) == token;
+        #[cfg(not(target_os = "windows"))]
+        let same_window = true;
+        if same_window {
+            let _ = window.close();
+        }
+    });
+}
+
+/// Poll plain-Escape while a capture session runs. The overlay's webview
+/// keydown only fires when Windows grants the window focus — which
+/// SetForegroundWindow is routinely denied — and the global-shortcut plugin's
+/// register/unregister block on the main thread, deadlocking when Esc is
+/// handled from the event loop itself. A raw GetAsyncKeyState poll avoids
+/// both: it needs no focus, no focus window, and no main-thread round-trip.
+#[cfg(target_os = "windows")]
+fn spawn_escape_watcher(app: &tauri::AppHandle, session_id: u64) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // Edge-triggered: Esc held across the hotkey press must not cancel
+        // the newborn session instantly.
+        let mut was_down = false;
+        loop {
+            let active = app.state::<ScreenshotBuffer>().is_active(session_id);
+            if !active {
+                return;
+            }
+            let down = unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE.0)) } < 0;
+            if down && !was_down {
+                log::info!("[screenshot] Escape pressed; cancelling session {session_id}");
+                dismiss_screenshot(&app, session_id);
+                return;
+            }
+            was_down = down;
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
+}
+#[cfg(not(target_os = "windows"))]
+fn spawn_escape_watcher(_app: &tauri::AppHandle, _session_id: u64) {}
+
 #[tauri::command]
 pub fn get_screenshot_payload(
     state: tauri::State<'_, ScreenshotBuffer>,
@@ -52,6 +127,7 @@ pub(crate) fn prepare_screenshot(app: &tauri::AppHandle) -> Result<Option<u64>, 
         return Ok(None);
     };
     QUICK_WAS_VISIBLE.store(quick_was_visible, std::sync::atomic::Ordering::SeqCst);
+    spawn_escape_watcher(app, session_id);
     let prepared = (|| {
         for window in [app.get_webview_window("screenshot"), ball, quick]
             .into_iter()
@@ -173,11 +249,7 @@ pub(crate) fn dismiss_screenshot(app: &tauri::AppHandle, session_id: u64) {
         log::debug!("[screenshot] cancel for stale/unknown session {session_id}; no-op");
         return;
     };
-    // Close instead of hide: a hidden WebView2 renderer keeps ~80–100MB
-    // resident. start_screenshot recreates the window on demand.
-    if let Some(w) = app.get_webview_window("screenshot") {
-        let _ = w.close();
-    }
+    hide_overlay(app);
     restore_windows(app, windows);
 }
 
@@ -229,9 +301,7 @@ pub async fn finish_ocr(
     let Some(windows) = app.state::<ScreenshotBuffer>().complete(session_id) else {
         return Err(CommandError::cancelled());
     };
-    if let Some(w) = app.get_webview_window("screenshot") {
-        let _ = w.close();
-    }
+    hide_overlay(&app);
     restore_windows(&app, windows);
     // OCR output needs confirmation: the quick window opens in edit mode so
     // the user can fix recognition mistakes before translating.
