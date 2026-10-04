@@ -17,13 +17,14 @@ import { type BallState } from "./useBallState";
 type BallTransitionState = Pick<BallState,
   "modeRef" | "nativeModeRef" | "nativeTargetModeRef" | "presentationRef" |
   "dockSideRef" | "anchorPositionRef" | "idleOuterSizeRef" | "noticeRef" |
+  "dockedEdgesRef" |
   "commitPresentation" | "setDockSide" | "setNotice" | "transitionCoordinator"
 >;
 
 export async function runBallTransition(state: BallTransitionState, request: IslandTransitionRequest, context: IslandTransitionContext) {
   const {
     modeRef, nativeModeRef, nativeTargetModeRef, presentationRef, anchorPositionRef, commitPresentation,
-    transitionCoordinator,
+    transitionCoordinator, dockedEdgesRef,
   } = state;
   const { target, motion } = request;
   const win = getCurrentWindow();
@@ -146,6 +147,7 @@ export async function runBallTransition(state: BallTransitionState, request: Isl
       windowWidth: windowRect.width,
       windowHeight: windowRect.height,
       settleMs: shrinksExistingIsland ? 0 : getIslandSurfaceMs(target),
+      dockedEdges: dockedEdgesRef.current,
     };
     if (nativeTarget === target) {
       clipExpandedSurfaceDetached(

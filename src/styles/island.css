@@ -125,6 +125,43 @@ body.ball-window-body #root {
   transform: scale(1.03, 1.07) translateZ(0);
 }
 
+/* Drag lift: once the pointer move engages the native drag, the capsule reads
+   as picked up — tighter than the press bulge, contents slightly dimmed. */
+.translation-island--dragging .translation-island__surface {
+  --island-press-ms: 150ms;
+  --island-press-ease: cubic-bezier(0.3, 0.9, 0.4, 1);
+  transform: scale(1.02) translateZ(0);
+}
+.translation-island--dragging .translation-island__content,
+.translation-island--dragging .translation-island__core {
+  opacity: 0.92;
+}
+.translation-island--instant .translation-island__surface,
+.translation-island--dragging.translation-island--instant .translation-island__surface {
+  transform: translateZ(0);
+}
+
+/* Docked silhouette: the edge the capsule lands on loses its rounding so it
+   reads as flush with the screen border (top = one-sided square corners,
+   like the original top-dock styling). !important overrides the inline
+   borderRadius framer-motion animates. */
+.translation-island--docked-top .translation-island__surface {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+.translation-island--docked-right .translation-island__surface {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+.translation-island--docked-bottom .translation-island__surface {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+.translation-island--docked-left .translation-island__surface {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+
 .translation-island__full {
   position: absolute;
   inset: 0;

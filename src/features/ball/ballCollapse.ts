@@ -11,13 +11,14 @@ import { type BallState } from "./useBallState";
 
 type BallCollapseState = Pick<BallState,
   "modeRef" | "nativeModeRef" | "nativeTargetModeRef" | "dockSideRef" |
-  "anchorPositionRef" | "idleOuterSizeRef" | "noticeRef" | "commitPresentation" |
-  "setNotice"
+  "anchorPositionRef" | "idleOuterSizeRef" | "noticeRef" | "dockedEdgesRef" |
+  "commitPresentation" | "setNotice"
 >;
 
 export async function collapseBallWindow(state: BallCollapseState, previousMode: IslandMode, motion: IslandMotion, scale: number, context: IslandTransitionContext) {
   const {
-    modeRef, nativeModeRef, nativeTargetModeRef, dockSideRef, anchorPositionRef, idleOuterSizeRef, noticeRef,
+    modeRef, nativeModeRef, nativeTargetModeRef, dockSideRef, anchorPositionRef,
+    idleOuterSizeRef, noticeRef, dockedEdgesRef,
     commitPresentation, setNotice,
   } = state;
   const win = getCurrentWindow();
@@ -74,6 +75,9 @@ export async function collapseBallWindow(state: BallCollapseState, previousMode:
     clip: {
       cornerRadius: Math.round(idleGeometry.borderRadius * scale),
       pad: getIslandClipPad("idle", scale),
+      ...(dockedEdgesRef.current.length
+        ? { squareEdges: dockedEdgesRef.current }
+        : {}),
     },
   });
   logInfo("ball.collapse", "idle clip applied", {

@@ -6,7 +6,7 @@ import BallWindow, { normalizeTranslationActivity } from "./BallWindow";
 
 type Listener = (event: { payload: unknown }) => void;
 type FocusChangedListener = (event: { payload: boolean }) => void;
-type NativeBounds = { x: number; y: number; width: number; height: number };
+type NativeBounds = { x: number; y: number; width: number; height: number; retainSurface?: boolean };
 
 const listeners: Record<string, Listener> = {};
 let focusChangedListener: FocusChangedListener | undefined;
@@ -26,7 +26,11 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn((_command: string, _args?: Record<string, unknown>): Promise<unknown> => Promise.resolve()),
 }));
 
+// The backend's retainSurface path clips the window region in place
+// (SetWindowRgn) — the window's outer position/size do not change. Only real
+// move/resize bounds calls mutate the simulated window rect.
 const setBallWindowBounds = vi.fn((bounds: NativeBounds) => {
+  if (bounds.retainSurface) return;
   nativePosition = { x: bounds.x, y: bounds.y };
   nativeSize = { width: bounds.width, height: bounds.height };
 });
@@ -47,8 +51,8 @@ const onFocusChanged = vi.fn((listener: FocusChangedListener) => {
 function defaultInvoke(command: string, args?: Record<string, unknown>): Promise<unknown> {
   if (command === "start_window_drag") return startDragging().then(() => true);
   if (command === "set_ball_window_bounds") {
-    const { x, y, width, height } = args as NativeBounds;
-    setBallWindowBounds({ x, y, width, height });
+    const { x, y, width, height, retainSurface } = args as NativeBounds;
+    setBallWindowBounds({ x, y, width, height, retainSurface });
     return Promise.resolve();
   }
   if (command === "save_ball_position") {
@@ -257,7 +261,9 @@ describe("BallWindow", () => {
     expect(setBallWindowBounds).not.toHaveBeenCalled();
 
     await advanceTimers(1);
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({
+      x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+    });
     expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
       x: 902,
       y: 0,
@@ -339,7 +345,9 @@ describe("BallWindow", () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
     fireEvent.click(screen.getByRole("button", { name: "收起快速工具" }));
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 8, y: 0, width: 116, height: 42 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({
+        x: 8, y: 0, width: 116, height: 42, retainSurface: true,
+      });
     });
   });
 
@@ -359,7 +367,9 @@ describe("BallWindow", () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
     fireEvent.click(screen.getByRole("button", { name: "收起快速工具" }));
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 1796, y: 0, width: 116, height: 42 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({
+        x: 1796, y: 0, width: 116, height: 42, retainSurface: true,
+      });
     });
   });
 
@@ -873,7 +883,9 @@ describe("BallWindow", () => {
     await act(async () => finishFullBounds?.());
     await advanceTimers(ISLAND_TIMING.surfaceMs);
 
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({
+      x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+    });
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
   });
 
@@ -908,7 +920,9 @@ describe("BallWindow", () => {
     await act(async () => finishMorph({} as Animation));
     expect(setBallWindowBounds).not.toHaveBeenCalled();
     await advanceTimers(64);
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({
+      x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+    });
   });
 
   it("keeps the full native viewport through collapse and tool re-expansion on Windows", async () => {
@@ -976,7 +990,9 @@ describe("BallWindow", () => {
       { timeout: 2300 },
     );
     await waitFor(
-      () => expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 }),
+      () => expect(setBallWindowBounds).toHaveBeenCalledWith({
+        x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+      }),
       { timeout: 2300 },
     );
     expect(document.querySelector(".translation-island__surface")).toHaveAttribute("data-mode", "idle");
@@ -1030,7 +1046,9 @@ describe("BallWindow", () => {
     fireEvent.click(screen.getByTitle("收起为灵动岛"));
 
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({
+        x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+      });
     });
     expect(mocks.invoke).not.toHaveBeenCalledWith("set_ball_window_material", expect.anything());
     expect(setSize).not.toHaveBeenCalled();
@@ -1087,10 +1105,13 @@ describe("BallWindow", () => {
     await waitFor(() => {
       expect(setPosition).toHaveBeenCalledWith(expect.objectContaining({ x: 680, y: 0 }));
     });
-    expect(mocks.invoke).toHaveBeenCalledWith("save_ball_position", {
-      x: 902,
-      y: 0,
-      reposition: false,
+    // The anchor is persisted only after the snap-settle animation finishes.
+    await waitFor(() => {
+      expect(mocks.invoke).toHaveBeenCalledWith("save_ball_position", {
+        x: 902,
+        y: 0,
+        reposition: false,
+      });
     });
   });
 
@@ -1171,7 +1192,9 @@ describe("BallWindow", () => {
     await act(async () => finishDragging?.());
     await waitFor(() => expect(getSurface()).toHaveAttribute("data-mode", "idle"));
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 902, y: 0, width: 116, height: 42 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({
+        x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+      });
     });
   });
 

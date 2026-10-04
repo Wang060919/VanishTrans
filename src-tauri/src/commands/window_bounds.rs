@@ -118,11 +118,14 @@ pub(super) fn set_bounds(
 
 /// Painted-shape description for a retained clip: a missing radius yields a
 /// capsule (half the short side), a missing pad falls back to EDGE_BLEED.
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
+/// `square_edges` names the sides flush with a screen edge whose painted
+/// corners are squared — the clip unions a straight strip over those arcs.
+#[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BallClipSpec {
     corner_radius: Option<f64>,
     pad: Option<i32>,
+    square_edges: Option<Vec<String>>,
 }
 
 /// Clip the collapsed island without moving or resizing its WebView viewport.
@@ -168,15 +171,21 @@ pub(super) fn retain_surface_at(
     }
     let half_min_side = ((right - left).min(bottom - top) / 2) as i32;
     let radius = clip
+        .as_ref()
         .and_then(|spec| spec.corner_radius)
         .filter(|value| value.is_finite() && *value >= 0.0)
         .map(|value| value.round() as i32)
         .unwrap_or(half_min_side)
         .clamp(0, half_min_side);
     let pad = clip
+        .as_ref()
         .and_then(|spec| spec.pad)
         .unwrap_or(super::ball_region::EDGE_BLEED)
         .max(0);
+    let square_edges = clip
+        .as_ref()
+        .and_then(|spec| spec.square_edges.as_deref())
+        .unwrap_or(&[]);
     super::ball_region::clip_rounded(
         hwnd,
         RECT {
@@ -187,6 +196,7 @@ pub(super) fn retain_surface_at(
         },
         radius,
         pad,
+        square_edges,
     )?;
     Ok(true)
 }

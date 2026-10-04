@@ -1,5 +1,6 @@
 import { motion, type Transition } from "framer-motion";
 import IslandCompactContent from "./IslandCompactContent";
+import { useEffect, useRef } from "react";
 import type {
   CSSProperties,
   FocusEventHandler,
@@ -15,6 +16,7 @@ import {
   type IslandPhase,
   type IslandPresentation,
 } from "./islandModel";
+import type { SnapEdge } from "./ball/ballSnap";
 
 export type {
   BallAction,
@@ -31,6 +33,9 @@ interface TranslationIslandViewProps {
   busyAction: BallAction | null;
   notice: string;
   shouldReduceMotion: boolean;
+  dragging?: boolean;
+  dockedEdges?: SnapEdge[];
+  landedAt?: number;
   fullContent: ReactNode;
   resultContent?: ReactNode;
   hasResult?: boolean;
@@ -50,6 +55,9 @@ export default function TranslationIslandView({
   busyAction,
   notice,
   shouldReduceMotion,
+  dragging = false,
+  dockedEdges = [],
+  landedAt = 0,
   fullContent,
   resultContent,
   hasResult = false,
@@ -64,6 +72,17 @@ export default function TranslationIslandView({
   const { mode, motion: motionMode, phase: visualPhase, generation } = presentation;
   const instant = shouldReduceMotion || motionMode === "instant";
   const fullVisible = mode === "full" && visualPhase === "stable";
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  // Snap-landing squash: landedAt is a monotonic stamp, so each edge capture
+  // replays the keyframe (element.animate() replaces any prior animation).
+  useEffect(() => {
+    if (!landedAt || instant) return;
+    if (typeof surfaceRef.current?.animate !== "function") return;
+    surfaceRef.current.animate(
+      [{ transform: "scale(0.96, 1.04)" }, { transform: "scale(1, 1)" }],
+      { duration: 170, easing: "cubic-bezier(0.3, 1.6, 0.5, 1)", composite: "accumulate" },
+    );
+  }, [landedAt, instant]);
 
   const showsActions = mode === "peek" || mode === "actions";
   const geometry = getIslandGeometry(mode);
@@ -103,6 +122,8 @@ export default function TranslationIslandView({
     `translation-island--${visualPhase}`,
     instant && "translation-island--instant",
     hasResult && "translation-island--has-result",
+    dragging && "translation-island--dragging",
+    ...dockedEdges.map((edge) => `translation-island--docked-${edge}`),
   ].filter(Boolean).join(" ");
 
   const coreLabel = mode === "idle"
@@ -130,6 +151,7 @@ export default function TranslationIslandView({
       onBlurCapture={onIslandBlur}
     >
       <motion.div
+        ref={surfaceRef}
         className="translation-island__surface"
         data-mode={mode}
         data-transition-generation={generation}

@@ -9,10 +9,12 @@ import { type IslandTransitionContext } from "../islandTransitionCoordinator";
 import { IDLE_WIDTH, IDLE_HEIGHT, FULL_WIDTH } from "./ballNative";
 import { type BallState } from "./useBallState";
 
-type BallGeometryState = Pick<BallState, "nativeModeRef" | "dockSideRef" | "anchorPositionRef" | "idleOuterSizeRef" | "setDockSide">;
+type BallGeometryState = Pick<BallState,
+  "nativeModeRef" | "dockSideRef" | "anchorPositionRef" | "idleOuterSizeRef" |
+  "setDockSide" | "dockedEdgesRef">;
 
 export async function measureExpandedBounds(state: BallGeometryState, previousMode: IslandMode, target: IslandMode, scale: number, context: IslandTransitionContext) {
-  const { nativeModeRef, dockSideRef, anchorPositionRef, idleOuterSizeRef, setDockSide } = state;
+  const { nativeModeRef, dockSideRef, anchorPositionRef, idleOuterSizeRef, setDockSide, dockedEdgesRef } = state;
   const win = getCurrentWindow();
   const idleWidthPixels = Math.round(IDLE_WIDTH * scale);
   const idleHeightPixels = Math.round(IDLE_HEIGHT * scale);
@@ -60,6 +62,13 @@ export async function measureExpandedBounds(state: BallGeometryState, previousMo
   const estimatedOuterHeight = targetHeightPixels + chromeHeight;
   const edgeGutterPixels = Math.round(ISLAND_WINDOW_POLICY.edgeGutter * scale);
   const topGutterPixels = Math.round(ISLAND_WINDOW_POLICY.topGutter * scale);
+  // Edges the capsule is docked against stay flush when it expands — reusing
+  // the gutter there would leave a visible gap between island and screen edge.
+  const docked = dockedEdgesRef.current;
+  const leftGutter = docked.includes("left") ? 0 : edgeGutterPixels;
+  const rightGutter = docked.includes("right") ? 0 : edgeGutterPixels;
+  const topGutterDocked = docked.includes("top") ? 0 : topGutterPixels;
+  const bottomGutter = docked.includes("bottom") ? 0 : edgeGutterPixels;
   const monitorLeft = monitor?.position.x ?? 0;
   const monitorTop = monitor?.position.y ?? 0;
   const monitorRight = monitor
@@ -93,15 +102,15 @@ export async function measureExpandedBounds(state: BallGeometryState, previousMo
     estimatedOuterWidth,
   );
   const maxX = Math.max(
-    monitorLeft + edgeGutterPixels,
-    monitorRight - estimatedOuterWidth - edgeGutterPixels,
+    monitorLeft + leftGutter,
+    monitorRight - estimatedOuterWidth - rightGutter,
   );
-  const expandedX = Math.min(Math.max(rawExpandedX, monitorLeft + edgeGutterPixels), maxX);
+  const expandedX = Math.min(Math.max(rawExpandedX, monitorLeft + leftGutter), maxX);
   const maxY = Math.max(
-    monitorTop + topGutterPixels,
-    monitorBottom - estimatedOuterHeight - edgeGutterPixels,
+    monitorTop + topGutterDocked,
+    monitorBottom - estimatedOuterHeight - bottomGutter,
   );
-  const expandedY = Math.min(Math.max(anchor.y, monitorTop + topGutterPixels), maxY);
+  const expandedY = Math.min(Math.max(anchor.y, monitorTop + topGutterDocked), maxY);
 
   return {
     nativeTarget, side, currentPosition, currentOuterSize, idleOuterWidth, targetWidthPixels, targetHeightPixels,

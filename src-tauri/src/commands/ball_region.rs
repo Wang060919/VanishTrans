@@ -1,7 +1,8 @@
 use crate::error::CommandError;
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    ClientToScreen, CreateRoundRectRgn, DeleteObject, SetWindowRgn,
+    ClientToScreen, CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn,
+    RGN_OR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
 
@@ -28,18 +29,24 @@ pub(super) fn clip_capsule(hwnd: HWND, bounds: RECT) -> Result<(), CommandError>
     let (Some(width), Some(height)) = (width, height) else {
         return Err(CommandError::validation("灵动岛圆角区域超出范围"));
     };
-    clip_rounded(hwnd, bounds, width.min(height) / 2, EDGE_BLEED)
+    clip_rounded(hwnd, bounds, width.min(height) / 2, EDGE_BLEED, &[])
 }
 
 /// Clip `bounds` to a round rect with painted corner radius `corner_radius`
 /// physical px, dilated outward by `pad`. Dilation keeps the antialiased edge
 /// inside the binary mask and — for capsules — leaves room for the press
 /// bulge to stay hittable. A capsule is just radius = min(w, h)/2.
+///
+/// `square_edges` are edge names ("top" | "right" | "bottom" | "left") the
+/// painted shape docks against: the surface squares those corners, so the
+/// clip unions a straight strip over each docked side's corner arcs. Unknown
+/// names are ignored.
 pub(super) fn clip_rounded(
     hwnd: HWND,
     bounds: RECT,
     corner_radius: i32,
     pad: i32,
+    square_edges: &[String],
 ) -> Result<(), CommandError> {
     let width = bounds
         .right
@@ -73,6 +80,47 @@ pub(super) fn clip_rounded(
         );
         if region.0.is_null() {
             return Err(CommandError::internal("无法创建灵动岛圆角区域"));
+        }
+        // Squaring a docked edge unions a full-width strip over its corner
+        // arcs; the strip ends where the rounded corners resume.
+        for edge in square_edges {
+            let strip = match edge.as_str() {
+                "top" => CreateRectRgn(
+                    bounds.left.saturating_sub(pad),
+                    bounds.top.saturating_sub(pad),
+                    right.saturating_add(pad),
+                    bounds.top.saturating_add(region_diameter),
+                ),
+                "bottom" => CreateRectRgn(
+                    bounds.left.saturating_sub(pad),
+                    bounds.bottom.saturating_sub(region_diameter),
+                    right.saturating_add(pad),
+                    bottom.saturating_add(pad),
+                ),
+                "left" => CreateRectRgn(
+                    bounds.left.saturating_sub(pad),
+                    bounds.top.saturating_sub(pad),
+                    bounds.left.saturating_add(region_diameter),
+                    bottom.saturating_add(pad),
+                ),
+                "right" => CreateRectRgn(
+                    bounds.right.saturating_sub(region_diameter),
+                    bounds.top.saturating_sub(pad),
+                    right.saturating_add(pad),
+                    bottom.saturating_add(pad),
+                ),
+                _ => continue,
+            };
+            if strip.0.is_null() {
+                let _ = DeleteObject(region);
+                return Err(CommandError::internal("无法创建灵动岛直边区域"));
+            }
+            if CombineRgn(region, region, strip, RGN_OR).0 == 0 {
+                let _ = DeleteObject(region);
+                let _ = DeleteObject(strip);
+                return Err(CommandError::internal("无法合并灵动岛区域"));
+            }
+            let _ = DeleteObject(strip);
         }
         // Windows owns the region only after a successful SetWindowRgn.
         if SetWindowRgn(hwnd, region, true) == 0 {

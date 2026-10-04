@@ -60,7 +60,7 @@ export type RunOcrOnCropRequest = { sessionId: number; x: number; y: number; w: 
 export interface OcrOutput { text: string; }
 export type FinishOcrRequest = { sessionId: number; text: string };
 export type CancelScreenshotRequest = { sessionId: number };
-export type SetBallWindowBoundsRequest = { x: number; y: number; width: number; height: number; retainSurface?: boolean; clip?: { cornerRadius?: number; pad?: number } };
+export type SetBallWindowBoundsRequest = { x: number; y: number; width: number; height: number; retainSurface?: boolean; clip?: { cornerRadius?: number; pad?: number; squareEdges?: Array<"top" | "right" | "bottom" | "left"> } };
 export type ShowMainWithTextRequest = { text: string };
 export type RevealQuickResultRequest = { requestSeq: number };
 export type SaveBallPositionRequest = { x: number; y: number; reposition?: boolean };

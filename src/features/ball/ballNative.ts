@@ -27,8 +27,13 @@ export async function setBallWindowBounds(bounds: {
   width: number;
   height: number;
   retainSurface?: boolean;
-  /** Physical-px painted corner radius and clip ring for retainSurface clips. */
-  clip?: { cornerRadius?: number; pad?: number };
+  /** Physical-px painted corner radius and clip ring for retainSurface clips;
+      squareEdges are the sides the painted shape docks against (corners squared). */
+  clip?: {
+    cornerRadius?: number;
+    pad?: number;
+    squareEdges?: Array<"top" | "right" | "bottom" | "left">;
+  };
 }) {
   return setBallWindowBoundsCmd(bounds);
 }

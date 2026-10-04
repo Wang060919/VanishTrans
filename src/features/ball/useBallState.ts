@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import {
   type BallAction, type DockSide, type IslandMode, type IslandPhase, type IslandPresentation,
 } from "../islandModel";
+import { type SnapEdge } from "./ballSnap";
 import { IslandTransitionCoordinator } from "../islandTransitionCoordinator";
 import { type IslandErrorDetail } from "./ballActivity";
 import type { IslandResult } from "../../lib/translationResult";
@@ -61,6 +62,21 @@ export function useBallState() {
   const transitionSettledAtRef = useRef(Number.NEGATIVE_INFINITY);
   const fullPinnedRef = useRef(false);
   const phaseRef = useRef<IslandPhase>("working");
+  /** Surface lift animation state while a native drag is in progress. */
+  const [dragging, setDragging] = useState(false);
+  /** Edges the window is currently snapped against (drives flush-edge layout). */
+  const [dockedEdges, setDockedEdges] = useState<SnapEdge[]>([]);
+  const dockedEdgesRef = useRef<SnapEdge[]>([]);
+  const commitDockedEdges = useCallback((edges: SnapEdge[]) => {
+    const current = dockedEdgesRef.current;
+    if (current.length === edges.length && current.every((edge, i) => edge === edges[i])) return;
+    dockedEdgesRef.current = edges;
+    setDockedEdges(edges);
+  }, []);
+  /** Monotonic stamp; changing it replays the snap-landing squash. */
+  const [landedAt, setLandedAt] = useState(0);
+  /** Cancellation token for in-flight snap-settle animations. */
+  const snapAnimSeqRef = useRef(0);
 
   const commitPresentation = useCallback((next: IslandPresentation) => {
     presentationRef.current = next;
@@ -76,6 +92,7 @@ export function useBallState() {
     phaseRef, commitPresentation, presentation, setPresentation, phase, setPhase, dockSide, setDockSide,
     busyAction, setBusyAction, notice, setNotice,
     result, resultRef, commitResult, resultToOpen, setResultToOpen,
+    dragging, setDragging, dockedEdges, setDockedEdges, dockedEdgesRef, commitDockedEdges, landedAt, setLandedAt, snapAnimSeqRef,
   };
 }
 export type BallState = ReturnType<typeof useBallState>;

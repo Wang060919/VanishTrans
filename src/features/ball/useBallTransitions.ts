@@ -27,6 +27,7 @@ const STAGING_OWNER = /ForegroundStaging|Shell_.*TrayWnd|Progman/;
 type BallTransitionsState = Pick<BallState,
   "modeRef" | "nativeModeRef" | "nativeTargetModeRef" | "presentationRef" |
   "dockSideRef" | "anchorPositionRef" | "idleOuterSizeRef" | "noticeRef" |
+  "dockedEdgesRef" |
   "commitPresentation" | "setDockSide" | "setNotice" | "shouldReduceMotion" |
   "transitionCoordinator" | "statusTimerRef" | "expectingTranslationRef" |
   "fullPinnedRef" | "focusCollapseTimerRef" | "transitionSettledAtRef" |
@@ -35,7 +36,8 @@ type BallTransitionsState = Pick<BallState,
 
 export function useBallTransitions({
   modeRef, nativeModeRef, nativeTargetModeRef, presentationRef, dockSideRef, anchorPositionRef,
-  idleOuterSizeRef, noticeRef, commitPresentation, setDockSide, setNotice, shouldReduceMotion,
+  idleOuterSizeRef, noticeRef, dockedEdgesRef, commitPresentation, setDockSide, setNotice,
+  shouldReduceMotion,
   transitionCoordinator, statusTimerRef, expectingTranslationRef, fullPinnedRef,
   focusCollapseTimerRef, transitionSettledAtRef, busyActionRef, draggingRef,
 }: BallTransitionsState) {
@@ -45,12 +47,14 @@ export function useBallTransitions({
     // draining resolves without touching the native surface.
     runBallTransition({
       modeRef, nativeModeRef, nativeTargetModeRef, presentationRef, dockSideRef, anchorPositionRef,
-      idleOuterSizeRef, noticeRef, commitPresentation, setDockSide, setNotice, transitionCoordinator,
+      idleOuterSizeRef, noticeRef, dockedEdgesRef,
+      commitPresentation, setDockSide, setNotice, transitionCoordinator,
     }, request, context).finally(() => {
       transitionSettledAtRef.current = performance.now();
     }), [
     modeRef, nativeModeRef, nativeTargetModeRef, presentationRef, dockSideRef, anchorPositionRef,
-    idleOuterSizeRef, noticeRef, commitPresentation, setDockSide, setNotice, transitionCoordinator,
+    idleOuterSizeRef, noticeRef, dockedEdgesRef,
+    commitPresentation, setDockSide, setNotice, transitionCoordinator,
     transitionSettledAtRef,
   ]);
   const transitionMode = useCallback((

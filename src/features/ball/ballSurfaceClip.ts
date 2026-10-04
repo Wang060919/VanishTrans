@@ -18,7 +18,7 @@ type ClipRefs = Pick<BallState, "modeRef" | "nativeModeRef" | "transitionCoordin
  * edge — and for capsules the press bulge — hittable.
  */
 export function islandClipRequest({
-  target, side, scale, windowX, expandedY, windowWidth,
+  target, side, scale, windowX, expandedY, windowWidth, dockedEdges,
 }: {
   target: IslandMode;
   side: DockSide;
@@ -26,6 +26,7 @@ export function islandClipRequest({
   windowX: number;
   expandedY: number;
   windowWidth: number;
+  dockedEdges: Array<"top" | "right" | "bottom" | "left">;
 }) {
   const visible = getIslandGeometry(target);
   const width = Math.round(visible.width * scale);
@@ -41,6 +42,9 @@ export function islandClipRequest({
     clip: {
       cornerRadius: Math.round(visible.borderRadius * scale),
       pad: getIslandClipPad(target, scale),
+      // Keep the wire field absent when nothing is docked — it changes the
+      // region shape only when present.
+      ...(dockedEdges.length ? { squareEdges: dockedEdges } : {}),
     },
   };
 }
@@ -55,6 +59,7 @@ interface ClipSpec {
   windowWidth: number;
   windowHeight: number;
   settleMs: number;
+  dockedEdges: Array<"top" | "right" | "bottom" | "left">;
 }
 
 function clipLogFields(spec: ClipSpec) {

@@ -17,7 +17,7 @@
 | 悬浮窗同步状态 | `src/features/ball/useBallState.ts` 维护渲染状态及异步回调使用的 refs |
 | 原生窗口过渡 | `src/features/ball/useBallTransitions.ts` 调度；`src/features/ball/ballTransition.ts` 执行；`src/features/ball/ballRollback.ts` 失败回滚 |
 | 尺寸与停靠 | `src/features/ball/ballGeometry.ts` 测量展开位置；`src/features/ball/ballCollapse.ts` 收起 |
-| 拖动与窗口事件 | `src/features/ball/useBallDrag.ts`、`src/features/ball/useBallFullPosition.ts`、`src/features/ball/useBallEvents.ts` |
+| 拖动与窗口事件 | `src/features/ball/useBallDrag.ts`、`src/features/ball/ballPointer.ts`、`src/features/ball/useBallFullPosition.ts`、`src/features/ball/useBallEvents.ts`;`ballSnap.ts` 处理松手边缘吸附判定与归位动画 |
 | 原生调用边界 | `src/services/tauriBridge.ts` 是命令 IPC 入口；Tauri 事件与窗口 API 保留在对应适配层 |
 | 后端翻译入口 | `src-tauri/src/commands/translate.rs` 验证请求身份、访问缓存、提交 TM/历史 |
 | 翻译路由与取消 | `src-tauri/src/translate.rs` 选择提供商，按窗口取消请求 |

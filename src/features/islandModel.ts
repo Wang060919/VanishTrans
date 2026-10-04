@@ -49,6 +49,10 @@ export const ISLAND_WINDOW_POLICY = {
   edgeGutter: 8,
   topGutter: 0,
   topSnapDistance: 32,
+  /** Drop-and-snap trigger distance for left/right/bottom edges, CSS px. */
+  edgeSnapDistance: 24,
+  /** Top drops within ±ratio of the work-area center land as a centered notch. */
+  topCenterSnapRatio: 0.15,
 } as const;
 
 /** Compact modes are capsules; result/full are rounded-rect cards. */

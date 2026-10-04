@@ -19,6 +19,9 @@ export default function BallWindow() {
       presentation={island.presentation}
       phase={island.phase}
       dockSide={island.dockSide}
+      dragging={island.dragging}
+      dockedEdges={island.dockedEdges}
+      landedAt={island.landedAt}
       busyAction={island.busyAction}
       notice={island.notice}
       hasResult={island.result !== null}
