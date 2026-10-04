@@ -1,12 +1,9 @@
 use super::session::ScreenshotPayload;
 
-/// Maximum width for the preview/OCR image. Larger images are resized to
-/// this width before encoding, which dramatically reduces memory usage
-/// on 4K/Retina displays while preserving enough detail for OCR.
-const MAX_PREVIEW_WIDTH: u32 = 1920;
-
-/// JPEG encoding quality (0-100).
-const JPEG_QUALITY: u8 = 85;
+/// JPEG encoding quality (0-100). The preview is pixel-matched to the
+/// monitor, so artifacts show directly on what the user reads — text rings
+/// noticeably below ~90.
+const JPEG_QUALITY: u8 = 90;
 
 /// Capture the monitor containing the cursor and return a lightweight preview,
 /// monitor metadata, and the original full-resolution image for OCR cropping.
@@ -50,16 +47,16 @@ pub fn capture_screenshot() -> Option<(ScreenshotPayload, image::DynamicImage)> 
         smart_regions.len()
     );
 
-    // Build preview JPEG from a resized copy (for display only)
-    let resized = if w > MAX_PREVIEW_WIDTH {
-        let new_h = (h as u64 * MAX_PREVIEW_WIDTH as u64) / w as u64;
-        original.resize_exact(
-            MAX_PREVIEW_WIDTH,
-            new_h.max(1) as u32,
-            image::imageops::FilterType::Lanczos3,
-        )
-    } else {
+    // Preview matches the monitor's physical size: on displays at or below
+    // the capture size `thumbnail` is skipped entirely — zero resample cost
+    // AND no browser-side upscaling (the two-stage downscale-then-stretch
+    // that made the old fixed-1920 preview look soft). Only captures bigger
+    // than the monitor's physical resolution pay a downscale. OCR reads the
+    // original.
+    let resized = if w <= monitor_width && h <= monitor_height {
         original.clone()
+    } else {
+        original.thumbnail(monitor_width.max(1), monitor_height.max(1))
     };
     log::info!(
         "[capture] preview resized to {}x{}",
