@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { quickFrontendReady, reserveQuickRequest, revealQuickResult } from "../services/tauriBridge";
 import { logError } from "../lib/logger";
@@ -16,12 +16,26 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** `quick-translate` accepts an object payload; a bare string stays auto-translate for compatibility. */
+function normalizeQuickPayload(payload: unknown): { text: string; edit: boolean } | null {
+  if (typeof payload === "string") return payload.trim() ? { text: payload, edit: false } : null;
+  if (!payload || typeof payload !== "object") return null;
+  const candidate = payload as Record<string, unknown>;
+  if (typeof candidate.text !== "string" || !candidate.text.trim()) return null;
+  return { text: candidate.text, edit: candidate.edit === true };
+}
+
 /** Quick-window event registration; request semantics are shared with the main window. */
 export function useQuickTranslation() {
   const session = useTranslationSession(1_000_000, reserveQuickRequest, "quick");
   const direction = useRef<LangDirection>("auto");
-  const { doTranslateStream: translateText } = useTextTranslation(session, direction);
-  const { reset, handleStreamChunk, handleStreamDone, applyExternalResult } = session;
+  const { doTranslateStream: translateStream } = useTextTranslation(session, direction);
+  const { reset, handleStreamChunk, handleStreamDone, applyExternalResult, setInputText } = session;
+  const [editing, setEditing] = useState(false);
+  const translateText = useCallback(async (text: string) => {
+    setEditing(false);
+    await translateStream(text);
+  }, [translateStream]);
   useEffect(() => {
     let cancelled = false;
     let readyReported = false;
@@ -29,8 +43,18 @@ export function useQuickTranslation() {
     const setup = async () => {
       await quickFrontendReady(false).catch(() => {});
       const results = await Promise.allSettled([
-        Promise.resolve().then(() => listen<string>("quick-translate", ({ payload }) => {
-          void translateText(payload);
+        Promise.resolve().then(() => listen<unknown>("quick-translate", ({ payload }) => {
+          const request = normalizeQuickPayload(payload);
+          if (!request) return;
+          // Edit mode (OCR) only prefills the source; the user confirms the
+          // text and presses translate before any request fires.
+          if (request.edit) {
+            reset();
+            setInputText(request.text);
+            setEditing(true);
+            return;
+          }
+          void translateText(request.text);
         })),
         Promise.resolve().then(() => listen<string>("quick-translate-error", ({ payload }) => reset(payload))),
         Promise.resolve().then(() => listen<{ source: string; text: string; requestSeq: number }>(
@@ -85,6 +109,6 @@ export function useQuickTranslation() {
       cleanups.splice(0).forEach((cleanup) => cleanup());
       if (readyReported) void quickFrontendReady(false).catch(() => {});
     };
-  }, [applyExternalResult, handleStreamChunk, handleStreamDone, reset, translateText]);
-  return { ...session, translateText };
+  }, [applyExternalResult, handleStreamChunk, handleStreamDone, reset, setInputText, translateText]);
+  return { ...session, translateText, editing };
 }

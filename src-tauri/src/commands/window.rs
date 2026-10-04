@@ -160,7 +160,20 @@ pub(super) fn position_quick_window(app: &tauri::AppHandle, window: &tauri::Webv
     let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
 }
 
-fn deliver_quick_translation(app: &tauri::AppHandle, text: String) -> Result<(), CommandError> {
+/// `edit` delivers OCR text for confirmation before translating instead of
+/// starting a request immediately.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QuickTranslatePayload {
+    text: String,
+    edit: bool,
+}
+
+fn deliver_quick_translation(
+    app: &tauri::AppHandle,
+    text: String,
+    edit: bool,
+) -> Result<(), CommandError> {
     let window = app
         .get_webview_window("quick")
         .ok_or_else(|| CommandError::not_found("找不到迷你翻译窗口"))?;
@@ -172,7 +185,7 @@ fn deliver_quick_translation(app: &tauri::AppHandle, text: String) -> Result<(),
         .set_focus()
         .map_err(|error| CommandError::internal(error.to_string()))?;
     window
-        .emit("quick-translate", text)
+        .emit("quick-translate", QuickTranslatePayload { text, edit })
         .map_err(|error| CommandError::internal(error.to_string()))
 }
 
@@ -192,11 +205,22 @@ pub(crate) async fn show_quick_translation_async(
     app: &tauri::AppHandle,
     text: String,
 ) -> Result<(), CommandError> {
+    show_quick_translation_async_edit(app, text, false).await
+}
+
+/// Same async delivery, with the OCR edit-first mode opt-in.
+pub(crate) async fn show_quick_translation_async_edit(
+    app: &tauri::AppHandle,
+    text: String,
+    edit: bool,
+) -> Result<(), CommandError> {
     let seq = super::quick_result::claim_quick_request();
     // Same contract as the sync variant: poll before taking QUICK_SEQUENCE.
     wait_for_frontend(&QUICK_FRONTEND_READY).await?;
-    super::quick_result::with_current_quick_request(seq, || deliver_quick_translation(app, text))
-        .unwrap_or(Ok(()))
+    super::quick_result::with_current_quick_request(seq, || {
+        deliver_quick_translation(app, text, edit)
+    })
+    .unwrap_or(Ok(()))
 }
 
 /// Alt+R's source fallback keeps the sequence claimed at shortcut start.
@@ -209,8 +233,10 @@ pub(crate) fn show_quick_translation_if_current(
     // mutex would block claim/reserve/reveal on every other quick request
     // (show_quick_result already follows this order).
     wait_for_frontend_sync(&QUICK_FRONTEND_READY)?;
-    super::quick_result::with_current_quick_request(seq, || deliver_quick_translation(app, text))
-        .unwrap_or(Ok(()))
+    super::quick_result::with_current_quick_request(seq, || {
+        deliver_quick_translation(app, text, false)
+    })
+    .unwrap_or(Ok(()))
 }
 
 /// Deliver an already-computed translation to the quick window. Pure display:

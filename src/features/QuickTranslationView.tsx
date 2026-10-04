@@ -12,6 +12,11 @@ interface Props {
   loading: boolean;
   copied: boolean;
   copyError?: string;
+  /** OCR edit-first mode: `source` becomes a textarea and the result area
+   * shows a translate button instead of a stream. `onRetry` doubles as the
+   * translate action for the edited text. */
+  editing?: boolean;
+  onSourceChange?: (text: string) => void;
   onDrag?: MouseEventHandler<HTMLElement>;
   onCopy: () => void;
   onExpand: () => void;
@@ -22,10 +27,11 @@ interface Props {
 /** Shared visual surface for the native quick window and browser preview. */
 export default function QuickTranslationView({
   shellRef, source, output, error, loading, copied, copyError, embedded = false, directionLabel,
+  editing = false, onSourceChange,
   onDrag, onCopy, onExpand, onClose, onRetry,
 }: Props) {
   const compactResult = Boolean(output) && !loading && !error;
-  const status = copied ? "已复制" : error ? "未完成" : loading ? "翻译中" : output ? "译文" : "即时翻译";
+  const status = copied ? "已复制" : editing ? "确认识别文本" : error ? "未完成" : loading ? "翻译中" : output ? "译文" : "即时翻译";
 
   // Embedded in the island, the header doubles as an expand affordance:
   // press-and-move drags the card (window-level pointer handlers), a plain
@@ -59,14 +65,40 @@ export default function QuickTranslationView({
         </div>
       </header>
 
-      {source && (!compactResult || !embedded) && (
+      {editing ? (
+        <textarea
+          className="quick-source quick-source--edit"
+          value={source}
+          onChange={(event) => onSourceChange?.(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+              event.preventDefault();
+              onRetry();
+            }
+          }}
+          aria-label="确认识别文本"
+          autoFocus
+        />
+      ) : source && (!compactResult || !embedded) ? (
         <div className="quick-source selectable" title={source}>
           {source}
         </div>
-      )}
+      ) : null}
 
       <div className="quick-result" role="status" aria-live="polite">
-        {error ? (
+        {editing ? (
+          <div className="quick-edit-actions">
+            <button
+              type="button"
+              className="island-result-copy quick-edit-translate"
+              onClick={onRetry}
+              disabled={!source.trim()}
+              aria-label="翻译识别文本"
+            >
+              翻译
+            </button>
+          </div>
+        ) : error ? (
           <div className="quick-error">
             <span>{error}</span>
             {source && !compactResult && (

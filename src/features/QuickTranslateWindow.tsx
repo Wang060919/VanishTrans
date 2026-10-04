@@ -16,7 +16,7 @@ export default function QuickTranslateWindow() {
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
-  const { inputText: source, outputText: output, translationError: error, loading, translateText } = useQuickTranslation();
+  const { inputText: source, outputText: output, translationError: error, loading, translateText, editing, setInputText } = useQuickTranslation();
   useThemeSync();
   useEffect(() => {
     document.body.classList.add("quick-window-body");
@@ -92,6 +92,8 @@ export default function QuickTranslateWindow() {
       loading={loading}
       copied={copied}
       copyError={copyError}
+      editing={editing}
+      onSourceChange={setInputText}
       onDrag={handleDrag}
       onCopy={() => void handleCopy()}
       onExpand={handleExpand}

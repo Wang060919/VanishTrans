@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use tauri::Manager;
 
-use crate::commands::window::{show_quick_translation_async, show_without_activation};
+use crate::commands::window::{show_quick_translation_async_edit, show_without_activation};
 use crate::error::CommandError;
 use crate::lock::LockRecover;
 use crate::ocr::{OcrOutput, ScreenshotBuffer, ScreenshotPayload, ScreenshotWindowState};
@@ -233,5 +233,7 @@ pub async fn finish_ocr(
         let _ = w.close();
     }
     restore_windows(&app, windows);
-    show_quick_translation_async(&app, text).await
+    // OCR output needs confirmation: the quick window opens in edit mode so
+    // the user can fix recognition mistakes before translating.
+    show_quick_translation_async_edit(&app, text, true).await
 }

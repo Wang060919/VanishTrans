@@ -270,3 +270,26 @@ body.quick-window-body .quick-translate-shell {
 .island-result-expand:hover { color: #fff; background: #171719; }
 .island-result-footer button:focus-visible { outline: 2px solid #a1a1aa; outline-offset: 3px; }
 .island-result-footer button:active { transform: scale(.97); }
+
+/* OCR edit-first mode: the source is a real textarea, the result area is
+ * replaced by a single confirm-to-translate action. */
+textarea.quick-source.quick-source--edit {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: 110px;
+  min-height: 56px;
+  margin: 4px 22px 0;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  color: rgba(250, 250, 252, 0.9);
+  resize: none;
+  overflow-y: auto;
+  outline: none;
+}
+textarea.quick-source.quick-source--edit:focus { border-bottom-color: rgba(173, 183, 255, 0.45); }
+.quick-edit-actions { display: flex; justify-content: flex-end; }
+.quick-edit-translate:disabled { opacity: 0.45; cursor: default; }
