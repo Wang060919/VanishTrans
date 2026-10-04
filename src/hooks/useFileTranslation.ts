@@ -1,4 +1,5 @@
 import { useCallback, type RefObject } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { translateBatch, translateWithDirection } from "../services/tauriBridge";
 import { isSegmentCountMismatch } from "../lib/errors";
 import { detectFileType, MAX_TRANSLATION_CHARS } from "../lib/fileParser";
@@ -28,6 +29,15 @@ export function useFileTranslation(
       }
       const { segments, rebuild } = prepareTranslationFile(filename, content);
       setFileStatus(requestId, `解析到 ${segments.length} 段文本，翻译中...`);
+      // The free provider translates segment by segment and reports progress;
+      // the paid path is one request and never emits this event. No event
+      // backend (tests) just leaves the "翻译中" text until completion.
+      let unlisten = () => {};
+      try {
+        unlisten = await listen<{ completed: number; total: number }>("file-progress", ({ payload }) => {
+          setFileStatus(requestId, `已翻译 ${payload.completed}/${payload.total} 段`);
+        });
+      } catch { /* no event backend */ }
       try {
         const translated = await translateBatch({ segments, direction: requestedDirection });
         if (!lifecycle.acceptsResult(requestId)) return;
@@ -39,6 +49,8 @@ export function useFileTranslation(
           text: segments.join("\n\n"), direction: requestedDirection,
         });
         complete(requestId, raw, `${filename} 结构丢失，已显示纯文本结果`);
+      } finally {
+        unlisten();
       }
     } catch (error) {
       fail(requestId, error);

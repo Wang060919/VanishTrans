@@ -20,6 +20,15 @@ struct StreamDoneEvent {
     full_text: String,
 }
 
+/// Per-segment batch progress for the free provider path. The paid path is a
+/// single request, so only the per-segment loop emits this.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileProgressEvent {
+    completed: usize,
+    total: usize,
+}
+
 /// Arguments for `translate_stream`, grouped so the command stays small.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -452,6 +461,13 @@ pub async fn translate_batch(
                 return Err(CommandError::cancelled());
             }
             translated.push(text);
+            let _ = window.emit(
+                "file-progress",
+                FileProgressEvent {
+                    completed: translated.len(),
+                    total: segments.len(),
+                },
+            );
         }
         return Ok(translated);
     }
