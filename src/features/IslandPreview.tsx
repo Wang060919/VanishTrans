@@ -58,6 +58,7 @@ export default function IslandPreview() {
     phase: visualPhase,
     generation: 0,
   };
+  const [hasResult, setHasResult] = useState(phase === "done" || mode === "result");
   const frameStyle = {
     "--island-preview-width": `${dimensions.width}px`,
     "--island-preview-height": `${dimensions.height}px`,
@@ -88,9 +89,9 @@ export default function IslandPreview() {
         <TranslationIslandView
           presentation={presentation}
           phase={phase}
-          hasResult={phase === "done" || mode === "result"}
+          hasResult={hasResult}
           resultContent={<IslandResultPanel result={previewResult} preview
-            onClose={() => setMode("idle")} onExpand={() => {
+            onClose={() => { setHasResult(false); setMode("idle"); }} onExpand={() => {
               setInputText(previewResult.source); setOutputText(previewResult.text);
               setDirection(previewResult.direction); setMode("full");
             }} />}
@@ -155,18 +156,20 @@ export default function IslandPreview() {
             />
           )}
           onRunAction={(action) => {
-            if (interactive && action === "main") setMode(phase === "done" ? "result" : "full");
+            if (interactive && action === "main") setMode("full");
           }}
           onCoreClick={() => {
             if (!interactive) return;
             setMode((current) => {
+              if (current === "idle" && hasResult) return "result";
               if (current === "idle" || current === "peek") return "actions";
               if (current === "actions") return "idle";
-              if (current === "status" && phase === "done") return "result";
+              if (current === "status" && phase === "done") return hasResult ? "result" : "idle";
               if (current === "status" && phase === "error") return "full";
               return current;
             });
           }}
+          onOpenActions={() => { if (interactive) setMode("actions"); }}
           onCorePointerDown={() => {}}
           onCorePointerMove={() => {}}
           onCorePointerUp={() => {}}

@@ -1,4 +1,5 @@
 import { motion, type Transition } from "framer-motion";
+import { MoreHorizontal } from "lucide-react";
 import IslandCompactContent from "./IslandCompactContent";
 import { useEffect, useRef } from "react";
 import type {
@@ -41,6 +42,7 @@ interface TranslationIslandViewProps {
   hasResult?: boolean;
   onRunAction: (action: BallAction, command: string) => void;
   onCoreClick: () => void;
+  onOpenActions: () => void;
   onCorePointerDown: PointerEventHandler<HTMLElement>;
   onCorePointerMove: PointerEventHandler<HTMLElement>;
   onCorePointerUp: PointerEventHandler<HTMLElement>;
@@ -63,6 +65,7 @@ export default function TranslationIslandView({
   hasResult = false,
   onRunAction,
   onCoreClick,
+  onOpenActions,
   onCorePointerDown,
   onCorePointerMove,
   onCorePointerUp,
@@ -127,7 +130,7 @@ export default function TranslationIslandView({
   ].filter(Boolean).join(" ");
 
   const coreLabel = mode === "idle"
-    ? "展开快速工具"
+    ? (hasResult ? "查看译文" : "展开快速工具")
     : mode === "peek"
       ? "固定快速工具"
       : mode === "actions"
@@ -214,6 +217,17 @@ export default function TranslationIslandView({
             )}
             {mode === "idle" && hasResult && <span className="island-idle-dot" aria-hidden="true" />}
           </motion.button>
+        )}
+        {mode === "idle" && hasResult && (
+          <button
+            type="button"
+            className="translation-island__more"
+            aria-label="更多操作"
+            title="更多操作"
+            onClick={onOpenActions}
+          >
+            <MoreHorizontal size={14} aria-hidden="true" />
+          </button>
         )}
       </motion.div>
     </aside>

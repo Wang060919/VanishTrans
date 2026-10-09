@@ -6,7 +6,7 @@ import {
 } from "../islandModel";
 import { type SnapEdge } from "./ballSnap";
 import { IslandTransitionCoordinator } from "../islandTransitionCoordinator";
-import { type IslandErrorDetail } from "./ballActivity";
+import { TranslationActivityAggregator, type IslandErrorDetail } from "./ballActivity";
 import type { IslandResult } from "../../lib/translationResult";
 
 /** Owns island state and synchronous refs. Other hooks receive only their required fields. */
@@ -29,6 +29,11 @@ export function useBallState() {
     resultRef.current = next;
     setResult(next);
   }, []);
+  const activityAggregator = useRef(new TranslationActivityAggregator());
+  const dismissResult = useCallback(() => {
+    activityAggregator.current.completedResult = null;
+    commitResult(null);
+  }, [commitResult]);
   const shouldReduceMotion = useReducedMotion();
   const mode = presentation.mode;
 
@@ -91,7 +96,7 @@ export function useBallState() {
     focusCollapseTimerRef, transitionSettledAtRef, statusErrorRef,
     phaseRef, commitPresentation, presentation, setPresentation, phase, setPhase, dockSide, setDockSide,
     busyAction, setBusyAction, notice, setNotice,
-    result, resultRef, commitResult, resultToOpen, setResultToOpen,
+    result, resultRef, commitResult, dismissResult, activityAggregator, resultToOpen, setResultToOpen,
     dragging, setDragging, dockedEdges, setDockedEdges, dockedEdgesRef, commitDockedEdges, landedAt, setLandedAt, snapAnimSeqRef,
   };
 }

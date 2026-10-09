@@ -31,16 +31,16 @@ vi.mock("@tauri-apps/api/window", () => ({
     outerPosition: () => Promise.resolve({ x: 902, y: 0 }),
     outerSize: () => Promise.resolve({ width: 116, height: 42 }),
     innerSize: () => Promise.resolve({ width: 116, height: 42 }),
-    setFocus: () => Promise.resolve(), startDragging: mocks.drag,
+    setFocus: () => Promise.resolve(), isFocused: () => Promise.resolve(false), startDragging: mocks.drag,
     onFocusChanged: (listener: typeof mocks.focus) => {
       mocks.focus = listener; return Promise.resolve(() => {});
     },
   }),
 }));
 const result = { source: "Stay focused.", text: "保持专注。", direction: "en2zh" };
-const dispatch = (state: string, revision: number, requestId = 1) => act(() => {
+const dispatch = (state: string, revision: number, requestId = 1, sourceId = "quick:A") => act(() => {
   mocks.listeners.get("translation-state")?.({ payload: {
-    state, sourceId: "quick:A", requestId, revision, ...(state === "done" ? { result } : {}),
+    state, sourceId, requestId, revision, ...(state === "done" ? { result } : {}),
   } });
 });
 const surface = () => document.querySelector(".translation-island__surface");
@@ -82,17 +82,42 @@ describe("island result flow", () => {
     expect(screen.getByRole("button", { name: "源语言：英语" })).toBeInTheDocument();
     expect(mocks.invoke.mock.calls.some(([name]) => ["translate", "translate_stream", "translate_with_direction"].includes(name))).toBe(false);
   });
-  it("lets a closed result be reopened from the tools and keeps reading separate from native dragging", async () => {
+  it("retains the result after focus loss and keeps reading separate from native dragging", async () => {
     await openResult();
     fireEvent.pointerDown(screen.getByText(result.text), { button: 0, clientX: 20, clientY: 20 });
     fireEvent.pointerMove(screen.getByText(result.text), { clientX: 100, clientY: 20 });
     expect(mocks.drag).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "关闭迷你翻译" }));
+    act(() => mocks.focus({ payload: false }));
     await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "idle"));
-    fireEvent.click(screen.getByRole("button", { name: "展开快速工具" }));
-    fireEvent.click(await screen.findByRole("button", { name: "查看译文" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看译文" }));
     await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "result"));
     expect(screen.getByText(result.text)).toBeInTheDocument();
+  });
+  it("dismisses the result on explicit close without restoring it from unrelated or late events", async () => {
+    await openResult();
+    fireEvent.click(screen.getByRole("button", { name: "关闭迷你翻译" }));
+    await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "idle"));
+    dispatch("idle", 1, 1, "quick:B");
+    dispatch("done", 2);
+    expect(screen.queryByRole("button", { name: "查看译文" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "更多操作" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "展开快速工具" }));
+    await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "actions"));
+    dispatch("done", 3, 2);
+    fireEvent.click(await screen.findByRole("button", { name: "查看翻译结果" }));
+    await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "result"));
+    expect(screen.getByText(result.text)).toBeInTheDocument();
+  });
+  it("keeps the action strip reachable through the more button while a result is ready", async () => {
+    await openResult();
+    act(() => mocks.focus({ payload: false }));
+    await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "idle"));
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "actions"));
+    expect(screen.getByRole("button", { name: "主界面" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看译文" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "主界面" }));
+    await waitFor(() => expect(surface()).toHaveAttribute("data-mode", "full"));
   });
   it("invalidates an open result when new work starts, ignoring the old completion", async () => {
     await openResult();

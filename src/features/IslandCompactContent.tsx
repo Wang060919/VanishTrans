@@ -136,7 +136,7 @@ export default function IslandCompactContent({ mode, phase, instant, generation,
                       type="button"
                       disabled={busyAction !== null}
                       data-busy={busyAction === "main" || undefined}
-                      title={hasResult ? "查看译文" : "打开主界面"}
+                      title="打开主界面"
                       onClick={() => onRunAction("main", "")}
                       initial={instant ? false : { opacity: 0, y: 3 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -147,7 +147,7 @@ export default function IslandCompactContent({ mode, phase, instant, generation,
                       }}
                     >
                       {busyAction === "main" ? <LoaderCircle className="translation-island__action-loader" size={15} aria-hidden="true" /> : <PanelTopOpen size={17} strokeWidth={2.2} aria-hidden="true" />}
-                      <span>{hasResult ? "查看译文" : "主界面"}</span>
+                      <span>主界面</span>
                     </motion.button>
                   </motion.nav>
                 )}

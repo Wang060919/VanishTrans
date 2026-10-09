@@ -550,6 +550,63 @@ body.ball-window-body #root {
 
 .island-idle-dot { width: 4px; height: 4px; margin-left: 6px; border-radius: 50%; background: #86d9b4; flex: none; }
 .translation-island--has-result.translation-island--idle .brand-mark { width: 18px; height: 18px; }
+.translation-island--has-result.translation-island--idle .translation-island__core {
+  box-sizing: border-box;
+  padding-right: 32px;
+}
+.translation-island--has-result.translation-island--idle .translation-island__core:hover .island-idle-reveal,
+.translation-island--has-result.translation-island--idle .translation-island__core:focus-visible .island-idle-reveal {
+  margin-left: 4px;
+}
+.translation-island--has-result.translation-island--idle .island-idle-dot { margin-left: 4px; }
+
+/* Secondary entry on the ready pill: the core reads the result, this opens the
+   action strip. Absolutely positioned so idle geometry and snap anchors stay
+   untouched; revealed on surface hover or keyboard focus. */
+.translation-island__more {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  z-index: 4;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 150ms var(--ease-standard),
+    background-color 160ms var(--ease-standard),
+    color 160ms var(--ease-standard);
+}
+
+.translation-island--idle:hover .translation-island__more,
+.translation-island--idle:focus-within .translation-island__more,
+.translation-island__more:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.translation-island__more:hover {
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.translation-island__more:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px rgba(var(--island-accent), 0.72);
+}
+
+.translation-island--instant .translation-island__more {
+  transition: none;
+}
 
 .translation-island__core:hover:not(:disabled) {
   color: rgba(255, 255, 255, 0.96);
@@ -654,6 +711,7 @@ body.ball-window-body #root {
   .translation-island__actions button,
   .translation-island__action-loader,
   .translation-island__activity i,
+  .translation-island__more,
   .translation-island__core .brand-lockup,
   .translation-island__core .brand-mark__node,
   .island-idle-reveal {

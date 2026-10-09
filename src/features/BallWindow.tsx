@@ -27,7 +27,7 @@ export default function BallWindow() {
       hasResult={island.result !== null}
       resultContent={island.result && (
         <IslandResultPanel result={island.result} onExpand={() => void island.openResultInFull()}
-          onClose={() => void island.collapseFull()} />
+          onClose={() => void island.closeResult()} />
       )}
       shouldReduceMotion={island.shouldReduceMotion}
       fullContent={(
@@ -44,6 +44,7 @@ export default function BallWindow() {
       )}
       onRunAction={(action, command) => void island.runAction(action, command)}
       onCoreClick={() => void island.handleCoreClick()}
+      onOpenActions={() => void island.openActions()}
       onCorePointerDown={island.handlePointerDown}
       onCorePointerMove={island.handlePointerMove}
       onCorePointerUp={island.handlePointerEnd}

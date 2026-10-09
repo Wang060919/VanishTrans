@@ -1,10 +1,9 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { useThemeSync } from "../../hooks/useTheme";
 import { logInfo } from "../../lib/logger";
 import { getForegroundWindowInfo } from "../../services/tauriBridge";
-import { TranslationActivityAggregator } from "./ballActivity";
 import { type BallState } from "./useBallState";
 import { type BallTransitions } from "./useBallTransitions";
 import { type BallActions } from "./useBallActions";
@@ -14,17 +13,16 @@ type BallEventsState = Pick<BallState,
   "mode" | "modeRef" | "draggingRef" | "transitionCoordinator" |
   "coordinatorLifetimeRef" | "expectingTranslationRef" | "expectedActivityTimerRef" | "noticeTimerRef" |
   "statusTimerRef" | "fullPinnedRef" | "phaseRef" | "phase" | "busyActionRef" | "noticeRef" |
-  "setPhase" | "commitResult" | "statusErrorRef"
+  "setPhase" | "commitResult" | "statusErrorRef" | "activityAggregator"
 > & Pick<BallTransitions, "transitionMode" | "requestFocusCollapse" | "cancelFocusCollapse">
   & Pick<BallActions, "scheduleStatusCollapse"> & Pick<BallDrag, "clearPointerOrigin">;
 
 export function useBallEvents({
   mode, modeRef, draggingRef, transitionCoordinator, coordinatorLifetimeRef, expectingTranslationRef,
   expectedActivityTimerRef, noticeTimerRef, statusTimerRef, fullPinnedRef, phaseRef, phase, setPhase, commitResult,
-  busyActionRef, noticeRef, statusErrorRef,
+  busyActionRef, noticeRef, statusErrorRef, activityAggregator,
   transitionMode, requestFocusCollapse, cancelFocusCollapse, scheduleStatusCollapse, clearPointerOrigin,
 }: BallEventsState) {
-  const activityAggregator = useRef(new TranslationActivityAggregator());
   const clearNoticeTimer = useCallback(() => {
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
   }, [noticeTimerRef]);
@@ -173,7 +171,7 @@ export function useBallEvents({
   }, [
     clearPointerOrigin, transitionCoordinator, transitionMode, modeRef, draggingRef, expectingTranslationRef,
     expectedActivityTimerRef, clearNoticeTimer, statusTimerRef, fullPinnedRef, phaseRef, setPhase, commitResult,
-    busyActionRef, noticeRef, statusErrorRef, requestFocusCollapse, cancelFocusCollapse,
+    busyActionRef, noticeRef, statusErrorRef, activityAggregator, requestFocusCollapse, cancelFocusCollapse,
   ]);
 
   useEffect(() => {

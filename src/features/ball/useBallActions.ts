@@ -6,12 +6,13 @@ import { invokeCommand } from "./ballNative";
 import { QUICK_SESSION_SCOPE } from "./ballActivity";
 import { type BallState } from "./useBallState";
 import { type BallTransitions } from "./useBallTransitions";
+import { useBallViewActions } from "./useBallViewActions";
 
 type BallActionsState = Pick<BallState,
   "modeRef" | "draggingRef" | "transitionCoordinator" | "lastDragEndedAtRef" |
   "expectingTranslationRef" | "busyActionRef" | "noticeRef" | "expectedActivityTimerRef" |
   "noticeTimerRef" | "statusTimerRef" | "phase" | "setBusyAction" |
-  "setNotice" | "resultRef" | "setResultToOpen" | "transitionSettledAtRef" | "statusErrorRef"
+  "setNotice" | "resultRef" | "setResultToOpen" | "dismissResult" | "transitionSettledAtRef" | "statusErrorRef"
 > & Pick<BallTransitions, "transitionMode" | "requestFocusCollapse">;
 
 /** The status-mode collapse leaves errors up twice as long as done notices;
@@ -21,8 +22,12 @@ const ERROR_NOTICE_MS = 6000;
 export function useBallActions({
   modeRef, draggingRef, transitionCoordinator, lastDragEndedAtRef, expectingTranslationRef, busyActionRef,
   noticeRef, expectedActivityTimerRef, noticeTimerRef, statusTimerRef, phase, setBusyAction, setNotice,
-  transitionMode, resultRef, setResultToOpen, transitionSettledAtRef, statusErrorRef, requestFocusCollapse,
+  transitionMode, resultRef, setResultToOpen, dismissResult, transitionSettledAtRef, statusErrorRef, requestFocusCollapse,
 }: BallActionsState) {
+  const viewActions = useBallViewActions({
+    modeRef, resultRef, setResultToOpen, dismissResult, draggingRef, lastDragEndedAtRef, transitionMode,
+  });
+  const { expandFull } = viewActions;
   const scheduleStatusCollapse = useCallback((statusPhase: IslandPhase) => {
     if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
     statusTimerRef.current = null;
@@ -109,26 +114,15 @@ export function useBallActions({
       }
       return;
     }
+    if (modeRef.current === "idle" && resultRef.current) {
+      await transitionMode("result");
+      return;
+    }
     await toggleActions();
   }, [
     phase, toggleActions, transitionMode, modeRef, draggingRef, lastDragEndedAtRef, resultRef,
     busyActionRef, expectingTranslationRef, transitionCoordinator, showNotice, statusErrorRef,
   ]);
-
-  const openResultInFull = useCallback(async () => {
-    if (!resultRef.current || draggingRef.current
-      || performance.now() - lastDragEndedAtRef.current < 250) return;
-    setResultToOpen(resultRef.current);
-    await transitionMode("full");
-  }, [resultRef, draggingRef, lastDragEndedAtRef, setResultToOpen, transitionMode]);
-
-  const expandFull = useCallback(async () => {
-    await transitionMode("full");
-  }, [transitionMode]);
-
-  const collapseFull = useCallback(async () => {
-    await transitionMode("idle");
-  }, [transitionMode]);
 
   const runAction = useCallback(async (action: BallAction, command: string) => {
     if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
@@ -136,8 +130,7 @@ export function useBallActions({
       busyActionRef.current = action;
       setBusyAction(action);
       try {
-        if (resultRef.current) await transitionMode("result");
-        else await expandFull();
+        await expandFull();
       } finally {
         busyActionRef.current = null;
         setBusyAction(null);
@@ -191,9 +184,14 @@ export function useBallActions({
     }
   }, [
     expandFull, showNotice, transitionMode, modeRef, draggingRef, lastDragEndedAtRef,
-    expectingTranslationRef, busyActionRef, expectedActivityTimerRef, setBusyAction, resultRef,
+    expectingTranslationRef, busyActionRef, expectedActivityTimerRef, setBusyAction,
   ]);
 
-  return { scheduleStatusCollapse, handleIslandBlur, handleCoreClick, expandFull, collapseFull, runAction, openResultInFull };
+  const openActions = useCallback(async () => {
+    if (draggingRef.current || performance.now() - lastDragEndedAtRef.current < 250) return;
+    await toggleActions();
+  }, [toggleActions, draggingRef, lastDragEndedAtRef]);
+
+  return { scheduleStatusCollapse, handleIslandBlur, handleCoreClick, openActions, runAction, ...viewActions };
 }
 export type BallActions = ReturnType<typeof useBallActions>;
