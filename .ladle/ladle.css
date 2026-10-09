@@ -1,0 +1,143 @@
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Variable.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Noto Sans SC";
+  src: url("/fonts/NotoSansSC-Subset.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.vt-ladle-canvas {
+  min-height: 100vh;
+  box-sizing: border-box;
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.vt-ladle-canvas *,
+.vt-ladle-canvas *::before,
+.vt-ladle-canvas *::after {
+  box-sizing: border-box;
+}
+
+.vt-ladle-canvas button,
+.vt-ladle-canvas input,
+.vt-ladle-canvas textarea,
+.vt-ladle-canvas select {
+  font: inherit;
+}
+
+.vt-story-surface {
+  min-height: 100%;
+  padding: 28px;
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  background: var(--color-canvas);
+}
+
+.vt-story-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.vt-story-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.vt-story-label {
+  margin: 0 0 8px;
+  color: var(--color-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vt-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.vt-swatch {
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-surface-subtle);
+}
+
+.vt-swatch__color {
+  height: 72px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.vt-swatch__meta {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+.vt-swatch__meta strong {
+  color: var(--color-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.vt-swatch__meta code {
+  color: var(--color-ink-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.vt-island-stage {
+  display: grid;
+  min-height: 620px;
+  place-items: start center;
+  padding: 40px 24px;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(255,255,255,.07), transparent 38%),
+    #09090a;
+}
+
+.vt-island-stage__frame {
+  width: 640px;
+  max-width: 100%;
+  height: 560px;
+}
+
+.vt-island-result-fixture {
+  display: grid;
+  height: 100%;
+  gap: 8px;
+  padding: 18px 18px 16px;
+  align-content: start;
+  color: var(--color-ink);
+}
+
+.vt-island-result-fixture small {
+  color: var(--color-ink-muted);
+}
+
+.vt-island-full-fixture {
+  display: grid;
+  height: 100%;
+  padding: 28px;
+  background: #0b0b0c;
+  color: var(--color-ink);
+  place-content: center;
+  text-align: center;
+}

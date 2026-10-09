@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+.ladle-build/
 src-tauri/target/
 
 # Local browser QA artifacts

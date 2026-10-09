@@ -110,6 +110,8 @@ pnpm check:rust          # cargo fmt --check + clippy -D warnings + cargo test
 pnpm tsc --noEmit         # TS check
 pnpm test                 # Frontend tests (Vitest)
 pnpm lint                 # ESLint only
+pnpm ladle                # Component/UI lab at http://127.0.0.1:6106
+pnpm ladle:build          # Validate/build Ladle stories into .ladle-build/
 pnpm tauri dev            # Dev mode
 ```
 

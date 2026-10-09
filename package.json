@@ -19,7 +19,10 @@
     "check:architecture": "node scripts/check-architecture.mjs",
     "check": "pnpm check:architecture && pnpm check:commands && tsc --noEmit && vitest run && eslint src",
     "check:rust": "cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
-    "bump": "node scripts/bump-version.mjs"
+    "bump": "node scripts/bump-version.mjs",
+    "ladle": "ladle serve --port 6106 --theme dark",
+    "ladle:build": "ladle build",
+    "ladle:preview": "ladle preview --port 6106"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",
@@ -35,6 +38,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@ladle/react": "^5.1.1",
     "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
