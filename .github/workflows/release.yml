@@ -65,6 +65,20 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Load release notes
+        id: release-notes
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $notesPath = Join-Path 'docs/releases' "$env:RELEASE_TAG.md"
+          if (Test-Path -LiteralPath $notesPath) {
+            $delimiter = "release_notes_$([guid]::NewGuid().ToString('N'))"
+            "body<<$delimiter" >> $env:GITHUB_OUTPUT
+            Get-Content -LiteralPath $notesPath -Raw >> $env:GITHUB_OUTPUT
+            $delimiter >> $env:GITHUB_OUTPUT
+          }
+
       # The tag points to a commit that already passed the main-branch CI gate,
       # so the full check suite does not need to run again here.
       # tauri-action builds the NSIS installer, signs it with the updater key,
@@ -80,6 +94,7 @@ jobs:
           # Required alongside tagName when no release exists yet, otherwise
           # the action fails with '"releaseName" not set but required'.
           releaseName: ${{ format('VanishTrans {0}', github.ref_name) }}
+          releaseBody: ${{ steps.release-notes.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
