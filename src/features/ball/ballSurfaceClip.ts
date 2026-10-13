@@ -29,6 +29,7 @@ export function islandClipRequest({
   dockedEdges: Array<"top" | "right" | "bottom" | "left">;
 }) {
   const visible = getIslandGeometry(target);
+  const alignment: DockSide = side === "left" ? "right" : side === "right" ? "left" : "center";
   const width = Math.round(visible.width * scale);
   const height = Math.round(visible.height * scale);
   const offset = side === "center" ? Math.round((windowWidth - width) / 2)
@@ -42,6 +43,8 @@ export function islandClipRequest({
     clip: {
       cornerRadius: Math.round(visible.borderRadius * scale),
       pad: getIslandClipPad(target, scale),
+      scaleFactor: scale,
+      alignment,
       // Keep the wire field absent when nothing is docked — it changes the
       // region shape only when present.
       ...(dockedEdges.length ? { squareEdges: dockedEdges } : {}),

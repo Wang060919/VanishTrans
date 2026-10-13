@@ -270,7 +270,7 @@ describe("BallWindow", () => {
       width: 148,
       height: 42,
       retainSurface: true,
-      clip: { cornerRadius: 21, pad: 8 },
+      clip: { cornerRadius: 21, pad: 8, scaleFactor: 1, alignment: "center" },
     });
     expect(document.querySelector(".translation-island__core .brand-mark")).toBeInTheDocument();
   });
@@ -321,7 +321,7 @@ describe("BallWindow", () => {
       width: 148,
       height: 42,
       retainSurface: true,
-      clip: { cornerRadius: 21, pad: 8 },
+      clip: { cornerRadius: 21, pad: 8, scaleFactor: 1, alignment: "center" },
     });
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "set_ball_window_region",
@@ -947,7 +947,7 @@ describe("BallWindow", () => {
     expect(nativeSize).toEqual(fullSize);
     expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
       x: 886, y: 0, width: 148, height: 42,
-      retainSurface: true, clip: { cornerRadius: 21, pad: 8 },
+      retainSurface: true, clip: { cornerRadius: 21, pad: 8, scaleFactor: 1, alignment: "center" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "展开快速工具" }));
@@ -958,7 +958,7 @@ describe("BallWindow", () => {
     expect(nativeSize).toEqual({ width: 560, height: 540 });
     expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
       x: 848, y: 0, width: 224, height: 48,
-      retainSurface: true, clip: { cornerRadius: 24, pad: 8 },
+      retainSurface: true, clip: { cornerRadius: 24, pad: 8, scaleFactor: 1, alignment: "center" },
     });
     fireEvent.click(screen.getByRole("button", { name: "主界面" }));
     await advanceTimers(ISLAND_TIMING.surfaceMs + 64);

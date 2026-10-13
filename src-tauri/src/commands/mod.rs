@@ -5,7 +5,11 @@
 
 mod app;
 #[cfg(target_os = "windows")]
+mod ball_clip_layout;
+#[cfg(target_os = "windows")]
 pub(crate) mod ball_region;
+#[cfg(target_os = "windows")]
+mod ball_region_state;
 mod clipboard;
 mod config;
 mod history;

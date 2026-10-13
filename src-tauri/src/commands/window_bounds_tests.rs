@@ -1,6 +1,6 @@
 use super::*;
 use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject};
+use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DestroyWindow, SendMessageW, WM_NCACTIVATE, WS_CLIPCHILDREN,
     WS_OVERLAPPEDWINDOW,

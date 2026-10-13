@@ -48,6 +48,16 @@ pub(super) fn clip_rounded(
     pad: i32,
     square_edges: &[String],
 ) -> Result<(), CommandError> {
+    super::ball_region_state::set_clip(hwnd, bounds, corner_radius, pad, square_edges)
+}
+
+pub(super) fn apply_rounded(
+    hwnd: HWND,
+    bounds: RECT,
+    corner_radius: i32,
+    pad: i32,
+    square_edges: &[String],
+) -> Result<(), CommandError> {
     let width = bounds
         .right
         .checked_sub(bounds.left)

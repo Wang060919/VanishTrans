@@ -75,6 +75,8 @@ export async function collapseBallWindow(state: BallCollapseState, previousMode:
     clip: {
       cornerRadius: Math.round(idleGeometry.borderRadius * scale),
       pad: getIslandClipPad("idle", scale),
+      scaleFactor: scale,
+      alignment: side === "left" ? "right" : side === "right" ? "left" : "center",
       ...(dockedEdgesRef.current.length
         ? { squareEdges: dockedEdgesRef.current }
         : {}),

@@ -124,8 +124,11 @@ export function useBallFullPosition({
             height: painted.height,
             retainSurface: true,
             clip: {
-              cornerRadius: Math.round(geometry.borderRadius * scale),
-              pad: getIslandClipPad("full", scale),
+              cornerRadius: Math.round(geometry.borderRadius * painted.scale),
+              pad: getIslandClipPad("full", painted.scale),
+              scaleFactor: painted.scale,
+              alignment: dockSideRef.current === "left" ? "right"
+                : dockSideRef.current === "right" ? "left" : "center",
               ...(dockedEdgesRef.current.length
                 ? { squareEdges: dockedEdgesRef.current }
                 : {}),

@@ -1,7 +1,7 @@
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
-    WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT, WM_STYLECHANGED,
+    WM_DPICHANGED, WM_NCACTIVATE, WM_NCDESTROY, WM_NCPAINT, WM_SIZE, WM_STYLECHANGED,
 };
 
 const SUBCLASS_ID: usize = 1;
@@ -45,8 +45,18 @@ unsafe extern "system" fn frame_proc(
         // The documented -1 flag tells DefWindowProc to skip non-client repaint.
         WM_NCACTIVATE => DefSubclassProc(hwnd, message, wparam, LPARAM(-1)),
         WM_NCDESTROY => {
+            super::ball_region_state::forget(hwnd);
             let _ = RemoveWindowSubclass(hwnd, Some(frame_proc), id);
             DefSubclassProc(hwnd, message, wparam, lparam)
+        }
+        WM_SIZE | WM_DPICHANGED => {
+            // Tao/WebView2 first apply the new client size and DPI; the GDI
+            // region then follows the painted layout inside the retained canvas.
+            let result = DefSubclassProc(hwnd, message, wparam, lparam);
+            if let Err(error) = super::ball_region_state::refresh(hwnd) {
+                log::error!("[ball] failed to update window region: {error}");
+            }
+            result
         }
         _ => DefSubclassProc(hwnd, message, wparam, lparam),
     }

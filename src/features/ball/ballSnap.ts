@@ -98,6 +98,8 @@ export interface PaintedRect {
   y: number;
   width: number;
   height: number;
+  /** Scale sampled with this physical painted rect. */
+  scale: number;
   /** Physical distance from the window's outer origin to the painted rect. */
   offsetX: number;
   offsetY: number;
@@ -140,6 +142,7 @@ export async function paintedIslandRect(
     y: position.y + offsetY,
     width,
     height,
+    scale,
     offsetX,
     offsetY,
   };

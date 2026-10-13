@@ -116,7 +116,7 @@ fn retained_capsules_match_every_compact_mode_scale_and_dock_without_resizing() 
                     bottom: height,
                 };
                 // Expansion removes clipping; the production collapse path must restore it.
-                assert_ne!(unsafe { SetWindowRgn(window.0, None, true) }, 0);
+                super::super::ball_region_state::clear(window.0).unwrap();
                 for _ in 0..2 {
                     assert!(super::super::window_bounds::retain_surface_at(
                         window.0,
@@ -142,7 +142,7 @@ fn retained_capsules_match_every_compact_mode_scale_and_dock_without_resizing() 
     unsafe {
         GetWindowRect(window.0, &mut outer).unwrap();
         GetClientRect(window.0, &mut client).unwrap();
-        assert_ne!(SetWindowRgn(window.0, None, true), 0);
+        super::super::ball_region_state::clear(window.0).unwrap();
         let region = CreateRectRgn(0, 0, 0, 0);
         assert_eq!(GetWindowRgn(window.0, region).0, ERROR);
         assert!(DeleteObject(region).as_bool());

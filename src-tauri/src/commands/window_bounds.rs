@@ -1,6 +1,5 @@
 use crate::error::CommandError;
 use windows::Win32::Foundation::{GetLastError, SetLastError, HWND, RECT, WIN32_ERROR};
-use windows::Win32::Graphics::Gdi::SetWindowRgn;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClientRect, GetWindowLongW, GetWindowRect, SetWindowLongW, SetWindowPos, GWL_EXSTYLE,
     GWL_STYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOCOPYBITS, SWP_NOMOVE, SWP_NOSIZE,
@@ -88,11 +87,7 @@ pub(super) fn set_bounds(
     let height = outer_extent(height, outer.bottom - outer.top, inner.bottom - inner.top)?;
     // Remove the idle hit-test region before revealing an expanded island.
     // Avoid resizing an already large viewport: that can expose stale WebView pixels.
-    unsafe {
-        if SetWindowRgn(hwnd, None, true) == 0 {
-            return Err(CommandError::internal("无法恢复灵动岛窗口区域"));
-        }
-    }
+    super::ball_region_state::clear(hwnd)?;
     if outer.left == x
         && outer.top == y
         && outer.right - outer.left == width
@@ -123,9 +118,19 @@ pub(super) fn set_bounds(
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BallClipSpec {
-    corner_radius: Option<f64>,
-    pad: Option<i32>,
-    square_edges: Option<Vec<String>>,
+    pub(super) corner_radius: Option<f64>,
+    pub(super) pad: Option<i32>,
+    pub(super) square_edges: Option<Vec<String>>,
+    pub(super) scale_factor: Option<f64>,
+    pub(super) alignment: Option<ClipAlignment>,
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ClipAlignment {
+    Left,
+    Center,
+    Right,
 }
 
 /// Clip the collapsed island without moving or resizing its WebView viewport.
@@ -154,6 +159,10 @@ pub(super) fn retain_surface_at(
     clip: Option<BallClipSpec>,
 ) -> Result<bool, CommandError> {
     ensure_frameless(hwnd)?;
+    if let Some(spec) = clip.as_ref().filter(|spec| spec.scale_factor.is_some()) {
+        super::ball_region_state::set_scaled_clip(hwnd, width, height, spec)?;
+        return Ok(true);
+    }
     let mut outer = RECT::default();
     // SAFETY: live window handle and a valid writable RECT.
     unsafe { GetWindowRect(hwnd, &mut outer) }

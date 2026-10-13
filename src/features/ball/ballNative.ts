@@ -32,6 +32,8 @@ export async function setBallWindowBounds(bounds: {
   clip?: {
     cornerRadius?: number;
     pad?: number;
+    scaleFactor?: number;
+    alignment?: "left" | "center" | "right";
     squareEdges?: Array<"top" | "right" | "bottom" | "left">;
   };
 }) {
