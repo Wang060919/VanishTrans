@@ -10,8 +10,8 @@ type NativeBounds = { x: number; y: number; width: number; height: number; retai
 
 const listeners: Record<string, Listener> = {};
 let focusChangedListener: FocusChangedListener | undefined;
-let nativeSize = { width: 116, height: 42 };
-let nativePosition = { x: 902, y: 0 };
+let nativeSize = { width: 148, height: 42 };
+let nativePosition = { x: 886, y: 0 };
 let nativeScale = 1;
 let nativeMonitor = {
   position: { x: 0, y: 0 },
@@ -141,8 +141,8 @@ describe("normalizeTranslationActivity", () => {
 describe("BallWindow", () => {
   beforeEach(() => {
     focusChangedListener = undefined;
-    nativeSize = { width: 116, height: 42 };
-    nativePosition = { x: 902, y: 0 };
+    nativeSize = { width: 148, height: 42 };
+    nativePosition = { x: 886, y: 0 };
     nativeScale = 1;
     nativeMonitor = {
       position: { x: 0, y: 0 },
@@ -205,7 +205,7 @@ describe("BallWindow", () => {
     // The canvas is padded so the surface spring's overshoot and the press
     // bulge can paint past the 224x48 visual bounds; a region clip restores
     // the tight hit area after the morph settles.
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 833, y: 0, width: 254, height: 57 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 835, y: 0, width: 250, height: 57 });
     expect(setSize).not.toHaveBeenCalled();
     expect(setPosition).not.toHaveBeenCalled();
     expect(setFocus).toHaveBeenCalled();
@@ -262,12 +262,12 @@ describe("BallWindow", () => {
 
     await advanceTimers(1);
     expect(setBallWindowBounds).toHaveBeenCalledWith({
-      x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+      x: 886, y: 0, width: 148, height: 42, retainSurface: true,
     });
     expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
-      x: 902,
+      x: 886,
       y: 0,
-      width: 116,
+      width: 148,
       height: 42,
       retainSurface: true,
       clip: { cornerRadius: 21, pad: 8 },
@@ -311,14 +311,14 @@ describe("BallWindow", () => {
 
     // The collapse's settle floor is still running — native bounds wait for it.
     expect(setBallWindowBounds).not.toHaveBeenCalledWith(
-      expect.objectContaining({ width: 116, height: 42 }),
+      expect.objectContaining({ width: 148, height: 42 }),
     );
 
     await advanceTimers(ISLAND_TIMING.collapseMs + 50);
     expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
-      x: 902,
+      x: 886,
       y: 0,
-      width: 116,
+      width: 148,
       height: 42,
       retainSurface: true,
       clip: { cornerRadius: 21, pad: 8 },
@@ -336,7 +336,7 @@ describe("BallWindow", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开快速工具" }));
 
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 8, y: 0, width: 239, height: 57 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 8, y: 0, width: 237, height: 57 });
     });
     expect(getIsland()).toHaveClass("translation-island--right");
     expect(getSurface()).toHaveStyle({ transformOrigin: "0% 0%" });
@@ -346,19 +346,19 @@ describe("BallWindow", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起快速工具" }));
     await waitFor(() => {
       expect(setBallWindowBounds).toHaveBeenCalledWith({
-        x: 8, y: 0, width: 116, height: 42, retainSurface: true,
+        x: 8, y: 0, width: 148, height: 42, retainSurface: true,
       });
     });
   });
 
   it("falls back to left-edge growth near the right screen edge", async () => {
-    nativePosition = { x: 1796, y: 0 };
+    nativePosition = { x: 1764, y: 0 };
     render(<BallWindow />);
 
     fireEvent.click(screen.getByRole("button", { name: "展开快速工具" }));
 
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 1673, y: 0, width: 239, height: 57 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 1675, y: 0, width: 237, height: 57 });
     });
     expect(getIsland()).toHaveClass("translation-island--left");
     expect(getSurface()).toHaveStyle({ transformOrigin: "100% 0%" });
@@ -368,7 +368,7 @@ describe("BallWindow", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起快速工具" }));
     await waitFor(() => {
       expect(setBallWindowBounds).toHaveBeenCalledWith({
-        x: 1796, y: 0, width: 116, height: 42, retainSurface: true,
+        x: 1764, y: 0, width: 148, height: 42, retainSurface: true,
       });
     });
   });
@@ -389,7 +389,7 @@ describe("BallWindow", () => {
     await advanceTimers(0);
 
     expect(getSurface()).toHaveAttribute("data-mode", "actions");
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 833, y: 0, width: 254, height: 57 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 835, y: 0, width: 250, height: 57 });
     fireEvent.pointerLeave(getIsland(), { pointerType: "mouse" });
     await advanceTimers(1000);
     expect(getSurface()).toHaveAttribute("data-mode", "actions");
@@ -519,7 +519,7 @@ describe("BallWindow", () => {
 
     await act(async () => finishDragging?.());
     await waitFor(() => expect(getSurface()).toHaveAttribute("data-mode", "status"));
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 829, y: 0, width: 262, height: 57 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 830, y: 0, width: 260, height: 57 });
   });
 
   it("drags actions from a command without collapsing or firing the command", async () => {
@@ -532,7 +532,7 @@ describe("BallWindow", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开快速工具" }));
     const clipboardAction = await screen.findByRole("button", { name: "剪贴板" });
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 833, y: 0, width: 254, height: 57 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 835, y: 0, width: 250, height: 57 });
     });
     mocks.invoke.mockClear();
 
@@ -561,7 +561,7 @@ describe("BallWindow", () => {
 
     await waitFor(() => {
       expect(mocks.invoke).toHaveBeenCalledWith("save_ball_position", {
-        x: 566,
+        x: 550,
         y: 64,
         reposition: false,
       });
@@ -583,7 +583,7 @@ describe("BallWindow", () => {
     act(() => dispatchTranslationState({ state: "working" }));
     expect(await screen.findByText("正在翻译")).toBeInTheDocument();
     await waitFor(() => {
-      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 829, y: 0, width: 262, height: 57 });
+      expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 830, y: 0, width: 260, height: 57 });
     });
     setBallWindowBounds.mockClear();
     mocks.invoke.mockClear();
@@ -611,7 +611,7 @@ describe("BallWindow", () => {
 
     await waitFor(() => {
       expect(mocks.invoke).toHaveBeenCalledWith("save_ball_position", {
-        x: 570,
+        x: 554,
         y: 64,
         reposition: false,
       });
@@ -619,7 +619,7 @@ describe("BallWindow", () => {
     expect(getSurface()).toHaveAttribute("data-mode", "status");
     expect(screen.getByText("正在翻译")).toBeInTheDocument();
     expect(setBallWindowBounds).not.toHaveBeenCalledWith(
-      expect.objectContaining({ width: 116, height: 42 }),
+      expect.objectContaining({ width: 148, height: 42 }),
     );
   });
 
@@ -659,7 +659,7 @@ describe("BallWindow", () => {
       expect(getSurface()).toHaveAttribute("data-mode", "idle");
 
       nativePosition = { x: 566, y: 64 };
-      nativeSize = { width: 116, height: 42 };
+      nativeSize = { width: 148, height: 42 };
       await act(async () => finishDragging?.());
       await advanceTimers(0);
       expect(getSurface()).toHaveAttribute("data-mode", "status");
@@ -680,7 +680,7 @@ describe("BallWindow", () => {
 
     expect(screen.getByText("正在翻译")).toBeInTheDocument();
     expect(getSurface()).toHaveAttribute("data-mode", "status");
-    expect(setBallWindowBounds).toHaveBeenLastCalledWith({ x: 829, y: 0, width: 262, height: 57 });
+    expect(setBallWindowBounds).toHaveBeenLastCalledWith({ x: 830, y: 0, width: 260, height: 57 });
 
     await advanceTimers(1000);
     expect(getSurface()).toHaveAttribute("data-mode", "status");
@@ -699,16 +699,16 @@ describe("BallWindow", () => {
     fireEvent.pointerLeave(getIsland(), { pointerType: "mouse" });
     await advanceTimers(899);
     expect(getSurface()).toHaveAttribute("data-mode", "actions");
-    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 116, height: 42 }));
+    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 148, height: 42 }));
 
     act(() => dispatchTranslationState({ state: "working" }));
     await advanceTimers(0);
     expect(getSurface()).toHaveAttribute("data-mode", "status");
-    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 116, height: 42 }));
+    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 148, height: 42 }));
 
     await advanceTimers(400);
     expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 835, y: 0, width: 250, height: 56 });
-    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 116, height: 42 }));
+    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 148, height: 42 }));
   });
 
   it("keeps an error notice open when it replaces the focused action", async () => {
@@ -744,7 +744,7 @@ describe("BallWindow", () => {
 
     expect(getSurface()).toHaveAttribute("data-mode", "full");
     expect(document.querySelector(".translation-island__full")).toHaveAttribute("aria-hidden", "false");
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 651, y: 0, width: 618, height: 572 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 653, y: 0, width: 614, height: 572 });
     expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 232, height: 48 }));
   });
 
@@ -766,7 +766,7 @@ describe("BallWindow", () => {
 
     expect(getSurface()).toHaveAttribute("data-mode", "full");
     expect(setBallWindowBounds).not.toHaveBeenCalledWith(
-      expect.objectContaining({ width: 116, height: 42 }),
+      expect.objectContaining({ width: 148, height: 42 }),
     );
     expect(mocks.invoke).not.toHaveBeenCalledWith("set_ball_window_material", expect.anything());
   });
@@ -832,21 +832,21 @@ describe("BallWindow", () => {
     expect(document.querySelector(".translation-island__full")).toHaveAttribute("aria-hidden", "true");
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "set_ball_window_bounds",
-      expect.objectContaining({ width: 116, height: 42 }),
+      expect.objectContaining({ width: 148, height: 42 }),
     );
 
     await advanceTimers(ISLAND_TIMING.fullContentExitMs);
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
     expect(mocks.invoke).not.toHaveBeenCalledWith(
       "set_ball_window_bounds",
-      expect.objectContaining({ width: 116, height: 42 }),
+      expect.objectContaining({ width: 148, height: 42 }),
     );
 
     await advanceTimers(ISLAND_TIMING.surfaceMs);
 
     const idleBoundsCall = mocks.invoke.mock.calls.find(
       (call) => call[0] === "set_ball_window_bounds" &&
-               call[1]?.width === 116 &&
+               call[1]?.width === 148 &&
                call[1]?.height === 42
     );
     expect(idleBoundsCall).toBeDefined();
@@ -884,7 +884,7 @@ describe("BallWindow", () => {
     await advanceTimers(ISLAND_TIMING.surfaceMs);
 
     expect(setBallWindowBounds).toHaveBeenCalledWith({
-      x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+      x: 886, y: 0, width: 148, height: 42, retainSurface: true,
     });
     expect(getSurface()).toHaveAttribute("data-mode", "idle");
   });
@@ -921,7 +921,7 @@ describe("BallWindow", () => {
     expect(setBallWindowBounds).not.toHaveBeenCalled();
     await advanceTimers(64);
     expect(setBallWindowBounds).toHaveBeenCalledWith({
-      x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+      x: 886, y: 0, width: 148, height: 42, retainSurface: true,
     });
   });
 
@@ -946,7 +946,7 @@ describe("BallWindow", () => {
     expect(nativePosition).toEqual(fullPosition);
     expect(nativeSize).toEqual(fullSize);
     expect(mocks.invoke).toHaveBeenCalledWith("set_ball_window_bounds", {
-      x: 902, y: 0, width: 116, height: 42,
+      x: 886, y: 0, width: 148, height: 42,
       retainSurface: true, clip: { cornerRadius: 21, pad: 8 },
     });
 
@@ -979,7 +979,7 @@ describe("BallWindow", () => {
     act(() => dispatchTranslationState({ state: "working" }));
     expect(await screen.findByText("正在翻译")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "正在翻译" })).toBeDisabled();
-    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 829, y: 0, width: 262, height: 57 });
+    expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 830, y: 0, width: 260, height: 57 });
 
     act(() => dispatchTranslationState({ state: "done" }));
     expect(await screen.findByText("翻译完成")).toBeInTheDocument();
@@ -991,7 +991,7 @@ describe("BallWindow", () => {
     );
     await waitFor(
       () => expect(setBallWindowBounds).toHaveBeenCalledWith({
-        x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+        x: 886, y: 0, width: 148, height: 42, retainSurface: true,
       }),
       { timeout: 2300 },
     );
@@ -1012,7 +1012,7 @@ describe("BallWindow", () => {
       () => expect(setBallWindowBounds).toHaveBeenCalledWith({ x: 835, y: 0, width: 250, height: 56 }),
       { timeout: 800 },
     );
-    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 116, height: 42 }));
+    expect(setBallWindowBounds).not.toHaveBeenCalledWith(expect.objectContaining({ width: 148, height: 42 }));
   });
 
   it("expands into the full workspace and collapses back to the same island", async () => {
@@ -1047,7 +1047,7 @@ describe("BallWindow", () => {
 
     await waitFor(() => {
       expect(setBallWindowBounds).toHaveBeenCalledWith({
-        x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+        x: 886, y: 0, width: 148, height: 42, retainSurface: true,
       });
     });
     expect(mocks.invoke).not.toHaveBeenCalledWith("set_ball_window_material", expect.anything());
@@ -1108,7 +1108,7 @@ describe("BallWindow", () => {
     // The anchor is persisted only after the snap-settle animation finishes.
     await waitFor(() => {
       expect(mocks.invoke).toHaveBeenCalledWith("save_ball_position", {
-        x: 902,
+        x: 886,
         y: 0,
         reposition: false,
       });
@@ -1130,7 +1130,7 @@ describe("BallWindow", () => {
 
     await waitFor(() => {
       expect(mocks.invoke).toHaveBeenCalledWith("save_ball_position", {
-        x: 922,
+        x: 906,
         y: 160,
         reposition: false,
       });
@@ -1193,7 +1193,7 @@ describe("BallWindow", () => {
     await waitFor(() => expect(getSurface()).toHaveAttribute("data-mode", "idle"));
     await waitFor(() => {
       expect(setBallWindowBounds).toHaveBeenCalledWith({
-        x: 902, y: 0, width: 116, height: 42, retainSurface: true,
+        x: 886, y: 0, width: 148, height: 42, retainSurface: true,
       });
     });
   });
@@ -1244,7 +1244,7 @@ describe("BallWindow", () => {
       expect(setPosition).toHaveBeenCalledWith(expect.objectContaining({ x: -1700, y: -200 }));
     });
     expect(mocks.invoke).toHaveBeenCalledWith("save_ball_position", {
-      x: -1367,
+      x: -1391,
       y: -200,
       reposition: false,
     });

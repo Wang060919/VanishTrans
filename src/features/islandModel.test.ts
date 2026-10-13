@@ -10,7 +10,7 @@ import {
 
 describe("islandModel", () => {
   it("keeps every geometry in one shared model", () => {
-    expect(getIslandGeometry("idle")).toEqual({ width: 116, height: 42, borderRadius: 21 });
+    expect(getIslandGeometry("idle")).toEqual({ width: 148, height: 42, borderRadius: 21 });
     expect(getIslandGeometry("full")).toEqual({ width: 560, height: 540, borderRadius: 28 });
     expect(hasSameGeometry("peek", "actions")).toBe(true);
     expect(shrinksIsland("full", "status")).toBe(true);

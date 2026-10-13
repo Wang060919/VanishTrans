@@ -19,7 +19,7 @@ export interface IslandPresentation {
 }
 
 export const ISLAND_GEOMETRY: Record<IslandMode, IslandGeometry> = {
-  idle: { width: 116, height: 42, borderRadius: 21 },
+  idle: { width: 148, height: 42, borderRadius: 21 },
   peek: { width: 224, height: 48, borderRadius: 24 },
   actions: { width: 224, height: 48, borderRadius: 24 },
   status: { width: 232, height: 48, borderRadius: 24 },

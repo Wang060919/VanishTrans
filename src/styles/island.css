@@ -11,7 +11,7 @@ body.ball-window-body #root {
   --island-edge: rgba(255, 255, 255, 0.045);
   --island-highlight: transparent;
   --island-depth: rgba(0, 0, 0, 0.48);
-  --island-width: 116px;
+  --island-width: 148px;
   --island-height: 42px;
   --island-radius: 21px;
   width: 100%;
@@ -551,25 +551,19 @@ body.ball-window-body #root {
 .island-idle-dot { width: 4px; height: 4px; margin-left: 6px; border-radius: 50%; background: #86d9b4; flex: none; }
 .translation-island--has-result.translation-island--idle .brand-mark { width: 18px; height: 18px; }
 .translation-island--has-result.translation-island--idle .translation-island__core {
-  box-sizing: border-box;
-  padding-right: 32px;
+  width: calc(100% - 40px);
+  flex-basis: calc(100% - 40px);
 }
-.translation-island--has-result.translation-island--idle .translation-island__core:hover .island-idle-reveal,
-.translation-island--has-result.translation-island--idle .translation-island__core:focus-visible .island-idle-reveal {
-  margin-left: 4px;
-}
-.translation-island--has-result.translation-island--idle .island-idle-dot { margin-left: 4px; }
 
-/* Secondary entry on the ready pill: the core reads the result, this opens the
-   action strip. Absolutely positioned so idle geometry and snap anchors stay
-   untouched; revealed on surface hover or keyboard focus. */
+/* Persistent action-strip entry on the ready pill. Absolute positioning preserves
+   idle geometry and snap anchors. */
 .translation-island__more {
   position: absolute;
   top: 50%;
-  right: 7px;
+  right: 8px;
   z-index: 4;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   transform: translateY(-50%);
   display: grid;
   place-items: center;
@@ -579,19 +573,11 @@ body.ball-window-body #root {
   background: transparent;
   color: #a1a1aa;
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 150ms var(--ease-standard),
-    background-color 160ms var(--ease-standard),
-    color 160ms var(--ease-standard);
-}
-
-.translation-island--idle:hover .translation-island__more,
-.translation-island--idle:focus-within .translation-island__more,
-.translation-island__more:focus-visible {
   opacity: 1;
   pointer-events: auto;
+  transition:
+    background-color 160ms var(--ease-standard),
+    color 160ms var(--ease-standard);
 }
 
 .translation-island__more:hover {

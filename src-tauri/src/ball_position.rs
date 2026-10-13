@@ -1,4 +1,4 @@
-pub(crate) const BALL_IDLE_WIDTH: f64 = 116.0;
+pub(crate) const BALL_IDLE_WIDTH: f64 = 148.0;
 pub(crate) const BALL_IDLE_HEIGHT: f64 = 42.0;
 const BALL_POSITION_TOLERANCE: f64 = 8.0;
 const BALL_TOP_GUTTER: f64 = 0.0;
@@ -113,10 +113,10 @@ mod ball_position_tests {
 
     #[test]
     fn defaults_to_the_top_center_of_the_monitor() {
-        assert_eq!(default_ball_position_on_monitor(0, 0, 1920, 1.0), (902, 0));
+        assert_eq!(default_ball_position_on_monitor(0, 0, 1920, 1.0), (886, 0));
         assert_eq!(
             default_ball_position_on_monitor(-2560, -200, 2560, 1.5),
-            (-1367, -200)
+            (-1391, -200)
         );
     }
 
@@ -148,7 +148,7 @@ mod ball_position_tests {
         ));
         assert_eq!(
             clamp_ball_position_to_monitor(legacy_x, 100, 0, 0, 1920, 1080, 1.0),
-            Some((1811, 100))
+            Some((1779, 100))
         );
     }
 
@@ -157,7 +157,7 @@ mod ball_position_tests {
         let legacy_x = 2560 - (58.0_f64 * 1.5).round() as i32;
         assert_eq!(
             clamp_ball_position_to_monitor(legacy_x, 150, 0, 0, 2560, 1440, 1.5),
-            Some((2397, 150))
+            Some((2349, 150))
         );
     }
 

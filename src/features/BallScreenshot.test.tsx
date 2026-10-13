@@ -4,7 +4,7 @@ import BallWindow from "./BallWindow";
 
 type Bounds = { x: number; y: number; width: number; height: number };
 const native = vi.hoisted(() => ({
-  bounds: { x: 902, y: 0, width: 116, height: 42 },
+  bounds: { x: 886, y: 0, width: 148, height: 42 },
   invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
   focus: undefined as ((event: { payload: boolean }) => void) | undefined,
 }));
@@ -47,7 +47,7 @@ const surface = () => document.querySelector(".translation-island__surface");
 
 beforeEach(() => {
   vi.useFakeTimers();
-  native.bounds = { x: 902, y: 0, width: 116, height: 42 };
+  native.bounds = { x: 886, y: 0, width: 148, height: 42 };
   native.focus = undefined;
   native.invoke.mockReset();
   native.invoke.mockImplementation(async (command, args) => {
@@ -96,6 +96,6 @@ describe("island screenshot entry points", () => {
     expect(parseFloat(getComputedStyle(content!).width)).toBeCloseTo(166, 0);
     // Capsule canvases stay padded past their 224px visual bounds for spring
     // overshoot and the press bulge; the full canvas keeps its exact size.
-    expect(native.bounds.width).toBe(entry === "full" ? 560 : 254);
+    expect(native.bounds.width).toBe(entry === "full" ? 560 : 250);
   });
 });
