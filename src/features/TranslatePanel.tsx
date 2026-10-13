@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FileText, LoaderCircle } from "lucide-react";
 import IconButton from "../components/IconButton";
 import FileDropZone from "./translate/FileDropZone";
@@ -49,6 +49,47 @@ export default function TranslatePanel({
 }: TranslatePanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [ignoreCache, setIgnoreCache] = useState(false);
+  const [reading, setReading] = useState(false);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const resultScrollRef = useRef(0);
+  const appliedResultScrollRef = useRef(0);
+  const restoreInputRef = useRef(false);
+  const inputPositionRef = useRef<{
+    text: string; start: number; end: number;
+    direction: "forward" | "backward" | "none"; scrollTop: number;
+  } | null>(null);
+
+  const toggleReading = () => {
+    const scrollTop = resultRef.current?.scrollTop ?? 0;
+    if (scrollTop !== appliedResultScrollRef.current) resultScrollRef.current = scrollTop;
+    const input = inputRef.current;
+    if (!reading && input) {
+      inputPositionRef.current = { text: input.value, start: input.selectionStart,
+        end: input.selectionEnd, direction: input.selectionDirection, scrollTop: input.scrollTop };
+    }
+    restoreInputRef.current = reading;
+    setReading((current) => !current);
+  };
+
+  useLayoutEffect(() => {
+    if (resultRef.current) {
+      resultRef.current.scrollTop = resultScrollRef.current;
+      // Keep the desired position when the larger viewport only clamps it.
+      appliedResultScrollRef.current = resultRef.current.scrollTop;
+    }
+    const input = inputRef.current;
+    const position = inputPositionRef.current;
+    if (!reading && restoreInputRef.current && input && position?.text === input.value) {
+      if (!input.disabled) input.focus({ preventScroll: true });
+      input.setSelectionRange(position.start, position.end, position.direction);
+      input.scrollTop = position.scrollTop;
+    }
+    restoreInputRef.current = false;
+  }, [reading, inputRef]);
+
+  useLayoutEffect(() => {
+    if (!outputText) setReading(false);
+  }, [outputText]);
 
   // Auto-clear glow effect after animation
   useEffect(() => {
@@ -67,13 +108,14 @@ export default function TranslatePanel({
 
   return (
     <FileDropZone onDrop={onTranslateFile} disabled={loading} inputRef={fileInputRef}>
-      <main className="translation-workspace">
+      <main className="translation-workspace" data-reading={reading}>
         {fileStatus && <div className="file-status" role="status">
           <FileText size={18} aria-hidden="true" /><span>{fileStatus}</span>
           {loading && <LoaderCircle size={16} className="translation-island__action-loader" aria-hidden="true" />}
         </div>}
 
         <div className="acrylic-panel">
+          {reading && <div className="reading-source-summary">原文已收起</div>}
           <InputSection
             inputText={inputText}
             canClear={Boolean(inputText || outputText || error || fileStatus)}
@@ -105,6 +147,9 @@ export default function TranslatePanel({
             onCancel={onCancel}
             ignoreCache={ignoreCache}
             translationKey={translationKey}
+            reading={reading}
+            onToggleReading={toggleReading}
+            resultRef={resultRef}
           />
         </div>
         <footer className="translation-toolbar">

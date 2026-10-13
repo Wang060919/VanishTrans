@@ -1,4 +1,5 @@
-import { Check, Copy, RefreshCw, Square } from "lucide-react";
+import { ArrowLeft, Check, Copy, Expand, RefreshCw, Square } from "lucide-react";
+import type { RefObject } from "react";
 import AnimatedContent from "../../components/AnimatedContent";
 import SignalBurst from "../../components/SignalBurst";
 import VanishMark from "../../components/brand/VanishMark";
@@ -13,6 +14,9 @@ interface OutputSectionProps {
   onCancel?: () => void;
   ignoreCache: boolean;
   translationKey: number;
+  reading?: boolean;
+  onToggleReading?: () => void;
+  resultRef?: RefObject<HTMLDivElement>;
 }
 
 /**
@@ -28,6 +32,9 @@ export default function OutputSection({
   onCancel,
   ignoreCache,
   translationKey,
+  reading = false,
+  onToggleReading,
+  resultRef,
 }: OutputSectionProps) {
   const { copiedKey, copy } = useCopyFeedback<string>();
   const copied = copiedKey === "output";
@@ -64,6 +71,18 @@ export default function OutputSection({
               取消
             </button>
           )}
+          {outputText && onToggleReading && (
+            <button
+              type="button"
+              className="text-action"
+              onClick={onToggleReading}
+              aria-label={reading ? "返回编辑" : "展开阅读"}
+              aria-pressed={reading}
+            >
+              {reading ? <ArrowLeft size={14} aria-hidden="true" /> : <Expand size={14} aria-hidden="true" />}
+              {reading ? "返回编辑" : "展开阅读"}
+            </button>
+          )}
           <SignalBurst active={copied}>
             <button
               type="button"
@@ -94,7 +113,7 @@ export default function OutputSection({
         </div>
       </div>
 
-      <div className="result-frame" aria-live="polite">
+      <div ref={resultRef} className="result-frame" aria-live="polite">
         {displayError && <p className="result-notice" role="alert">{displayError}</p>}
         {loading && !outputText && !displayError ? (
           <LoadingState />

@@ -34,6 +34,13 @@
 .native-ui .translation-section { flex: 1 1 0; width: 100%; height: auto; border: 0; border-radius: 0; }
 .native-ui .translation-section--source { flex: 1.05 1 0; }
 .native-ui .translation-section--result { flex: 1 1 0; }
+.native-ui .translation-workspace[data-reading="true"] .translation-section--source,
+.native-ui .translation-workspace[data-reading="true"] .signal-divider,
+.native-ui .translation-workspace[data-reading="true"] .translation-toolbar { display: none; }
+.native-ui .reading-source-summary {
+  flex: none; min-height: 32px; padding: 6px 2px; margin-bottom: 8px;
+  border-bottom: 1px solid var(--color-line); color: var(--color-ink-muted); font-size: 12px;
+}
 .native-ui .section-toolbar { height: 32px; padding: 0 2px; }
 .native-ui .section-heading > span:first-child { font-size: 12px; font-weight: 400; color: var(--color-ink-muted); }
 .native-ui .section-meta { font-size: 11px; font-weight: 400; }
