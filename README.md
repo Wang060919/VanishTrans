@@ -6,7 +6,7 @@
 
 基于 Tauri 2 + React 18 + TypeScript 构建，支持划词翻译、原地替换、截图 OCR 与悬浮岛工作区。
 
-**当前版本：[v0.1.5](https://github.com/Wang060919/VanishTrans/releases/tag/v0.1.5)** · [下载安装包](https://github.com/Wang060919/VanishTrans/releases/download/v0.1.5/VanishTrans_0.1.5_x64-setup.exe)
+**当前版本：[v0.1.6](https://github.com/Wang060919/VanishTrans/releases/tag/v0.1.6)** · [下载安装包](https://github.com/Wang060919/VanishTrans/releases/download/v0.1.6/VanishTrans_0.1.6_x64-setup.exe)
 
 </div>
 
@@ -64,9 +64,9 @@
 
 Windows x64 用户可从 [GitHub Releases](https://github.com/Wang060919/VanishTrans/releases/latest) 下载：
 
-- `VanishTrans_0.1.5_x64-setup.exe`：安装包，按提示完成安装（支持自动更新）。
+- `VanishTrans_0.1.6_x64-setup.exe`：安装包，按提示完成安装（支持自动更新）。
 
-安装使用无需 Node.js、pnpm 或 Rust。详细更新见 [GitHub Releases](https://github.com/Wang060919/VanishTrans/releases)（v0.1.4 历史说明见 `docs/releases/v0.1.4.md`）。
+安装使用无需 Node.js、pnpm 或 Rust。详细更新见 [GitHub Releases](https://github.com/Wang060919/VanishTrans/releases) 和 [v0.1.6 更新说明](docs/releases/v0.1.6.md)。
 
 ### 从源码运行：环境要求
 
