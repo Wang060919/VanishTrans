@@ -59,16 +59,52 @@ describe("completed result snapshots", () => {
     expect(events()).toHaveLength(1);
     expect(events()[0].result).toEqual({ source: "native", text: "原生", direction: "auto" });
   });
-  it("restores both texts and direction without translating or resetting on ordinary rerenders", () => {
+  it("restores a request once, preserving edits when the snapshot is recreated", () => {
     const selected: IslandResult = { ...snapshot, sourceId: "quick:A", requestId: 1, revision: 2 };
-    const { result, rerender } = renderHook(() => useTranslation(selected));
+    const { result, rerender } = renderHook((next: IslandResult) => useTranslation(next), { initialProps: selected });
     expect(result.current.inputText).toBe(snapshot.source);
     expect(result.current.outputText).toBe(snapshot.text);
     expect(result.current.direction).toBe(snapshot.direction);
     expect(result.current.loading).toBe(false);
-    act(() => result.current.setInputText("edited"));
-    rerender();
+    act(() => {
+      result.current.setInputText("edited");
+      result.current.updateDirection("auto2en");
+    });
+    rerender({ ...selected, revision: 3 });
     expect(result.current.inputText).toBe("edited");
+    expect(result.current.direction).toBe("auto2en");
     expect(events().filter((event) => event.state === "done")).toHaveLength(1);
+  });
+  it("keeps edits when its own completion is returned by the island", () => {
+    const { result, rerender } = renderHook((next: IslandResult | null) => useTranslation(next), { initialProps: null as IslandResult | null });
+    let requestId = 0;
+    act(() => {
+      requestId = result.current.begin("text");
+      result.current.setRequestSource(requestId, snapshot.source, snapshot.direction);
+      result.current.complete(requestId, snapshot.text);
+      result.current.setInputText("edited");
+      result.current.updateDirection("auto2en");
+    });
+    const completion = vi.mocked(emit).mock.calls.find(([, payload]) =>
+      (payload as { state: string }).state === "done")![1] as { sourceId: string; revision: number };
+    rerender({ ...snapshot, ...completion, requestId });
+    expect(result.current.inputText).toBe("edited");
+    expect(result.current.outputText).toBe(snapshot.text);
+    expect(result.current.direction).toBe("auto2en");
+    expect(events().filter((event) => event.state === "done")).toHaveLength(1);
+  });
+  it.each([
+    { sourceId: "quick:A", requestId: 2 },
+    { sourceId: "quick:B", requestId: 1 },
+  ])("imports a new request identity %j", (identity) => {
+    const selected: IslandResult = { ...snapshot, sourceId: "quick:A", requestId: 1, revision: 2 };
+    const next: IslandResult = { source: "新原文", text: "new translation", direction: "zh2en", revision: 3, ...identity };
+    const { result, rerender } = renderHook((value: IslandResult) => useTranslation(value), { initialProps: selected });
+    act(() => result.current.setInputText("edited"));
+    rerender(next);
+    expect(result.current.inputText).toBe(next.source);
+    expect(result.current.outputText).toBe(next.text);
+    expect(result.current.direction).toBe(next.direction);
+    expect(events().filter((event) => event.state === "done")).toHaveLength(2);
   });
 });

@@ -15,14 +15,17 @@ export function useTranslation(resultToOpen?: IslandResult | null) {
     directionRef.current = next;
     setDirection(next);
   }, []);
-  const { restoreResult } = session;
+  const { restoreResult, sourceId } = session;
   const restoredResult = useRef<IslandResult | null>(null);
   useEffect(() => {
-    if (!resultToOpen || restoredResult.current === resultToOpen) return;
+    // Imported results are rebroadcast by this session; reopening must preserve edits.
+    if (!resultToOpen || resultToOpen.sourceId === sourceId ||
+      (restoredResult.current?.sourceId === resultToOpen.sourceId &&
+        restoredResult.current?.requestId === resultToOpen.requestId)) return;
     restoredResult.current = resultToOpen;
     updateDirection(resultToOpen.direction);
     restoreResult(resultToOpen);
-  }, [resultToOpen, restoreResult, updateDirection]);
+  }, [resultToOpen, restoreResult, sourceId, updateDirection]);
   const text = useTextTranslation(session, directionRef);
   const file = useFileTranslation(session, directionRef, text.doTranslateFileText);
   const { cancel, reset } = session;

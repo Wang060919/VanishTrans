@@ -188,7 +188,7 @@ export function useTranslationSession(initialSequence = 0,
     clearStatusTimer();
     broadcast("idle");
   }, [broadcast, clearStatusTimer, lifecycle]);
-  return { ...state, lifecycle, begin, waitForQuickClaim, complete, fail, cancel, reset,
+  return { ...state, sourceId, lifecycle, begin, waitForQuickClaim, complete, fail, cancel, reset,
     applyExternalResult, setRequestSource, restoreResult,
     setInputText, setFileStatus, clearGlow, handleStreamChunk, handleStreamDone };
 }
