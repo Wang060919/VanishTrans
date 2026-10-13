@@ -73,7 +73,7 @@ export const Controls: Story = () => {
 
       <section>
         <p className="vt-story-label">开关</p>
-        <div className="vt-story-row">
+        <div className="vt-story-row settings-panel">
           <ToggleSwitch id="ladle-toggle" checked={enabled} onChange={setEnabled} />
           <label htmlFor="ladle-toggle" style={{ color: "var(--color-ink-secondary)", fontSize: 13 }}>
             {enabled ? "已开启" : "已关闭"}

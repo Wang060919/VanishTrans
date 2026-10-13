@@ -20,9 +20,9 @@
     "check": "pnpm check:architecture && pnpm check:commands && tsc --noEmit && vitest run && eslint src",
     "check:rust": "cargo fmt --check --manifest-path src-tauri/Cargo.toml && cargo clippy --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "bump": "node scripts/bump-version.mjs",
-    "ladle": "ladle serve --port 6106 --theme dark",
-    "ladle:build": "ladle build",
-    "ladle:preview": "ladle preview --port 6106"
+    "ladle": "node scripts/run-ladle.mjs serve --port 6106",
+    "ladle:build": "node scripts/run-ladle.mjs build",
+    "ladle:preview": "node scripts/run-ladle.mjs preview --port 6106"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

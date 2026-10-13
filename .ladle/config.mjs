@@ -2,7 +2,11 @@
 export default {
   stories: "src/**/*.stories.{js,jsx,ts,tsx,mdx}",
   outDir: ".ladle-build",
+  defaultStory: "主界面--空白与交互",
   addons: {
+    theme: {
+      defaultState: /** @type {import("@ladle/react").ThemeState} */ ("dark"),
+    },
     width: {
       enabled: true,
       options: {
