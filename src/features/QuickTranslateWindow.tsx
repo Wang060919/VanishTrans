@@ -1,4 +1,4 @@
-import { hideQuickWindow, writeClipboardSafe, showMainWithText } from "../services/tauriBridge";
+import { cancelTranslation as cancelTranslationCmd, hideQuickWindow, writeClipboardSafe, showMainWithText } from "../services/tauriBridge";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -6,6 +6,7 @@ import QuickTranslationView from "./QuickTranslationView";
 import { useThemeSync } from "../hooks/useTheme";
 import { useQuickTranslation } from "../hooks/useQuickTranslation";
 import { errorMessage } from "../lib/errors";
+import { logError } from "../lib/logger";
 
 const QUICK_WIDTH = 392;
 const QUICK_MIN_HEIGHT = 132;
@@ -16,7 +17,7 @@ export default function QuickTranslateWindow() {
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState("");
-  const { inputText: source, outputText: output, translationError: error, loading, translateText, editing, setInputText } = useQuickTranslation();
+  const { inputText: source, outputText: output, translationError: error, loading, translateText, editing, setInputText, cancel } = useQuickTranslation();
   useThemeSync();
   useEffect(() => {
     document.body.classList.add("quick-window-body");
@@ -51,13 +52,22 @@ export default function QuickTranslateWindow() {
     return () => observer.disconnect();
   }, []);
 
+  const handleClose = useCallback(() => {
+    cancel();
+    void cancelTranslationCmd().catch((reason: unknown) => logError("quick", "failed to cancel translation", reason));
+    void hideQuickWindow().catch((reason: unknown) => logError("quick", "failed to hide window", reason));
+  }, [cancel]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") void hideQuickWindow();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleClose();
+      }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [handleClose]);
 
   const handleCopy = useCallback(async () => {
     if (!output) return;
@@ -97,7 +107,7 @@ export default function QuickTranslateWindow() {
       onDrag={handleDrag}
       onCopy={() => void handleCopy()}
       onExpand={handleExpand}
-      onClose={() => void hideQuickWindow()}
+      onClose={handleClose}
       onRetry={() => void translateText(source)}
     />
   );

@@ -45,6 +45,16 @@ async function triggerAndFlush(action: () => void) {
   });
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("QuickTranslateWindow", () => {
   beforeEach(() => {
     mockedInvoke.mockReset();
@@ -286,5 +296,100 @@ describe("QuickTranslateWindow", () => {
     expect(screen.queryByText("A translated")).toBeNull();
     expect(mockedInvoke).not.toHaveBeenCalledWith("reveal_quick_result", expect.anything());
     await act(async () => { resolveClaim(++quickSequence); });
+  });
+
+  describe.each([
+    { label: "Escape", close: () => fireEvent.keyDown(document, { key: "Escape" }) },
+    { label: "close button", close: () => fireEvent.click(screen.getByRole("button", { name: "关闭迷你翻译" })) },
+  ])("$label cancellation", ({ close }) => {
+    it.each(["resolves", "rejects"] as const)("ignores late streaming events and IPC that %s, then accepts a new request", async (settlement) => {
+      const stream = deferred<string>();
+      const cancellation = deferred<void>();
+      const closeClaim = deferred<number>();
+      const baseInvoke = mockedInvoke.getMockImplementation() as (command: string, args?: unknown) => Promise<unknown>;
+      let holdCloseClaim = false;
+      let closeSequence = 0;
+      mockedInvoke.mockImplementation((command: string, args?: { request?: { text?: string } }) => {
+        if (command === "translate_stream" && args?.request?.text === "B source") return stream.promise;
+        if (command === "cancel_translation") return cancellation.promise;
+        if (command === "reserve_quick_request" && holdCloseClaim) {
+          holdCloseClaim = false;
+          closeSequence = ++quickSequence;
+          return closeClaim.promise;
+        }
+        return baseInvoke(command, args);
+      });
+      render(<QuickTranslateWindow />);
+      await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
+      await triggerAndFlush(() => dispatch("quick-translate", "B source"));
+      const requestId = mockedInvoke.mock.calls.find(([name]) => name === "translate_stream")?.[1].request.requestId;
+      expect(requestId).toBeTypeOf("number");
+      await triggerAndFlush(() => dispatch("translate-stream-chunk", { requestId, chunk: "partial" }));
+      expect(screen.getByText("partial")).toBeInTheDocument();
+      expect(screen.getByText("翻译中")).toBeInTheDocument();
+      // This native fallback is already queued before the user closes the view.
+      const queuedSequence = ++quickSequence;
+      holdCloseClaim = true;
+
+      await triggerAndFlush(close);
+
+      expect(mockedInvoke).toHaveBeenCalledWith("cancel_translation");
+      expect(mockedInvoke).toHaveBeenCalledWith("hide_quick_window");
+      expect(screen.queryByText("翻译中")).toBeNull();
+      expect(screen.getByText("翻译已取消，已保留部分译文")).toBeInTheDocument();
+      expect(mockedEmit).toHaveBeenLastCalledWith("translation-state", expect.objectContaining({ state: "idle" }));
+      await triggerAndFlush(() => {
+        dispatch("translate-stream-chunk", { requestId, chunk: " late chunk" });
+        dispatch("translate-stream-done", { requestId, fullText: "late completion" });
+        dispatch("quick-translate-result", { source: "queued source", text: "queued fallback", requestSeq: queuedSequence });
+        if (settlement === "resolves") stream.resolve("late IPC result");
+        else stream.reject("late IPC error");
+      });
+      expect(mockedInvoke).not.toHaveBeenCalledWith("reveal_quick_result", expect.anything());
+      await act(async () => { closeClaim.resolve(closeSequence); });
+      expect(mockedInvoke).not.toHaveBeenCalledWith("reveal_quick_result", expect.anything());
+      expect(screen.queryByText(/late|queued/)).toBeNull();
+      expect(screen.getByText("翻译已取消，已保留部分译文")).toBeInTheDocument();
+      expect(mockedEmit).toHaveBeenLastCalledWith("translation-state", expect.objectContaining({ state: "idle" }));
+      fireEvent.click(screen.getByRole("button", { name: "复制译文" }));
+      await waitFor(() => expect(mockedInvoke).toHaveBeenCalledWith("write_clipboard_safe", { text: "partial" }));
+      await act(async () => { cancellation.resolve(); });
+
+      await triggerAndFlush(() => dispatch("quick-translate", "C source"));
+      expect(await screen.findByText("你好世界")).toBeInTheDocument();
+      expect(screen.getByText("C source")).toBeInTheDocument();
+      expect(mockedEmit).toHaveBeenLastCalledWith("translation-state", expect.objectContaining({ state: "done" }));
+    });
+
+    it.each(["sequence claim", "clipboard cleanup"] as const)("stops translation before dispatch while waiting for %s", async (stage) => {
+      const preparation = deferred<number | string>();
+      const baseInvoke = mockedInvoke.getMockImplementation() as (command: string, args?: unknown) => Promise<unknown>;
+      const commandToDelay = stage === "sequence claim" ? "reserve_quick_request" : "cleanup_clipboard_text";
+      let pendingSequence = 0;
+      let delayed = false;
+      mockedInvoke.mockImplementation((command: string, args?: unknown) => {
+        if (command === commandToDelay && !delayed) {
+          delayed = true;
+          if (stage === "sequence claim") pendingSequence = ++quickSequence;
+          return preparation.promise;
+        }
+        return baseInvoke(command, args);
+      });
+      render(<QuickTranslateWindow />);
+      await waitFor(() => expect(listeners["quick-translate"]).toBeDefined());
+      await triggerAndFlush(() => dispatch("quick-translate", "B source"));
+      expect(delayed).toBe(true);
+      expect(screen.getByText("翻译中")).toBeInTheDocument();
+
+      await triggerAndFlush(close);
+      await act(async () => { preparation.resolve(stage === "sequence claim" ? pendingSequence : "B source"); });
+
+      expect(mockedInvoke).toHaveBeenCalledWith("cancel_translation");
+      expect(mockedInvoke).toHaveBeenCalledWith("hide_quick_window");
+      expect(mockedInvoke).not.toHaveBeenCalledWith("translate_stream", expect.anything());
+      expect(screen.queryByText("翻译中")).toBeNull();
+      expect(screen.getByText("翻译已取消")).toBeInTheDocument();
+      expect(mockedEmit).toHaveBeenLastCalledWith("translation-state", expect.objectContaining({ state: "idle" }));
+    });
   });
 });

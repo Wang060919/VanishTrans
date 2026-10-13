@@ -59,7 +59,7 @@ export default function QuickTranslationView({
           {!compactResult && <button type="button" onClick={onExpand} disabled={!source} aria-label="在主窗口中打开" title="展开">
             <Expand size={14} />
           </button>}
-          <button type="button" onClick={onClose} aria-label="关闭迷你翻译" title={embedded ? "关闭结果卡片" : "关闭"}>
+          <button type="button" onClick={onClose} aria-label="关闭迷你翻译" title={embedded ? "关闭结果卡片" : loading ? "取消翻译并关闭" : "关闭"}>
             <X size={15} />
           </button>
         </div>
