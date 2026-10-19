@@ -33,8 +33,6 @@ fn hide_overlay(app: &tauri::AppHandle) {
     let _ = window.hide();
     #[cfg(target_os = "windows")]
     let token = window.hwnd().map(|hwnd| hwnd.0 as u64).unwrap_or(0);
-    #[cfg(not(target_os = "windows"))]
-    let token = 0u64;
     let app = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(OVERLAY_IDLE_CLOSE_SECS));

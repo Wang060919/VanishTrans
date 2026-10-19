@@ -1,3 +1,5 @@
+import LinuxShortcuts from "./LinuxShortcuts";
+import { isLinuxCore } from "../../lib/platform";
 import { KeyRound } from "lucide-react";
 import { useCallback } from "react";
 import HotkeyEditor from "../../components/HotkeyEditor";
@@ -24,6 +26,8 @@ export default function HotkeysTab({ hotkeys, hotkeyLabels, onHotkeysChange, not
     },
     [hotkeys, notifyError, onHotkeysChange]
   );
+
+  if (isLinuxCore()) return <LinuxShortcuts />;
 
   return (
     <section className="settings-section" aria-labelledby="hotkey-settings-title">

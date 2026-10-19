@@ -103,12 +103,18 @@ impl TextRangeIdentity {
 
 #[cfg(not(target_os = "windows"))]
 #[derive(Clone, Debug)]
-pub struct TextRangeIdentity(());
+pub struct TextRangeIdentity(Option<u64>);
 
 #[cfg(not(target_os = "windows"))]
 impl TextRangeIdentity {
-    pub fn same_as(&self, _other: &Self) -> bool {
-        false
+    pub fn same_as(&self, other: &Self) -> bool {
+        self.0.is_some() && self.0 == other.0
+    }
+
+    // Only tests can construct a synthetic identity on unsupported platforms.
+    #[cfg(test)]
+    pub fn fake(id: u64) -> Self {
+        Self(Some(id))
     }
 }
 
@@ -196,6 +202,7 @@ pub(crate) fn focused_control_identity() -> (Option<isize>, Option<[i32; 4]>) {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub(crate) fn focused_control_identity() -> (Option<isize>, Option<[i32; 4]>) {
     (None, None)
 }
@@ -259,6 +266,7 @@ fn foreground_process_name() -> Option<String> {
     }
 }
 
+#[cfg(target_os = "windows")]
 fn is_terminal_window_class(class_name: &str) -> bool {
     matches!(
         class_name.to_ascii_lowercase().as_str(),
@@ -272,6 +280,7 @@ fn is_terminal_window_class(class_name: &str) -> bool {
     )
 }
 
+#[cfg(target_os = "windows")]
 fn is_terminal_process_name(process_name: &str) -> bool {
     matches!(
         process_name.to_ascii_lowercase().as_str(),

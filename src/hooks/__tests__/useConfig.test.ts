@@ -41,6 +41,24 @@ describe("useConfig persistence queue", () => {
     bridge.applyServiceProfile.mockResolvedValue({ name: "x", baseUrl: "https://x", model: "x" });
   });
 
+  it("keeps the draft and session key when wallet persistence fails", async () => {
+    bridge.getApiConfig.mockResolvedValue({
+      baseUrl: "https://api.example.test", model: "test-model",
+      hasApiKey: true, apiKeyStorage: "unavailable",
+    });
+    bridge.setApiConfig.mockRejectedValueOnce({ code: "IO", message: "wallet cancelled" });
+    const { result } = renderHook(() => useConfig());
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { result.current.setApiKeyUpdate("fake-draft-key"); });
+    await act(async () => {
+      await expect(result.current.saveConfig()).rejects.toEqual({ code: "IO", message: "wallet cancelled" });
+    });
+    expect(result.current.apiKeyUpdate).toBe("fake-draft-key");
+    expect(result.current.hasStoredApiKey).toBe(true);
+    expect(result.current.apiKeyStorage).toBe("unavailable");
+    expect(bridge.setApiConfig).toHaveBeenCalledTimes(1);
+  });
+
   it("serializes overlapping glossary writes in call order", async () => {
     const first = deferred<void>();
     const second = deferred<void>();

@@ -13,7 +13,7 @@ fn failed_config_save_restores_in_memory_state() {
         suffix
     ));
     let _ = std::fs::create_dir_all(&dir);
-    let config = ApiConfig::load_or_default(dir.clone());
+    let config = ApiConfig::load_for_test(dir.clone());
     let original = config.free_translation();
     let config_path = dir.join("config.json");
     std::fs::remove_file(&config_path).unwrap();
@@ -35,7 +35,7 @@ fn saving_config_preserves_ball_position_fields() {
         r#"{"base_url":"https://api.openai.com","model":"test","ball_x":321,"ball_y":654}"#,
     )
     .unwrap();
-    let config = ApiConfig::load_or_default(dir.clone());
+    let config = ApiConfig::load_for_test(dir.clone());
     *config.model.lock_recover() = "updated".into();
     config.save_to_disk().unwrap();
     let saved: serde_json::Value =
@@ -50,7 +50,7 @@ fn saving_config_preserves_ball_position_fields() {
 fn translation_context_hash_is_stable_and_tracks_settings() {
     let dir = std::env::temp_dir().join(format!("vt_ctx_hash_{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
-    let config = ApiConfig::load_or_default(dir.clone());
+    let config = ApiConfig::load_for_test(dir.clone());
 
     let first = config.translation_context_hash();
     let second = config.translation_context_hash();
@@ -100,5 +100,21 @@ fn ball_position_save_writes_complete_config_when_file_is_unparsable() {
     assert_eq!(saved["ball_x"], 7);
     assert_eq!(saved["ball_y"], 9);
     serde_json::from_value::<PersistedConfig>(saved).unwrap();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn session_key_stays_out_of_config_and_is_empty_after_restart() {
+    let dir = std::env::temp_dir().join(format!("vt_session_key_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config = ApiConfig::load_for_test(dir.clone());
+    *config.api_key.lock_recover() = "test-only-session-secret".into();
+    config.save_to_disk().unwrap();
+    let saved = std::fs::read_to_string(dir.join("config.json")).unwrap();
+    assert!(!saved.contains("test-only-session-secret"));
+    assert!(!saved.contains("api_key"));
+    let restarted = ApiConfig::load_for_test(dir.clone());
+    assert!(restarted.api_key.lock_recover().is_empty());
     let _ = std::fs::remove_dir_all(dir);
 }

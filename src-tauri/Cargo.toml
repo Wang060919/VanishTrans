@@ -34,6 +34,10 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 csv = "1"
 window-vibrancy = "0.5"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "=0.11.0", default-features = false, features = ["tokio"] }
+dbus-secret-service = { version = "=4.1.0", default-features = false, features = ["crypto-rust"] }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [
     "Win32_System_Threading",

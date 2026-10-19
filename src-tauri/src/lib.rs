@@ -8,6 +8,9 @@ mod cursor;
 mod error;
 mod history;
 mod keyboard;
+mod linux_desktop;
+#[cfg(target_os = "linux")]
+mod linux_portal;
 mod lock;
 mod logging;
 mod ocr;
@@ -62,6 +65,9 @@ pub fn run() {
         // its launch to the running instance, which expands the main window.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("ball") {
+                if cfg!(target_os = "linux") {
+                    let _ = window.unminimize();
+                }
                 let _ = window.show();
                 emit_to_ball_when_ready(app, "expand-main-window", ());
                 let _ = window.set_focus();
@@ -153,15 +159,19 @@ pub fn run() {
                 }
             }
 
-            setup::setup_tray(app)?;
-            setup::setup_shortcuts(app)?;
-            setup::setup_clipboard_watch(app);
+            if cfg!(target_os = "linux") {
+                linux_desktop::setup(app);
+            } else {
+                setup::setup_tray(app)?;
+                setup::setup_shortcuts(app)?;
+                setup::setup_clipboard_watch(app);
+            }
 
             // Pre-create the screenshot overlay hidden: at startup nothing
             // races it, and the first Alt+W then only pays for the capture —
             // not a cold WebView2 boot. The overlay must stay hidden until a
             // capture exists, so `visible(false)` is load-bearing.
-            if app.get_webview_window("screenshot").is_none() {
+            if !cfg!(target_os = "linux") && app.get_webview_window("screenshot").is_none() {
                 if let Err(error) = tauri::WebviewWindowBuilder::new(
                     app.handle(),
                     "screenshot",
@@ -182,7 +192,10 @@ pub fn run() {
             }
 
             // Restore ball window position from config, clamped to visible monitor bounds
-            if let Some(ball_w) = app.get_webview_window("ball") {
+            if let Some(ball_w) = app
+                .get_webview_window("ball")
+                .filter(|_| !cfg!(target_os = "linux"))
+            {
                 let scale = ball_w.scale_factor().unwrap_or(1.0);
                 let idle_width = (BALL_IDLE_WIDTH * scale).round() as u32;
                 let idle_height = (BALL_IDLE_HEIGHT * scale).round() as u32;
@@ -324,6 +337,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::configure_linux_shortcuts,
+            commands::linux_screenshot_ocr,
             commands::frontend_ready,
             commands::get_startup_warnings,
             commands::quick_frontend_ready,

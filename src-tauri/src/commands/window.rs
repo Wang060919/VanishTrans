@@ -13,6 +13,11 @@ use crate::error::CommandError;
 
 #[tauri::command]
 pub fn hide_window(window: tauri::WebviewWindow) {
+    // The Linux core window must remain recoverable even without a tray host.
+    if cfg!(target_os = "linux") {
+        let _ = window.close();
+        return;
+    }
     let _ = window.hide();
 }
 
@@ -54,7 +59,7 @@ pub fn set_ball_window_bounds(
     width: u32,
     height: u32,
     retain_surface: Option<bool>,
-    clip: Option<super::window_bounds::BallClipSpec>,
+    clip: Option<super::window_clip::BallClipSpec>,
 ) -> Result<bool, CommandError> {
     if window.label() != "ball" {
         return Err(CommandError::validation("窗口边界只能应用到灵动岛"));
@@ -372,6 +377,11 @@ pub fn start_screenshot_from_ball(
 ) -> Result<(), CommandError> {
     if window.label() != "ball" {
         return Err(CommandError::validation("该命令只能由灵动岛窗口调用"));
+    }
+    if cfg!(target_os = "linux") {
+        return Err(CommandError::validation(
+            "Linux 核心版暂不支持截图 OCR，请粘贴文本翻译。",
+        ));
     }
     crate::setup::start_screenshot(app);
     Ok(())

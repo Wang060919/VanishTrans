@@ -106,7 +106,24 @@ impl ApiConfig {
 
     pub fn save_api_key(&self) -> Result<(), String> {
         let key = self.api_key.lock_recover().clone();
-        save_api_key_credential(&key)
+        let result = save_api_key_credential(&key);
+        self.credential_available
+            .store(result.is_ok(), Ordering::Relaxed);
+        result
+    }
+
+    pub fn api_key_storage(&self) -> &'static str {
+        if cfg!(target_os = "windows") {
+            "credential-manager"
+        } else if cfg!(target_os = "linux") {
+            if self.credential_available.load(Ordering::Relaxed) {
+                "secret-service"
+            } else {
+                "unavailable"
+            }
+        } else {
+            "session"
+        }
     }
 
     /// Whether the free Google Translate provider is active.

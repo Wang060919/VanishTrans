@@ -136,7 +136,9 @@ pub fn should_restore_clipboard(seq_at_write: u32, seq_now: u32) -> bool {
 /// Restore a previously backed-up clipboard content.
 /// An originally empty clipboard is restored to empty instead of leaving the
 /// temporary selection text behind.
-pub fn restore_clipboard(app: &tauri::AppHandle, mut backup: ClipboardBackup) -> bool {
+pub fn restore_clipboard(app: &tauri::AppHandle, backup: ClipboardBackup) -> bool {
+    #[cfg(target_os = "windows")]
+    let mut backup = backup;
     let restored_text = backup.text.clone();
 
     #[cfg(target_os = "windows")]

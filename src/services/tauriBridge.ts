@@ -10,6 +10,7 @@ export interface CommandError {
 export interface ApiConfigResponse {
   baseUrl: string;
   hasApiKey: boolean;
+  apiKeyStorage?: "credential-manager" | "secret-service" | "unavailable" | "session";
   model: string;
   glossary?: [string, string][];
   hotkeys?: [string, string][];
@@ -72,6 +73,8 @@ export type StartupWarningsResponse = string[];
 export type SetMaxRecordsRequest = { maxRecords: number };
 
 export type CommandName =
+  | "configure_linux_shortcuts"
+  | "linux_screenshot_ocr"
   | "frontend_ready"
   | "get_startup_warnings"
   | "quick_frontend_ready"
@@ -411,3 +414,6 @@ export async function getForegroundWindowInfo(): Promise<string | null> {
   return invokeCommand<string | null>("get_foreground_window_info");
 }
 
+
+export const configureLinuxShortcuts = (enabled: boolean | null) => invokeCommand<string[]>("configure_linux_shortcuts", { enabled });
+export const linuxScreenshotOcr = (language: string) => invokeCommand<string>("linux_screenshot_ocr", { language });

@@ -19,6 +19,7 @@ pub fn get_api_config(
     Ok(serde_json::json!({
         "baseUrl": *state.base_url.lock_recover(),
         "hasApiKey": !state.api_key.lock_recover().is_empty(),
+        "apiKeyStorage": state.api_key_storage(),
         "model": *state.model.lock_recover(),
         "hotkeys": *state.hotkeys.lock_recover(),
         "glossary": *state.glossary.lock_recover(),
@@ -29,11 +30,36 @@ pub fn get_api_config(
 }
 
 #[tauri::command]
-pub fn set_api_config(
-    state: tauri::State<'_, ApiConfig>,
+pub async fn set_api_config(
+    app: tauri::AppHandle,
     base_url: String,
     api_key: Option<String>,
     model: String,
+) -> Result<(), CommandError> {
+    // Secret Service can prompt. Never wait for it on the webview/event-loop thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ApiConfig>();
+        set_api_config_inner(&state, base_url, api_key, model)
+    })
+    .await
+    .map_err(|_| CommandError::internal("保存 API 配置任务失败"))?
+}
+
+fn set_api_config_inner(
+    state: &ApiConfig,
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+) -> Result<(), CommandError> {
+    set_api_config_with_writer(state, base_url, api_key, model, || state.save_api_key())
+}
+
+fn set_api_config_with_writer(
+    state: &ApiConfig,
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+    save_key: impl Fn() -> Result<(), String>,
 ) -> Result<(), CommandError> {
     let base_url = base_url.trim().trim_end_matches('/').to_string();
     let model = model.trim().to_string();
@@ -65,10 +91,13 @@ pub fn set_api_config(
         return Err(CommandError::io(error));
     }
     if api_key.is_some() {
-        if let Err(error) = state.save_api_key() {
+        if let Err(error) = save_key() {
             state.restore(&snapshot);
             let _ = state.save_to_disk();
-            let _ = state.save_api_key();
+            // A failed Linux write has unknown remote outcome. Never issue a
+            // second mutation (an empty startup snapshot could erase a real key).
+            #[cfg(not(target_os = "linux"))]
+            let _ = save_key();
             return Err(CommandError::io(error));
         }
     }
@@ -280,3 +309,7 @@ pub async fn test_connection(
         .await
         .map_err(CommandError::api)
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "config_credentials_tests.rs"]
+mod credential_tests;

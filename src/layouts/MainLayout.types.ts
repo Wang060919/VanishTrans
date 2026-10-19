@@ -1,3 +1,4 @@
+import type { ApiConfigResponse } from "../services/tauriBridge";
 import type React from "react";
 import type { GlossaryEntry, HotkeyEntry, ServiceProfile } from "../types";
 import type { LangDirection } from "../hooks/useTranslation";
@@ -40,6 +41,7 @@ export interface MainLayoutConfigProps {
   model: string;
   onModelChange: (v: string) => void;
   hasStoredApiKey: boolean;
+  apiKeyStorage?: ApiConfigResponse["apiKeyStorage"];
   apiKeyUpdate: string | null;
   onApiKeyChange: (v: string | null) => void;
   onSaveConfig: (forcedApiKey?: string) => Promise<void>;

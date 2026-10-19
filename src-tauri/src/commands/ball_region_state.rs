@@ -6,7 +6,7 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
 
 use super::ball_clip_layout::{ClientGeometry, ClipLayout};
-use super::window_bounds::BallClipSpec;
+use super::window_clip::BallClipSpec;
 use crate::error::CommandError;
 
 thread_local! {

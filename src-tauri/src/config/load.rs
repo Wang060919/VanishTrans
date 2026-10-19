@@ -7,8 +7,31 @@ use std::{collections::HashMap, sync::Mutex, time::Duration};
 impl ApiConfig {
     pub fn load_or_default(config_dir: std::path::PathBuf) -> Self {
         let loaded = load_json(&config_dir.join("config.json"), "配置");
-        let api_key = load_api_key_credential().unwrap_or_default();
-        Self::from_loaded(config_dir, loaded, api_key)
+        #[cfg(target_os = "linux")]
+        let (api_key, available, warning) = match load_api_key_credential() {
+            Ok(key) => (key.unwrap_or_default(), true, None),
+            Err(error) => (
+                String::new(),
+                false,
+                Some(format!(
+                    "API Key 未读取：{error}。已有系统凭据未修改；解锁后可重启读取。"
+                )),
+            ),
+        };
+        #[cfg(not(target_os = "linux"))]
+        let (api_key, available, warning): (_, _, Option<String>) =
+            (load_api_key_credential().unwrap_or_default(), true, None);
+        let mut this = Self::from_loaded(config_dir, loaded, api_key);
+        this.credential_available
+            .store(available, std::sync::atomic::Ordering::Relaxed);
+        if let Some(warning) = warning {
+            let existing = this.persistence.warning.get_or_insert_with(String::new);
+            if !existing.is_empty() {
+                existing.push(' ');
+            }
+            existing.push_str(&warning);
+        }
+        this
     }
 
     #[cfg(test)]
@@ -77,6 +100,7 @@ impl ApiConfig {
             // Normalize keys persisted before trimming at the set boundary,
             // so an old padded credential cannot be sent verbatim.
             api_key: Mutex::new(api_key.trim().to_string()),
+            credential_available: std::sync::atomic::AtomicBool::new(false),
             model: Mutex::new(model),
             client: Mutex::new(client),
             config_path,

@@ -1,0 +1,31 @@
+{
+  "bundle": {
+    "targets": [
+      "deb"
+    ],
+    "createUpdaterArtifacts": false,
+    "shortDescription": "AI translation desktop utility",
+    "longDescription": "Linux core edition: text translation, streaming, history, glossary and translation memory."
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "ball",
+        "title": "VanishTrans \u2014 Linux Core",
+        "url": "index.html?linux-core",
+        "width": 920,
+        "height": 720,
+        "minWidth": 600,
+        "minHeight": 500,
+        "resizable": true,
+        "decorations": true,
+        "transparent": false,
+        "shadow": true,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "visible": true,
+        "dragDropEnabled": false
+      }
+    ]
+  }
+}

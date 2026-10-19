@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 const CRED_TARGET: &str = "VanishTrans_APIKey";
 
 #[cfg(target_os = "windows")]
@@ -80,12 +81,15 @@ pub(super) fn load_api_key_credential() -> Option<String> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+pub(super) use super::credentials_linux::{load_api_key_credential, save_api_key_credential};
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub(super) fn save_api_key_credential(_key: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub(super) fn load_api_key_credential() -> Option<String> {
     None
 }

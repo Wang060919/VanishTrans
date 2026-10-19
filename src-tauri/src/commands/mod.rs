@@ -15,6 +15,7 @@ mod config;
 mod history;
 #[cfg(target_os = "windows")]
 pub(crate) mod island_frame;
+mod linux;
 #[cfg(target_os = "windows")]
 pub(crate) mod quick_frame;
 mod quick_result;
@@ -25,12 +26,14 @@ mod translate;
 mod window;
 #[cfg(target_os = "windows")]
 mod window_bounds;
+mod window_clip;
 mod window_drag;
 
 pub use app::*;
 pub use clipboard::*;
 pub use config::*;
 pub use history::*;
+pub use linux::*;
 pub(crate) use quick_result::claim_quick_request;
 pub use quick_result::*;
 pub use screenshot::*;

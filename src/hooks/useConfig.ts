@@ -3,6 +3,7 @@ import {
   applyServiceProfile,
   deleteServiceProfile,
   getApiConfig,
+  type ApiConfigResponse,
   getLoggingEnabled,
   saveServiceProfile,
   setApiConfig,
@@ -32,6 +33,7 @@ export function useConfig() {
   const [model, setModel] = useState("gpt-4o-mini");
   const [apiKeyUpdate, setApiKeyUpdate] = useState<string | null>(null);
   const [hasStoredApiKey, setHasStoredApiKey] = useState(false);
+  const [apiKeyStorage, setApiKeyStorage] = useState<ApiConfigResponse["apiKeyStorage"]>();
   const [glossary, setGlossaryState] = useState<GlossaryEntry[]>([]);
   const [hotkeys, setHotkeysState] = useState<HotkeyEntry[]>(DEFAULT_HOTKEYS);
   const [profiles, setProfiles] = useState<ServiceProfile[]>([]);
@@ -50,6 +52,7 @@ export function useConfig() {
       .then((cfg) => {
         setBaseUrl(cfg.baseUrl);
         setHasStoredApiKey(cfg.hasApiKey);
+        setApiKeyStorage(cfg.apiKeyStorage);
         setModel(cfg.model);
         setProfiles(cfg.profiles ?? []);
         setFreeTranslationState(cfg.freeTranslation ?? false);
@@ -78,7 +81,21 @@ export function useConfig() {
       apiKey,
       model,
     };
-    await enqueueWrite(() => setApiConfig(request));
+    await enqueueWrite(async () => {
+      try {
+        await setApiConfig(request);
+      } finally {
+        // Refresh actual storage health even when saving failed. Keep the draft
+        // and original error; a failed refresh must not hide that error.
+        if (apiKey !== undefined) {
+          try {
+            const cfg = await getApiConfig();
+            setApiKeyStorage(cfg.apiKeyStorage);
+            setHasStoredApiKey(cfg.hasApiKey);
+          } catch { /* The next load can refresh storage availability. */ }
+        }
+      }
+    });
     if (apiKey !== undefined) {
       setHasStoredApiKey(apiKey.length > 0);
     }
@@ -142,7 +159,7 @@ export function useConfig() {
     baseUrl, setBaseUrl,
     model, setModel,
     apiKeyUpdate, setApiKeyUpdate,
-    hasStoredApiKey,
+    hasStoredApiKey, apiKeyStorage,
     saveConfig,
     glossary, saveGlossary,
     hotkeys, saveHotkeys,
