@@ -57,6 +57,7 @@ pub struct CapturedSelection {
 
 impl SelectionTarget {
     /// The selected source text proven by this identity.
+    #[cfg(any(target_os = "windows", test))]
     pub fn source_text(&self) -> &str {
         match &self.fingerprint {
             SelectionFingerprint::Uia { text, .. } | SelectionFingerprint::Edit { text, .. } => {
