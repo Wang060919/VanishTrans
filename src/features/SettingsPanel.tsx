@@ -1,3 +1,4 @@
+import type { ApiConfigResponse } from "../services/tauriBridge";
 import { isLinuxCore } from "../lib/platform";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronRight, Database, Info, Keyboard, Server, Shield } from "lucide-react";
@@ -19,6 +20,7 @@ interface SettingsPanelProps {
   model: string;
   onModelChange: (v: string) => void;
   hasStoredApiKey: boolean;
+  apiKeyStorage?: ApiConfigResponse["apiKeyStorage"];
   apiKeyUpdate: string | null;
   onApiKeyChange: (v: string | null) => void;
   onSave: (forcedApiKey?: string) => Promise<void>;
@@ -54,7 +56,7 @@ export default function SettingsPanel({
   initialTab, page, onPageChange,
   baseUrl, onBaseUrlChange,
   model, onModelChange,
-  hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSave,
+  hasStoredApiKey, apiKeyStorage, apiKeyUpdate, onApiKeyChange, onSave,
   glossary, onGlossaryChange,
   hotkeys, hotkeyLabels, onHotkeysChange,
   profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
@@ -110,6 +112,7 @@ export default function SettingsPanel({
             model={model}
             onModelChange={onModelChange}
             hasStoredApiKey={hasStoredApiKey}
+            apiKeyStorage={apiKeyStorage}
             apiKeyUpdate={apiKeyUpdate}
             onApiKeyChange={onApiKeyChange}
             onSave={writes.save}
@@ -144,7 +147,7 @@ export default function SettingsPanel({
       <div className={"settings-feedback" + (saveError ? " settings-feedback--error" : "")}
         role="status" aria-live="polite" aria-atomic="true">
         <span className="settings-feedback-dot" data-state={saveError ? "error" : saving ? "saving" : saved ? "saved" : "idle"} />
-        <span>{saveError || (saving ? "正在保存…" : saved ? (isLinuxCore() && activeTab === "api" ? "配置已保存；Key 仅本次运行有效" : "已保存") : activeTab === "tm" ? "翻译记忆保存在本机" : "更改后自动保存")}</span>
+        <span>{saveError || (saving ? "正在保存…" : saved ? (isLinuxCore() && activeTab === "api" && apiKeyStorage !== "secret-service" ? "配置已保存；密钥环持久存储待确认" : "已保存") : activeTab === "tm" ? "翻译记忆保存在本机" : "更改后自动保存")}</span>
       </div>
     </div>
   );

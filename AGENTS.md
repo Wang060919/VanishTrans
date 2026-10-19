@@ -54,8 +54,10 @@ Tests are colocated: `*.test.ts(x)` next to sources, `__tests__/` under
 Read [the current architecture](docs/architecture/ARCHITECTURE.md) for ownership,
 entry points and concurrency invariants. Refactoring reports describe historical snapshots.
 
-## Tauri Commands (58 total)
+## Tauri Commands (60 total)
 <!-- BEGIN TAURI_COMMANDS -->
+**Linux**: `configure_linux_shortcuts`, `linux_screenshot_ocr`
+
 **Config**: `frontend_ready`, `get_startup_warnings`, `get_api_config`, `set_api_config`, `get_logging_enabled`, `set_logging_enabled`, `log_frontend_message`, `set_hotkeys`, `set_shortcuts_suspended`, `set_glossary`, `set_free_translation`, `set_max_records`
 
 **Clipboard**: `read_clipboard_safe`, `write_clipboard_safe`, `cleanup_clipboard_text`

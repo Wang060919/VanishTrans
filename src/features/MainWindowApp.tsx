@@ -161,6 +161,7 @@ export default function MainWindowApp({
         model: config.model,
         onModelChange: config.setModel,
         hasStoredApiKey: config.hasStoredApiKey,
+        apiKeyStorage: config.apiKeyStorage,
         apiKeyUpdate: config.apiKeyUpdate,
         onApiKeyChange: config.setApiKeyUpdate,
         onSaveConfig: config.saveConfig,

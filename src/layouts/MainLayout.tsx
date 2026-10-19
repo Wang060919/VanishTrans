@@ -1,3 +1,5 @@
+import { useLinuxOcr } from "../hooks/useLinuxOcr";
+import LinuxOcrPreview from "../components/LinuxOcrPreview";
 import { isLinuxCore } from "../lib/platform";
 import { History, ScanLine, Settings, X } from "lucide-react";
 import { useState } from "react";
@@ -14,6 +16,7 @@ import type { MainLayoutProps } from "./MainLayout.types";
 export default function MainLayout({ shell, pinned, onPin, translation, config }: MainLayoutProps) {
   const { embedded = false, notices = [], onDismissNotice } = shell ?? {};
   const ui = useMainLayout(shell);
+  const ocr = useLinuxOcr();
   const [settingsPage, setSettingsPage] = useState<SettingsTab | null>(null);
   const openSettings = () => { setSettingsPage(null); ui.openSettings(); };
   const closePanel = () => ui.setActivePanel(null);
@@ -29,10 +32,12 @@ export default function MainLayout({ shell, pinned, onPin, translation, config }
           <button type="button" onClick={() => onDismissNotice?.(message)} aria-label="关闭提示"><X size={13} /></button>
         </div>)}
       </div>}
+      {isLinuxCore() && <LinuxOcrPreview ocr={ocr} onApply={translation.onInputChange} disabled={translation.loading} />}
       <LanguageSwitcher value={translation.direction} onChange={translation.onDirectionChange} disabled={translation.loading} />
       <TranslatePanel {...translation} error={translation.translationError} onCancel={translation.onCancelTranslation}
         actions={<>
-          {!isLinuxCore() && <IconButton icon={<ScanLine size={18} />} label="截图翻译" text="截图" onClick={() => void ui.startScreenshot()} />}
+          <IconButton icon={<ScanLine size={18} />} label="截图翻译" text="截图" disabled={ocr.busy}
+            onClick={() => void (isLinuxCore() ? ocr.start() : ui.startScreenshot())} />
           <IconButton icon={<History size={18} />} label="打开历史记录" text="历史" active={ui.activePanel === "history"} onClick={ui.openHistory} />
           <IconButton icon={<Settings size={18} />} label="打开设置" text="设置" active={ui.activePanel === "settings"} onClick={openSettings} />
         </>} />

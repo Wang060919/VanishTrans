@@ -2,6 +2,8 @@
 mod context;
 pub use context::TranslationConfig;
 mod credentials;
+#[cfg(target_os = "linux")]
+mod credentials_linux;
 mod load;
 mod profiles;
 mod requests;
@@ -18,6 +20,7 @@ pub static CONFIG_FILE_LOCK: Mutex<()> = Mutex::new(());
 pub struct ApiConfig {
     pub base_url: Mutex<String>,
     pub api_key: Mutex<String>,
+    credential_available: std::sync::atomic::AtomicBool,
     pub model: Mutex<String>,
     pub client: Mutex<reqwest::Client>,
     config_path: std::path::PathBuf,

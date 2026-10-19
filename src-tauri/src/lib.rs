@@ -9,6 +9,8 @@ mod error;
 mod history;
 mod keyboard;
 mod linux_desktop;
+#[cfg(target_os = "linux")]
+mod linux_portal;
 mod lock;
 mod logging;
 mod ocr;
@@ -335,6 +337,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::configure_linux_shortcuts,
+            commands::linux_screenshot_ocr,
             commands::frontend_ready,
             commands::get_startup_warnings,
             commands::quick_frontend_ready,

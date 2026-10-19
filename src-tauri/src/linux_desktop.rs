@@ -7,8 +7,10 @@ use tauri::{
 };
 
 pub(crate) fn setup(app: &tauri::App) {
+    #[cfg(target_os = "linux")]
+    app.manage(crate::linux_portal::ShortcutState::default());
     app.state::<crate::StartupWarnings>().0.lock_recover().push(
-        "Linux 核心版：请手动输入或粘贴文本。API Key 仅在本次运行中保留，重启后需重新输入；全局快捷键、划词、原地替换、截图 OCR 和灵动岛暂未启用。".into(),
+        "Linux 实验版：可在设置中授权桌面快捷键。截图 OCR 需要 Tesseract 和语言包，识别结果先预览再手动翻译。划词、原地替换和灵动岛仍未启用；KDE Wayland 实机兼容性待验证。".into(),
     );
     // A missing StatusNotifier/AppIndicator host must never prevent translation.
     if let Err(error) = setup_tray(app) {

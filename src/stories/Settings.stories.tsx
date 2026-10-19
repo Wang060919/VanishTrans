@@ -19,6 +19,7 @@ function SettingsFixture({ initialTab }: { initialTab?: SettingsTab }) {
         model={config.model}
         onModelChange={config.setModel}
         hasStoredApiKey={config.hasStoredApiKey}
+        apiKeyStorage={config.apiKeyStorage}
         apiKeyUpdate={config.apiKeyUpdate}
         onApiKeyChange={config.setApiKeyUpdate}
         onSave={config.saveConfig}

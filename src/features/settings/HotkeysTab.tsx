@@ -1,3 +1,4 @@
+import LinuxShortcuts from "./LinuxShortcuts";
 import { isLinuxCore } from "../../lib/platform";
 import { KeyRound } from "lucide-react";
 import { useCallback } from "react";
@@ -26,7 +27,7 @@ export default function HotkeysTab({ hotkeys, hotkeyLabels, onHotkeysChange, not
     [hotkeys, notifyError, onHotkeysChange]
   );
 
-  if (isLinuxCore()) return <p role="status">Linux 核心版暂不支持全局快捷键、划词翻译及原地替换。请在主窗口输入或粘贴文本。</p>;
+  if (isLinuxCore()) return <LinuxShortcuts />;
 
   return (
     <section className="settings-section" aria-labelledby="hotkey-settings-title">

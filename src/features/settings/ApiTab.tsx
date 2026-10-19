@@ -1,3 +1,4 @@
+import type { ApiConfigResponse } from "../../services/tauriBridge";
 import { isLinuxCore } from "../../lib/platform";
 import { Server } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,6 +13,7 @@ interface ApiTabProps {
   model: string;
   onModelChange: (v: string) => void;
   hasStoredApiKey: boolean;
+  apiKeyStorage?: ApiConfigResponse["apiKeyStorage"];
   apiKeyUpdate: string | null;
   onApiKeyChange: (v: string | null) => void;
   onSave: (forcedApiKey?: string) => Promise<void>;
@@ -29,7 +31,7 @@ interface ApiTabProps {
 export default function ApiTab({
   baseUrl, onBaseUrlChange,
   model, onModelChange,
-  hasStoredApiKey, apiKeyUpdate, onApiKeyChange, onSave,
+  hasStoredApiKey, apiKeyStorage, apiKeyUpdate, onApiKeyChange, onSave,
   profiles, onSaveProfile, onDeleteProfile, onApplyProfile, onTestConnection,
   freeTranslation, onSetFreeTranslation,
   notifyError,
@@ -114,7 +116,9 @@ export default function ApiTab({
       />
       <div className="setting-field">
         <label htmlFor="api-key">API Key</label>
-        {isLinuxCore() && <p className="setting-hint" role="note">仅保留在本次运行的内存中，不写入配置文件。退出或重启后需要重新输入。</p>}
+        {isLinuxCore() && <p className="setting-hint" role="note">{apiKeyStorage === "secret-service"
+          ? "使用系统 Secret Service 保存，不写入配置文件。密钥环可能需要解锁。"
+          : "系统密钥环尚未就绪，无法确认持久保存。请启用并解锁 GNOME Keyring 或支持 Secret Service 的 KWallet 后重试；不会写入配置文件。"}</p>}
         <div className="setting-inline">
           <input
             id="api-key"
@@ -122,7 +126,7 @@ export default function ApiTab({
             value={apiKeyUpdate ?? ""}
             onChange={(event) => onApiKeyChange(event.target.value)}
             onBlur={() => void saveConfig()}
-            placeholder={hasStoredApiKey ? (isLinuxCore() ? "本次运行已设置，输入新 Key 可替换" : "已安全保存，输入新 Key 可替换") : "sk-..."}
+            placeholder={hasStoredApiKey ? (isLinuxCore() && apiKeyStorage !== "secret-service" ? "本次运行可用，持久存储待确认" : "已安全保存，输入新 Key 可替换") : "sk-..."}
           />
           {hasStoredApiKey && apiKeyUpdate === null && (
             <button type="button" className="secondary-button" onClick={() => void saveConfig("")}>清除</button>

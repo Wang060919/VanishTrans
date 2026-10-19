@@ -214,4 +214,4 @@ pnpm build       # 前端生产构建
 
 ## Linux experimental core
 
-An experimental Linux core configuration is available for manual input/paste translation. See [Linux core scope, build steps and acceptance checklist](docs/development/LINUX_CORE.md). Native Arch KDE Wayland testing is still required; Windows-only desktop integrations are intentionally disabled.
+The experimental Linux edition supports manual translation with optional Secret Service key storage, consent-based desktop shortcuts and local Tesseract OCR with editable preview. See [scope, prerequisites and acceptance checklist](docs/development/LINUX_CORE.md). Native Arch KDE Wayland testing is still required.

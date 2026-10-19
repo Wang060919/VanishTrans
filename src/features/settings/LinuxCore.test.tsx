@@ -18,22 +18,32 @@ beforeEach(() => {
 afterEach(() => window.history.replaceState(null, "", "/"));
 
 describe("Linux core capability disclosure", () => {
-  it("labels an API key as session-only instead of safely persisted", () => {
-    render(<ApiTab baseUrl="https://example.com" model="test" hasStoredApiKey
+  it("does not claim persistence when the system wallet is unavailable", () => {
+    render(<ApiTab baseUrl="https://example.com" model="test" hasStoredApiKey apiKeyStorage="unavailable"
       apiKeyUpdate={null} onBaseUrlChange={vi.fn()} onModelChange={vi.fn()}
       onApiKeyChange={vi.fn()} onSave={vi.fn()} profiles={[]}
       onSaveProfile={vi.fn()} onDeleteProfile={vi.fn()} onApplyProfile={vi.fn()}
       onTestConnection={vi.fn()} freeTranslation={false} onSetFreeTranslation={vi.fn()}
       notifyError={vi.fn()} />);
-    expect(screen.getByPlaceholderText("本次运行已设置，输入新 Key 可替换")).toBeInTheDocument();
-    expect(screen.getByRole("note")).toHaveTextContent("不写入配置文件");
+    expect(screen.getByPlaceholderText("本次运行可用，持久存储待确认")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("无法确认持久保存");
     expect(screen.queryByPlaceholderText("已安全保存，输入新 Key 可替换")).not.toBeInTheDocument();
   });
-  it("does not offer unsupported hotkey editors", () => {
+  it("shows system storage only after the backend confirms availability", () => {
+    render(<ApiTab baseUrl="https://example.com" model="test" hasStoredApiKey apiKeyStorage="secret-service"
+      apiKeyUpdate={null} onBaseUrlChange={vi.fn()} onModelChange={vi.fn()}
+      onApiKeyChange={vi.fn()} onSave={vi.fn()} profiles={[]}
+      onSaveProfile={vi.fn()} onDeleteProfile={vi.fn()} onApplyProfile={vi.fn()}
+      onTestConnection={vi.fn()} freeTranslation={false} onSetFreeTranslation={vi.fn()}
+      notifyError={vi.fn()} />);
+    expect(screen.getByPlaceholderText("已安全保存，输入新 Key 可替换")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent("系统 Secret Service");
+  });
+  it("offers explicit desktop portal authorization instead of Windows hotkey editors", () => {
     render(<HotkeysTab hotkeys={[{ action: "translate", shortcut: "Alt+Q" }]}
       hotkeyLabels={{ translate: "划词翻译" }} onHotkeysChange={vi.fn()} notifyError={vi.fn()} />);
-    expect(screen.getByRole("status")).toHaveTextContent("暂不支持全局快捷键");
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "授权桌面快捷键" })).toBeEnabled();
+    expect(screen.getByText(/划词及原地替换仍不支持/)).toBeInTheDocument();
   });
   it("never checks the upstream updater feed", async () => {
     render(<AboutTab />);
