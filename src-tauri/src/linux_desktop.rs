@@ -22,7 +22,11 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let rgba = image::load_from_memory(include_bytes!("../icons/tray-icon.png"))?.to_rgba8();
     let (width, height) = rgba.dimensions();
     TrayIconBuilder::with_id("linux-tray")
-        .icon(tauri::image::Image::new_owned(rgba.into_raw(), width, height))
+        .icon(tauri::image::Image::new_owned(
+            rgba.into_raw(),
+            width,
+            height,
+        ))
         .menu(&Menu::with_items(app, &[&show, &quit])?)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show-core" => {

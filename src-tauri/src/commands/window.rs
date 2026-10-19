@@ -379,7 +379,9 @@ pub fn start_screenshot_from_ball(
         return Err(CommandError::validation("该命令只能由灵动岛窗口调用"));
     }
     if cfg!(target_os = "linux") {
-        return Err(CommandError::validation("Linux 核心版暂不支持截图 OCR，请粘贴文本翻译。"));
+        return Err(CommandError::validation(
+            "Linux 核心版暂不支持截图 OCR，请粘贴文本翻译。",
+        ));
     }
     crate::setup::start_screenshot(app);
     Ok(())
