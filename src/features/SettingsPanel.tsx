@@ -1,3 +1,4 @@
+import { isLinuxCore } from "../lib/platform";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronRight, Database, Info, Keyboard, Server, Shield } from "lucide-react";
 import { useSaveFeedback } from "../hooks/useSaveFeedback";
@@ -143,7 +144,7 @@ export default function SettingsPanel({
       <div className={"settings-feedback" + (saveError ? " settings-feedback--error" : "")}
         role="status" aria-live="polite" aria-atomic="true">
         <span className="settings-feedback-dot" data-state={saveError ? "error" : saving ? "saving" : saved ? "saved" : "idle"} />
-        <span>{saveError || (saving ? "正在保存…" : saved ? "已保存" : activeTab === "tm" ? "翻译记忆保存在本机" : "更改后自动保存")}</span>
+        <span>{saveError || (saving ? "正在保存…" : saved ? (isLinuxCore() && activeTab === "api" ? "配置已保存；Key 仅本次运行有效" : "已保存") : activeTab === "tm" ? "翻译记忆保存在本机" : "更改后自动保存")}</span>
       </div>
     </div>
   );

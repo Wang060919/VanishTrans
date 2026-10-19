@@ -211,3 +211,7 @@ pnpm build       # 前端生产构建
 ## License
 
 项目代码采用 [MIT](LICENSE) 许可。内置 Inter 和 Noto Sans SC 字体采用 SIL OFL 1.1，来源及许可证见[字体说明](public/fonts/FONT-SOURCES.md)。
+
+## Linux experimental core
+
+An experimental Linux core configuration is available for manual input/paste translation. See [Linux core scope, build steps and acceptance checklist](docs/development/LINUX_CORE.md). Native Arch KDE Wayland testing is still required; Windows-only desktop integrations are intentionally disabled.

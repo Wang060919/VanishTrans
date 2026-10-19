@@ -1,5 +1,6 @@
 use crate::ocr::SmartSelectionRegion;
 
+#[cfg(any(target_os = "windows", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Bounds {
     left: i32,
@@ -8,6 +9,7 @@ struct Bounds {
     bottom: i32,
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn clip_to_monitor(window: Bounds, monitor: Bounds) -> Option<SmartSelectionRegion> {
     let left = window.left.max(monitor.left);
     let top = window.top.max(monitor.top);

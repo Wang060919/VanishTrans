@@ -1,6 +1,6 @@
 use windows::Win32::Foundation::{POINT, RECT};
 
-use super::window_bounds::{BallClipSpec, ClipAlignment};
+use super::window_clip::{BallClipSpec, ClipAlignment};
 use crate::error::CommandError;
 
 pub(super) struct ClientGeometry {

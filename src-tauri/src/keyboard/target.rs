@@ -12,6 +12,7 @@ use super::platform::{
 
 /// Classic Win32 edit controls answer `EM_GETSEL`; anything else is treated
 /// as unverifiable and never auto-replaced.
+#[cfg(target_os = "windows")]
 fn is_edit_control_class(class: &str) -> bool {
     let class = class.to_ascii_lowercase();
     class == "edit" || class.starts_with("richedit")

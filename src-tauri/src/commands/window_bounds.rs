@@ -1,3 +1,4 @@
+use super::window_clip::BallClipSpec;
 use crate::error::CommandError;
 use windows::Win32::Foundation::{GetLastError, SetLastError, HWND, RECT, WIN32_ERROR};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -109,28 +110,6 @@ pub(super) fn set_bounds(
         )
         .map_err(|error| CommandError::internal(error.to_string()))
     }
-}
-
-/// Painted-shape description for a retained clip: a missing radius yields a
-/// capsule (half the short side), a missing pad falls back to EDGE_BLEED.
-/// `square_edges` names the sides flush with a screen edge whose painted
-/// corners are squared — the clip unions a straight strip over those arcs.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct BallClipSpec {
-    pub(super) corner_radius: Option<f64>,
-    pub(super) pad: Option<i32>,
-    pub(super) square_edges: Option<Vec<String>>,
-    pub(super) scale_factor: Option<f64>,
-    pub(super) alignment: Option<ClipAlignment>,
-}
-
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum ClipAlignment {
-    Left,
-    Center,
-    Right,
 }
 
 /// Clip the collapsed island without moving or resizing its WebView viewport.

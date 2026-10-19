@@ -10,6 +10,7 @@ export interface CommandError {
 export interface ApiConfigResponse {
   baseUrl: string;
   hasApiKey: boolean;
+  apiKeyStorage?: "credential-manager" | "session";
   model: string;
   glossary?: [string, string][];
   hotkeys?: [string, string][];

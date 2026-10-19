@@ -231,6 +231,10 @@ fn publish_shortcut_conflicts(
 /// Synchronize registered shortcuts with the current config.
 /// Called on init and whenever hotkeys are updated.
 pub fn sync_shortcuts(app: &tauri::AppHandle) -> Result<(), String> {
+    // No global-hotkey plugin is initialized by the Linux core edition.
+    if cfg!(target_os = "linux") {
+        return Err("Linux 核心版暂不支持全局快捷键".into());
+    }
     let _sync_guard = SYNC_SHORTCUTS_LOCK.lock_recover();
     let shortcut_plugin = app.global_shortcut();
     // Releasing bindings needs no valid configuration — check activity before

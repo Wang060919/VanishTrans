@@ -23,6 +23,7 @@ mod screenshot_visibility;
 mod tm;
 mod translate;
 mod window;
+mod window_clip;
 #[cfg(target_os = "windows")]
 mod window_bounds;
 mod window_drag;

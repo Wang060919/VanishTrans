@@ -102,3 +102,20 @@ fn ball_position_save_writes_complete_config_when_file_is_unparsable() {
     serde_json::from_value::<PersistedConfig>(saved).unwrap();
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn session_key_stays_out_of_config_and_is_empty_after_restart() {
+    let dir = std::env::temp_dir().join(format!("vt_session_key_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config = ApiConfig::load_or_default(dir.clone());
+    *config.api_key.lock_recover() = "test-only-session-secret".into();
+    config.save_api_key().unwrap();
+    config.save_to_disk().unwrap();
+    let saved = std::fs::read_to_string(dir.join("config.json")).unwrap();
+    assert!(!saved.contains("test-only-session-secret"));
+    assert!(!saved.contains("api_key"));
+    let restarted = ApiConfig::load_or_default(dir.clone());
+    assert!(restarted.api_key.lock_recover().is_empty());
+    let _ = std::fs::remove_dir_all(dir);
+}

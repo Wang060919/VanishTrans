@@ -1,3 +1,4 @@
+import { isLinuxCore } from "../../lib/platform";
 import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-shell";
@@ -73,6 +74,7 @@ export default function AboutTab() {
   }, []);
 
   const checkForUpdates = useCallback(async (forced = false) => {
+    if (isLinuxCore()) return;
     // Skip re-checking on a mere tab revisit while a check is running or the
     // last result is still fresh; the button bypasses the cache.
     if (!forced && (updateInFlight
@@ -150,7 +152,7 @@ export default function AboutTab() {
           <button
             type="button"
             className="text-action"
-            disabled={busy}
+            disabled={busy || isLinuxCore()}
             onClick={() => void checkForUpdates(true)}
           >
             {update?.kind === "checking" ? "检查中…" : "检查"}
@@ -200,7 +202,7 @@ export default function AboutTab() {
           </button>
         </p>
       )}
-      <p className="setting-hint">新版本经签名校验后自动安装，重启应用后生效。</p>
+      <p className="setting-hint">{isLinuxCore() ? "Linux 核心版暂未提供自动更新，请手动安装新版本。" : "新版本经签名校验后自动安装，重启应用后生效。"}</p>
     </section>
   );
 }

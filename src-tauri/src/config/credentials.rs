@@ -1,3 +1,4 @@
+#[cfg(target_os = "windows")]
 const CRED_TARGET: &str = "VanishTrans_APIKey";
 
 #[cfg(target_os = "windows")]
@@ -82,10 +83,21 @@ pub(super) fn load_api_key_credential() -> Option<String> {
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn save_api_key_credential(_key: &str) -> Result<(), String> {
+    // Explicit session-only mode: the in-memory ApiConfig owns the key.
+    // The Linux UI and startup notice disclose that restart clears it.
     Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn load_api_key_credential() -> Option<String> {
     None
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod tests {
+    #[test]
+    fn session_mode_never_persists_a_credential() {
+        super::save_api_key_credential("test-only-placeholder").unwrap();
+        assert_eq!(super::load_api_key_credential(), None);
+    }
 }

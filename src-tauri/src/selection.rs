@@ -20,6 +20,7 @@ pub struct SelectionTarget {
 /// it contains. Neither half is sufficient alone: the same text can be
 /// selected at another place, and the same offsets can hold different text.
 #[derive(Clone, Debug)]
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
 pub enum SelectionFingerprint {
     /// UI Automation identity. The live text ranges pin the logical position —
     /// `IUIAutomationTextRange::Compare` compares endpoints, so identical text
@@ -115,6 +116,7 @@ pub fn target_still_valid(captured: &SelectionTarget, now: &SelectionTarget) -> 
 
 /// Normalization shared by every capture path so a copied selection and a
 /// re-read span compare equal exactly when they are equal in the editor.
+#[cfg(any(target_os = "windows", test))]
 pub fn normalize_source_text(text: &str) -> Option<String> {
     let normalized = text.replace("\r\n", "\n").replace(['\r', '\u{2029}'], "\n");
     (!normalized.trim().is_empty()).then_some(normalized)
@@ -124,6 +126,7 @@ pub fn normalize_source_text(text: &str) -> Option<String> {
 /// extracted from the control text so content replaced inside the same offsets
 /// is caught; without a readable span the target is unverifiable and the
 /// caller must fall back instead of pasting.
+#[cfg(any(target_os = "windows", test))]
 pub fn edit_fingerprint(
     control_text: &[u16],
     start: u32,

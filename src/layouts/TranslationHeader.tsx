@@ -1,3 +1,4 @@
+import { isLinuxCore } from "../lib/platform";
 import { Minimize2, Minus, Pin, Square, X } from "lucide-react";
 import type { MouseEventHandler } from "react";
 import IconButton from "../components/IconButton";
@@ -18,7 +19,7 @@ export default function TranslationHeader({ embedded, pinned, onPin, onDrag, onM
     <header className="app-header" onMouseDown={onDrag}>
       <div className="app-brand"><VanishMark animated={false} /></div>
       <div className="app-header-actions">
-        <IconButton icon={<Pin size={16} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />
+        {!isLinuxCore() && <IconButton icon={<Pin size={16} />} label={pinned ? "取消窗口置顶" : "窗口置顶"} active={pinned} onClick={onPin} />}
         <div className="window-controls">
           <button type="button" className="window-controls__btn" onClick={onMinimize}
             aria-label={embedded ? "收起为灵动岛" : "最小化"} title={embedded ? "收起为灵动岛" : "最小化"}>

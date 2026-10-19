@@ -19,6 +19,7 @@ pub fn get_api_config(
     Ok(serde_json::json!({
         "baseUrl": *state.base_url.lock_recover(),
         "hasApiKey": !state.api_key.lock_recover().is_empty(),
+        "apiKeyStorage": if cfg!(target_os = "windows") { "credential-manager" } else { "session" },
         "model": *state.model.lock_recover(),
         "hotkeys": *state.hotkeys.lock_recover(),
         "glossary": *state.glossary.lock_recover(),

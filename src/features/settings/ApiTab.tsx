@@ -1,3 +1,4 @@
+import { isLinuxCore } from "../../lib/platform";
 import { Server } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import SettingInput from "../../components/SettingInput";
@@ -113,6 +114,7 @@ export default function ApiTab({
       />
       <div className="setting-field">
         <label htmlFor="api-key">API Key</label>
+        {isLinuxCore() && <p className="setting-hint" role="note">仅保留在本次运行的内存中，不写入配置文件。退出或重启后需要重新输入。</p>}
         <div className="setting-inline">
           <input
             id="api-key"
@@ -120,7 +122,7 @@ export default function ApiTab({
             value={apiKeyUpdate ?? ""}
             onChange={(event) => onApiKeyChange(event.target.value)}
             onBlur={() => void saveConfig()}
-            placeholder={hasStoredApiKey ? "已安全保存，输入新 Key 可替换" : "sk-..."}
+            placeholder={hasStoredApiKey ? (isLinuxCore() ? "本次运行已设置，输入新 Key 可替换" : "已安全保存，输入新 Key 可替换") : "sk-..."}
           />
           {hasStoredApiKey && apiKeyUpdate === null && (
             <button type="button" className="secondary-button" onClick={() => void saveConfig("")}>清除</button>

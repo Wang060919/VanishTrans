@@ -1,3 +1,4 @@
+import { isLinuxCore } from "./lib/platform";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { lazy, Suspense } from "react";
 
@@ -24,7 +25,7 @@ export default function App() {
   const windowLabel = getCurrentWindow().label;
   let content = <MainWindowApp />;
   if (windowLabel === "screenshot") content = <ScreenshotOverlay />;
-  else if (windowLabel === "ball") content = <BallWindow />;
+  else if (windowLabel === "ball" && !isLinuxCore()) content = <BallWindow />;
   else if (windowLabel === "quick") content = <QuickTranslateWindow />;
   return <Suspense fallback={null}>{content}</Suspense>;
 }
