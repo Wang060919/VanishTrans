@@ -4,9 +4,12 @@ mod completion;
 mod google;
 mod http;
 mod language;
+mod prompt;
+mod protection;
 mod request;
 mod sse;
 mod streaming;
+mod terminology;
 
 pub use crate::config::{ApiConfig, ServiceProfile};
 use completion::do_translate_async;
@@ -73,3 +76,6 @@ mod completion_tests;
 
 #[cfg(test)]
 mod snapshot_tests;
+
+#[cfg(test)]
+mod quality_tests;

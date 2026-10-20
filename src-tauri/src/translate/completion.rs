@@ -1,8 +1,9 @@
+use super::prompt::BASE_SYSTEM_PROMPT;
 use super::{
     http::{map_http_error, read_response_body_limited, TIMEOUT_SECS},
     request::{
         build_chat_request, build_translation_prompt, check_finish_reason, validate_and_get_config,
-        ChatResponse, TranslationPrompt, BASE_SYSTEM_PROMPT,
+        ChatResponse, TranslationPrompt,
     },
 };
 use crate::config::ApiConfig;
@@ -54,7 +55,9 @@ pub async fn do_translate_async(
     }
 
     let bytes = read_response_body_limited(resp).await?;
-    parse_chat_translation(&bytes)
+    let translated = parse_chat_translation(&bytes)?;
+    super::protection::validate_protected(text, &translated)?;
+    Ok(translated)
 }
 
 /// Parse a chat completion body, rejecting truncated or filtered output

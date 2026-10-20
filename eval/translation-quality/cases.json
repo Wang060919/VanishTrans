@@ -1,0 +1,1732 @@
+[
+  {
+    "id": "technical-01",
+    "category": "technical",
+    "source": "The request timed out before the server responded.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "request",
+        "请求"
+      ],
+      [
+        "server",
+        "服务器"
+      ]
+    ],
+    "expected_terms": [
+      "request",
+      "server"
+    ],
+    "protected": [],
+    "reference": "服务器响应之前，请求已超时。",
+    "notes": "不能颠倒超时与响应的时间关系。"
+  },
+  {
+    "id": "technical-02",
+    "category": "technical",
+    "source": "The provider failed to initialize.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "provider",
+        "提供商"
+      ],
+      [
+        "initialize",
+        "初始化"
+      ]
+    ],
+    "expected_terms": [
+      "provider",
+      "initialize"
+    ],
+    "protected": [],
+    "reference": "提供商初始化失败。",
+    "notes": "保留失败含义，不增添失败原因。"
+  },
+  {
+    "id": "technical-03",
+    "category": "technical",
+    "source": "Use a fallback result only when the primary request fails.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "fallback",
+        "后备"
+      ],
+      [
+        "fallback result",
+        "回退结果"
+      ],
+      [
+        "request",
+        "请求"
+      ]
+    ],
+    "expected_terms": [
+      "fallback result",
+      "request"
+    ],
+    "protected": [],
+    "reference": "仅在主请求失败时使用回退结果。",
+    "notes": "only when 的条件不得省略。"
+  },
+  {
+    "id": "technical-04",
+    "category": "technical",
+    "source": "The cache is invalidated when the glossary changes.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "cache",
+        "缓存"
+      ],
+      [
+        "glossary",
+        "术语表"
+      ]
+    ],
+    "expected_terms": [
+      "cache",
+      "glossary"
+    ],
+    "protected": [],
+    "reference": "术语表发生变化时，缓存会失效。",
+    "notes": "失效不是删除用户文档。"
+  },
+  {
+    "id": "technical-05",
+    "category": "technical",
+    "source": "A transaction must commit all changes or none of them.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "transaction",
+        "事务"
+      ]
+    ],
+    "expected_terms": [
+      "transaction"
+    ],
+    "protected": [],
+    "reference": "事务必须提交全部更改，或完全不提交。",
+    "notes": "保留原子性条件。"
+  },
+  {
+    "id": "technical-06",
+    "category": "technical",
+    "source": "The worker releases the lock before waiting for input.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "worker",
+        "工作线程"
+      ],
+      [
+        "lock",
+        "锁"
+      ]
+    ],
+    "expected_terms": [
+      "worker",
+      "lock"
+    ],
+    "protected": [],
+    "reference": "工作线程在等待输入之前释放锁。",
+    "notes": "前后顺序不可反转。"
+  },
+  {
+    "id": "technical-07",
+    "category": "technical",
+    "source": "Do not retry a request that may already have succeeded.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "retry",
+        "重试"
+      ],
+      [
+        "request",
+        "请求"
+      ]
+    ],
+    "expected_terms": [
+      "retry",
+      "request"
+    ],
+    "protected": [],
+    "reference": "不要重试可能已经成功的请求。",
+    "notes": "may 不得误译成确定失败。"
+  },
+  {
+    "id": "technical-08",
+    "category": "technical",
+    "source": "This endpoint accepts only read-only operations.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "endpoint",
+        "端点"
+      ],
+      [
+        "read-only",
+        "只读"
+      ]
+    ],
+    "expected_terms": [
+      "endpoint",
+      "read-only"
+    ],
+    "protected": [],
+    "reference": "此端点仅接受只读操作。",
+    "notes": "不得遗漏 only 或 read-only。"
+  },
+  {
+    "id": "technical-09",
+    "category": "technical",
+    "source": "The repository contains both source files and generated assets.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "repository",
+        "仓库"
+      ],
+      [
+        "source files",
+        "源文件"
+      ]
+    ],
+    "expected_terms": [
+      "repository",
+      "source files"
+    ],
+    "protected": [],
+    "reference": "该仓库同时包含源文件和生成的资源。",
+    "notes": "两类内容均需保留。"
+  },
+  {
+    "id": "technical-10",
+    "category": "technical",
+    "source": "The deployment was rolled back without deleting the database.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "deployment",
+        "部署"
+      ],
+      [
+        "database",
+        "数据库"
+      ]
+    ],
+    "expected_terms": [
+      "deployment",
+      "database"
+    ],
+    "protected": [],
+    "reference": "部署已回退，数据库未被删除。",
+    "notes": "明确未删除，不得译成删除后回退。"
+  },
+  {
+    "id": "technical-11",
+    "category": "technical",
+    "source": "A cancelled request must not overwrite a newer result.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "request",
+        "请求"
+      ],
+      [
+        "result",
+        "结果"
+      ]
+    ],
+    "expected_terms": [
+      "request",
+      "result"
+    ],
+    "protected": [],
+    "reference": "已取消的请求不得覆盖更新的结果。",
+    "notes": "主语是已取消请求，禁止关系必须保留。"
+  },
+  {
+    "id": "technical-12",
+    "category": "technical",
+    "source": "The client uses an immutable configuration snapshot.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "client",
+        "客户端"
+      ],
+      [
+        "configuration snapshot",
+        "配置快照"
+      ]
+    ],
+    "expected_terms": [
+      "client",
+      "configuration snapshot"
+    ],
+    "protected": [],
+    "reference": "客户端使用不可变的配置快照。",
+    "notes": "immutable 不得译成不可用。"
+  },
+  {
+    "id": "technical-13",
+    "category": "technical",
+    "source": "The stream may finish before the final response arrives.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "stream",
+        "流"
+      ],
+      [
+        "response",
+        "响应"
+      ]
+    ],
+    "expected_terms": [
+      "stream",
+      "response"
+    ],
+    "protected": [],
+    "reference": "流可能在最终响应到达之前结束。",
+    "notes": "保留可能性和时间关系。"
+  },
+  {
+    "id": "technical-14",
+    "category": "technical",
+    "source": "The serializer preserves the order of array elements.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "serializer",
+        "序列化器"
+      ],
+      [
+        "array",
+        "数组"
+      ]
+    ],
+    "expected_terms": [
+      "serializer",
+      "array"
+    ],
+    "protected": [],
+    "reference": "序列化器保留数组元素的顺序。",
+    "notes": "array 不是字典。"
+  },
+  {
+    "id": "technical-15",
+    "category": "technical",
+    "source": "The runtime rejects an empty translation.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "runtime",
+        "运行时"
+      ],
+      [
+        "translation",
+        "译文"
+      ]
+    ],
+    "expected_terms": [
+      "runtime",
+      "translation"
+    ],
+    "protected": [],
+    "reference": "运行时拒绝空译文。",
+    "notes": "empty 是译文而非原文。"
+  },
+  {
+    "id": "technical-16",
+    "category": "technical",
+    "source": "The cache key does not contain the API key.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "cache key",
+        "缓存键"
+      ],
+      [
+        "API key",
+        "API 密钥"
+      ]
+    ],
+    "expected_terms": [
+      "cache key",
+      "API key"
+    ],
+    "protected": [],
+    "reference": "缓存键不包含 API 密钥。",
+    "notes": "两个 key 含义不同，保留否定。"
+  },
+  {
+    "id": "technical-17",
+    "category": "technical",
+    "source": "The queue processes jobs in arrival order.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "queue",
+        "队列"
+      ],
+      [
+        "jobs",
+        "任务"
+      ]
+    ],
+    "expected_terms": [
+      "queue",
+      "jobs"
+    ],
+    "protected": [],
+    "reference": "队列按到达顺序处理任务。",
+    "notes": "不要擅自改成优先级顺序。"
+  },
+  {
+    "id": "technical-18",
+    "category": "technical",
+    "source": "A successful parse does not prove that the translation is correct.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "parse",
+        "解析"
+      ],
+      [
+        "translation",
+        "译文"
+      ]
+    ],
+    "expected_terms": [
+      "parse",
+      "translation"
+    ],
+    "protected": [],
+    "reference": "解析成功并不能证明译文正确。",
+    "notes": "区分格式成功与语义正确。"
+  },
+  {
+    "id": "technical-19",
+    "category": "technical",
+    "source": "The agents share a workspace, but each agent has its own request ID.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "agent",
+        "智能体"
+      ],
+      [
+        "workspace",
+        "工作区"
+      ]
+    ],
+    "expected_terms": [
+      "agent",
+      "workspace"
+    ],
+    "protected": [],
+    "reference": "这些代理共享工作区，但每个智能体都有自己的请求 ID。",
+    "notes": "词边界检查：agent 不应命中 agents。"
+  },
+  {
+    "id": "technical-20",
+    "category": "technical",
+    "source": "API and api are different identifiers in this configuration.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "API",
+        "API"
+      ],
+      [
+        "Api",
+        "接口"
+      ]
+    ],
+    "expected_terms": [
+      "API"
+    ],
+    "protected": [],
+    "reference": "在此配置中，API 和 api 是不同的标识符。",
+    "notes": "大小写敏感匹配只选 API，不选择不存在的 Api。"
+  },
+  {
+    "id": "ui-01",
+    "category": "ui",
+    "source": "Save changes",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "Save",
+        "保存"
+      ]
+    ],
+    "expected_terms": [
+      "Save"
+    ],
+    "protected": [],
+    "reference": "保存更改",
+    "notes": "动词按钮，不是文件名。"
+  },
+  {
+    "id": "ui-02",
+    "category": "ui",
+    "source": "Discard changes",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "Discard",
+        "放弃"
+      ]
+    ],
+    "expected_terms": [
+      "Discard"
+    ],
+    "protected": [],
+    "reference": "放弃更改",
+    "notes": "不可误译为保存。"
+  },
+  {
+    "id": "ui-03",
+    "category": "ui",
+    "source": "Retry translation",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "Retry",
+        "重试"
+      ]
+    ],
+    "expected_terms": [
+      "Retry"
+    ],
+    "protected": [],
+    "reference": "重试翻译",
+    "notes": "保留重试动作。"
+  },
+  {
+    "id": "ui-04",
+    "category": "ui",
+    "source": "Keep original text",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "original text",
+        "原文"
+      ]
+    ],
+    "expected_terms": [
+      "original text"
+    ],
+    "protected": [],
+    "reference": "保留原文",
+    "notes": "original 指原文。"
+  },
+  {
+    "id": "ui-05",
+    "category": "ui",
+    "source": "No results found",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "未找到结果",
+    "notes": "不得译成结果加载中。"
+  },
+  {
+    "id": "ui-06",
+    "category": "ui",
+    "source": "This action cannot be undone.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "undone",
+        "撤销"
+      ]
+    ],
+    "expected_terms": [
+      "undone"
+    ],
+    "protected": [],
+    "reference": "此操作无法撤销。",
+    "notes": "保留不可撤销警告。"
+  },
+  {
+    "id": "ui-07",
+    "category": "ui",
+    "source": "Show advanced settings",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "advanced settings",
+        "高级设置"
+      ]
+    ],
+    "expected_terms": [
+      "advanced settings"
+    ],
+    "protected": [],
+    "reference": "显示高级设置",
+    "notes": "show 与 hide 区分。"
+  },
+  {
+    "id": "ui-08",
+    "category": "ui",
+    "source": "Use system theme",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "system theme",
+        "系统主题"
+      ]
+    ],
+    "expected_terms": [
+      "system theme"
+    ],
+    "protected": [],
+    "reference": "使用系统主题",
+    "notes": "不把 system 译成体系。"
+  },
+  {
+    "id": "ui-09",
+    "category": "ui",
+    "source": "Pause clipboard monitoring",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "clipboard",
+        "剪贴板"
+      ]
+    ],
+    "expected_terms": [
+      "clipboard"
+    ],
+    "protected": [],
+    "reference": "暂停剪贴板监控",
+    "notes": "暂停不等于永久关闭。"
+  },
+  {
+    "id": "ui-10",
+    "category": "ui",
+    "source": "Copy translated text",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "translated text",
+        "译文"
+      ]
+    ],
+    "expected_terms": [
+      "translated text"
+    ],
+    "protected": [],
+    "reference": "复制译文",
+    "notes": "复制对象是译文。"
+  },
+  {
+    "id": "ui-11",
+    "category": "ui",
+    "source": "Replace selection",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "selection",
+        "选中内容"
+      ]
+    ],
+    "expected_terms": [
+      "selection"
+    ],
+    "protected": [],
+    "reference": "替换选中内容",
+    "notes": "不是替换整个文档。"
+  },
+  {
+    "id": "ui-12",
+    "category": "ui",
+    "source": "Connection test failed",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "Connection",
+        "连接"
+      ]
+    ],
+    "expected_terms": [
+      "Connection"
+    ],
+    "protected": [],
+    "reference": "连接测试失败",
+    "notes": "不得说翻译失败。"
+  },
+  {
+    "id": "ui-13",
+    "category": "ui",
+    "source": "You have unsaved changes.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "你有尚未保存的更改。",
+    "notes": "保留未保存状态。"
+  },
+  {
+    "id": "ui-14",
+    "category": "ui",
+    "source": "Loading previous result…",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "result",
+        "结果"
+      ]
+    ],
+    "expected_terms": [
+      "result"
+    ],
+    "protected": [],
+    "reference": "正在加载上一次结果……",
+    "notes": "previous 不是下一次。"
+  },
+  {
+    "id": "ui-15",
+    "category": "ui",
+    "source": "Clear history, not saved terms",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "history",
+        "历史记录"
+      ],
+      [
+        "terms",
+        "术语"
+      ]
+    ],
+    "expected_terms": [
+      "history",
+      "terms"
+    ],
+    "protected": [],
+    "reference": "清空历史记录，但不清除已保存的术语",
+    "notes": "明确术语保留。"
+  },
+  {
+    "id": "ui-16",
+    "category": "ui",
+    "source": "Allow translation while offline",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "offline",
+        "离线"
+      ]
+    ],
+    "expected_terms": [
+      "offline"
+    ],
+    "protected": [],
+    "reference": "允许离线翻译",
+    "notes": "只翻按钮文案，不声称产品已支持。"
+  },
+  {
+    "id": "ui-17",
+    "category": "ui",
+    "source": "Open settings (optional)",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "settings",
+        "设置"
+      ]
+    ],
+    "expected_terms": [
+      "settings"
+    ],
+    "protected": [],
+    "reference": "打开设置（可选）",
+    "notes": "保留可选限定。"
+  },
+  {
+    "id": "ui-18",
+    "category": "ui",
+    "source": "保存术语表",
+    "target_language": "English",
+    "context": "",
+    "glossary": [
+      [
+        "术语表",
+        "glossary"
+      ]
+    ],
+    "expected_terms": [
+      "术语表"
+    ],
+    "protected": [],
+    "reference": "Save glossary",
+    "notes": "CJK 子串术语应命中。"
+  },
+  {
+    "id": "ui-19",
+    "category": "ui",
+    "source": "重置翻译设置",
+    "target_language": "English",
+    "context": "",
+    "glossary": [
+      [
+        "翻译",
+        "translation"
+      ],
+      [
+        "设置",
+        "settings"
+      ]
+    ],
+    "expected_terms": [
+      "翻译",
+      "设置"
+    ],
+    "protected": [],
+    "reference": "Reset translation settings",
+    "notes": "只重置翻译设置，不是全部数据。"
+  },
+  {
+    "id": "ui-20",
+    "category": "ui",
+    "source": "Start without signing in",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "signing in",
+        "登录"
+      ]
+    ],
+    "expected_terms": [
+      "signing in"
+    ],
+    "protected": [],
+    "reference": "无需登录即可开始",
+    "notes": "without 不得漏译。"
+  },
+  {
+    "id": "general-01",
+    "category": "general",
+    "source": "The meeting starts at 9:30 tomorrow morning.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "会议于明天上午九点半开始。",
+    "notes": "时间可合法本地化，不能误成今晚。"
+  },
+  {
+    "id": "general-02",
+    "category": "general",
+    "source": "Please send the report by Friday.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "请在周五之前发送报告。",
+    "notes": "by 表示截止期限，不是从周五开始。"
+  },
+  {
+    "id": "general-03",
+    "category": "general",
+    "source": "She has lived here for three years.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "她已经在这里住了三年。",
+    "notes": "持续状态，不应改成三年前离开。"
+  },
+  {
+    "id": "general-04",
+    "category": "general",
+    "source": "I almost missed the last bus.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "我差点错过末班车。",
+    "notes": "almost 不表示真的错过。"
+  },
+  {
+    "id": "general-05",
+    "category": "general",
+    "source": "The room is not as cold as I expected.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "房间没有我预想的那么冷。",
+    "notes": "比较方向不能反转。"
+  },
+  {
+    "id": "general-06",
+    "category": "general",
+    "source": "You can cancel until the day before departure.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "出发前一天之前，你都可以取消。",
+    "notes": "保留取消期限，不擅加免费。"
+  },
+  {
+    "id": "general-07",
+    "category": "general",
+    "source": "We need fewer meetings, not more reports.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "我们需要减少会议，而不是增加报告。",
+    "notes": "两部分对比和数量方向都要保留。"
+  },
+  {
+    "id": "general-08",
+    "category": "general",
+    "source": "He apologized for arriving late.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "他为迟到道了歉。",
+    "notes": "不应增加故意迟到的判断。"
+  },
+  {
+    "id": "general-09",
+    "category": "general",
+    "source": "The discount applies to the second item only.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "折扣仅适用于第二件商品。",
+    "notes": "only 不可遗漏。"
+  },
+  {
+    "id": "general-10",
+    "category": "general",
+    "source": "The price fell from 1,200 to 900 dollars.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "价格从 1200 美元降至 900 美元。",
+    "notes": "逗号分组可以变化，数值和币种不能变化。"
+  },
+  {
+    "id": "general-11",
+    "category": "general",
+    "source": "About half of the participants agreed.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "大约一半参与者表示同意。",
+    "notes": "保留 about，不精确化成 50.00%。"
+  },
+  {
+    "id": "general-12",
+    "category": "general",
+    "source": "I would rather wait than rush a decision.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "我宁愿等一等，也不愿仓促决定。",
+    "notes": "偏好方向必须正确。"
+  },
+  {
+    "id": "general-13",
+    "category": "general",
+    "source": "Let me know if the plan changes.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "如果计划有变，请告诉我。",
+    "notes": "条件句不得变成计划已经改变。"
+  },
+  {
+    "id": "general-14",
+    "category": "general",
+    "source": "The package has not arrived yet.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "包裹还没有送到。",
+    "notes": "yet 与完成状态保留。"
+  },
+  {
+    "id": "general-15",
+    "category": "general",
+    "source": "They arrived just in time to catch the train.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "他们及时赶到了，正好搭上火车。",
+    "notes": "不应误成错过火车。"
+  },
+  {
+    "id": "general-16",
+    "category": "general",
+    "source": "This is the least expensive option.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "这是最便宜的选项。",
+    "notes": "least 不能译成最贵。"
+  },
+  {
+    "id": "general-17",
+    "category": "general",
+    "source": "The course is open to everyone except first-year students.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "除一年级学生外，所有人都可以参加这门课程。",
+    "notes": "例外群体不能反转。"
+  },
+  {
+    "id": "general-18",
+    "category": "general",
+    "source": "我还没决定是否参加。",
+    "target_language": "English",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "I have not decided whether to attend yet.",
+    "notes": "保留未决定，不是决定不参加。"
+  },
+  {
+    "id": "general-19",
+    "category": "general",
+    "source": "如果下雨，我们就改到室内。",
+    "target_language": "English",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "If it rains, we will move indoors.",
+    "notes": "条件和结果不能倒置。"
+  },
+  {
+    "id": "general-20",
+    "category": "general",
+    "source": "这本书比我想象的容易读。",
+    "target_language": "English",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "This book is easier to read than I expected.",
+    "notes": "比较级方向保留。"
+  },
+  {
+    "id": "format-01",
+    "category": "format",
+    "source": "Run `npm install` before starting the app.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "install",
+        "安装"
+      ],
+      [
+        "app",
+        "应用"
+      ]
+    ],
+    "expected_terms": [
+      "app"
+    ],
+    "protected": [
+      "`npm install`"
+    ],
+    "reference": "启动应用前运行 `npm install`。",
+    "notes": "内联代码连同反引号保持。"
+  },
+  {
+    "id": "format-02",
+    "category": "format",
+    "source": "Open https://example.com/docs to read the guide.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "docs",
+        "文档"
+      ],
+      [
+        "guide",
+        "指南"
+      ]
+    ],
+    "expected_terms": [
+      "guide"
+    ],
+    "protected": [
+      "https://example.com/docs"
+    ],
+    "reference": "打开 https://example.com/docs 阅读指南。",
+    "notes": "URL 不得本地化或添加路径。"
+  },
+  {
+    "id": "format-03",
+    "category": "format",
+    "source": "Hello, {user_name}!",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "user_name",
+        "用户名"
+      ]
+    ],
+    "expected_terms": [],
+    "protected": [
+      "{user_name}"
+    ],
+    "reference": "你好，{user_name}！",
+    "notes": "花括号变量及大小写保持。"
+  },
+  {
+    "id": "format-04",
+    "category": "format",
+    "source": "Save the file to ${output_dir}.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "${output_dir}"
+    ],
+    "reference": "将文件保存到 ${output_dir}。",
+    "notes": "美元花括号变量不得截断。"
+  },
+  {
+    "id": "format-05",
+    "category": "format",
+    "source": "Welcome back, {{name}}.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "{{name}}"
+    ],
+    "reference": "欢迎回来，{{name}}。",
+    "notes": "双花括号应整体保护。"
+  },
+  {
+    "id": "format-06",
+    "category": "format",
+    "source": "Processed %d files for %s.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "%d",
+      "%s"
+    ],
+    "reference": "已为 %s 处理 %d 个文件。",
+    "notes": "允许译文调整顺序，但两个占位符都要保留。"
+  },
+  {
+    "id": "format-07",
+    "category": "format",
+    "source": "User %1$s has %2$d messages.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "%1$s",
+      "%2$d"
+    ],
+    "reference": "用户 %1$s 有 %2$d 条消息。",
+    "notes": "位置型 printf 索引和类型保持。"
+  },
+  {
+    "id": "format-08",
+    "category": "format",
+    "source": "Click <strong>Save</strong> to continue.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "Save",
+        "保存"
+      ]
+    ],
+    "expected_terms": [
+      "Save"
+    ],
+    "protected": [
+      "<strong>",
+      "</strong>"
+    ],
+    "reference": "点击 <strong>保存</strong> 以继续。",
+    "notes": "HTML 标签保护，标签内自然语言翻译。"
+  },
+  {
+    "id": "format-09",
+    "category": "format",
+    "source": "<button id=\"save\">Save</button>",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "save",
+        "储存"
+      ],
+      [
+        "Save",
+        "保存"
+      ]
+    ],
+    "expected_terms": [
+      "Save"
+    ],
+    "protected": [
+      "<button id=\"save\">",
+      "</button>"
+    ],
+    "reference": "<button id=\"save\">保存</button>",
+    "notes": "属性值和引号保持，按钮文字可译。"
+  },
+  {
+    "id": "format-10",
+    "category": "format",
+    "source": "Example:\n```js\nconst value = 1;\n```\nDo not change the code.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "value",
+        "值"
+      ],
+      [
+        "code",
+        "代码"
+      ]
+    ],
+    "expected_terms": [
+      "code"
+    ],
+    "protected": [
+      "```js\nconst value = 1;\n```"
+    ],
+    "reference": "示例：\n```js\nconst value = 1;\n```\n不要更改代码。",
+    "notes": "完整代码围栏原样保留，不翻注释外内容。"
+  },
+  {
+    "id": "format-11",
+    "category": "format",
+    "source": "# Installation\n\n- Download the app.\n- Restart your computer.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "# 安装\n\n- 下载应用。\n- 重启电脑。",
+    "notes": "标题级别、列表项和空行人工核对。"
+  },
+  {
+    "id": "format-12",
+    "category": "format",
+    "source": "Read [the guide](https://example.com/help).",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "guide",
+        "指南"
+      ],
+      [
+        "help",
+        "帮助"
+      ]
+    ],
+    "expected_terms": [
+      "guide"
+    ],
+    "protected": [
+      "https://example.com/help"
+    ],
+    "reference": "阅读[指南](https://example.com/help)。",
+    "notes": "链接文本可译，链接目标不变。"
+  },
+  {
+    "id": "format-13",
+    "category": "format",
+    "source": "Use `{path}` instead of {path}.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "`{path}`",
+      "{path}"
+    ],
+    "reference": "使用 `{path}`，而不是 {path}。",
+    "notes": "嵌套变量不重复提取；独立变量仍需保护。"
+  },
+  {
+    "id": "format-14",
+    "category": "format",
+    "source": "Visit https://example.com/a?lang=en&mode=full for details.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "https://example.com/a?lang=en&mode=full"
+    ],
+    "reference": "访问 https://example.com/a?lang=en&mode=full 查看详情。",
+    "notes": "查询参数和 & 保持。"
+  },
+  {
+    "id": "format-15",
+    "category": "format",
+    "source": "Send <item key=\"id\"/> without a value.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "<item key=\"id\"/>"
+    ],
+    "reference": "发送不带值的 <item key=\"id\"/>。",
+    "notes": "自闭合标签和属性保持。"
+  },
+  {
+    "id": "format-16",
+    "category": "format",
+    "source": "The literal ``a`b`` is valid here.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "``a`b``"
+    ],
+    "reference": "字面量 ``a`b`` 在这里有效。",
+    "notes": "多反引号内联代码保持，包括内部单反引号。"
+  },
+  {
+    "id": "format-17",
+    "category": "format",
+    "source": "Copy {source} to {target}, then remove {source}.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "{source}",
+      "{target}",
+      "{source}"
+    ],
+    "reference": "将 {source} 复制到 {target}，然后删除 {source}。",
+    "notes": "重复变量出现次数必须保留。"
+  },
+  {
+    "id": "format-18",
+    "category": "format",
+    "source": "Use HTTP, not https://example.com/HTTP.",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [
+      [
+        "HTTP",
+        "HTTP"
+      ]
+    ],
+    "expected_terms": [
+      "HTTP"
+    ],
+    "protected": [
+      "https://example.com/HTTP"
+    ],
+    "reference": "使用 HTTP，而不是 https://example.com/HTTP。",
+    "notes": "URL 内术语忽略，外部 HTTP 应匹配。"
+  },
+  {
+    "id": "format-19",
+    "category": "format",
+    "source": "Status: %s\nCount: %d",
+    "target_language": "Chinese",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "%s",
+      "%d"
+    ],
+    "reference": "状态：%s\n数量：%d",
+    "notes": "保留两行结构与不同类型占位符。"
+  },
+  {
+    "id": "format-20",
+    "category": "format",
+    "source": "请运行 `cargo test`，然后打开 https://example.com/results。",
+    "target_language": "English",
+    "context": "",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [
+      "`cargo test`",
+      "https://example.com/results"
+    ],
+    "reference": "Run `cargo test`, then open https://example.com/results.",
+    "notes": "中译英中同样保护代码和 URL。"
+  },
+  {
+    "id": "ambiguous-01",
+    "category": "ambiguous",
+    "source": "It failed again.",
+    "target_language": "Chinese",
+    "context": "The deployment task could not reach the server.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "部署任务又失败了。",
+    "notes": "有上下文时可明确指代；无上下文时“它又失败了”也合理，不虚构原因。"
+  },
+  {
+    "id": "ambiguous-02",
+    "category": "ambiguous",
+    "source": "Save",
+    "target_language": "Chinese",
+    "context": "A document editor menu.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "保存",
+    "notes": "软件菜单里的动词，不是节约。"
+  },
+  {
+    "id": "ambiguous-03",
+    "category": "ambiguous",
+    "source": "Save",
+    "target_language": "Chinese",
+    "context": "A shopping banner saying customers can spend less.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "节省",
+    "notes": "促销语境，不能机械照搬软件译法。"
+  },
+  {
+    "id": "ambiguous-04",
+    "category": "ambiguous",
+    "source": "The agent is ready.",
+    "target_language": "Chinese",
+    "context": "An AI workflow has initialized its assistant.",
+    "glossary": [
+      [
+        "agent",
+        "智能体"
+      ]
+    ],
+    "expected_terms": [
+      "agent"
+    ],
+    "protected": [],
+    "reference": "智能体已准备就绪。",
+    "notes": "AI 语境支持术语约束。"
+  },
+  {
+    "id": "ambiguous-05",
+    "category": "ambiguous",
+    "source": "The agent booked the hotel.",
+    "target_language": "Chinese",
+    "context": "A travel agency arranged accommodation.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "代理人预订了酒店。",
+    "notes": "旅行场景不应用 AI 术语；此条刻意不提供冲突术语。"
+  },
+  {
+    "id": "ambiguous-06",
+    "category": "ambiguous",
+    "source": "The bank is closed.",
+    "target_language": "Chinese",
+    "context": "I need to withdraw cash at the branch.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "银行关门了。",
+    "notes": "营业场景，bank 是银行。"
+  },
+  {
+    "id": "ambiguous-07",
+    "category": "ambiguous",
+    "source": "We sat on the bank.",
+    "target_language": "Chinese",
+    "context": "The river was calm and the grass was dry.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "我们坐在河岸上。",
+    "notes": "河流场景，不是坐在银行里。"
+  },
+  {
+    "id": "ambiguous-08",
+    "category": "ambiguous",
+    "source": "The port is blocked.",
+    "target_language": "Chinese",
+    "context": "The firewall denied the connection.",
+    "glossary": [
+      [
+        "port",
+        "端口"
+      ]
+    ],
+    "expected_terms": [
+      "port"
+    ],
+    "protected": [],
+    "reference": "端口被阻止了。",
+    "notes": "网络端口，不是港口。"
+  },
+  {
+    "id": "ambiguous-09",
+    "category": "ambiguous",
+    "source": "The port is busy.",
+    "target_language": "Chinese",
+    "context": "Several cargo ships are waiting to dock.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "港口很繁忙。",
+    "notes": "航运场景，不应强制使用网络术语。"
+  },
+  {
+    "id": "ambiguous-10",
+    "category": "ambiguous",
+    "source": "Apply the patch.",
+    "target_language": "Chinese",
+    "context": "The bug fix is ready for the repository.",
+    "glossary": [
+      [
+        "patch",
+        "补丁"
+      ]
+    ],
+    "expected_terms": [
+      "patch"
+    ],
+    "protected": [],
+    "reference": "应用补丁。",
+    "notes": "软件变更，不是贴布片。"
+  },
+  {
+    "id": "ambiguous-11",
+    "category": "ambiguous",
+    "source": "Apply the patch.",
+    "target_language": "Chinese",
+    "context": "Cover the hole in the jacket with the fabric patch.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "贴上贴片。",
+    "notes": "衣物修补场景，不使用软件译法。"
+  },
+  {
+    "id": "ambiguous-12",
+    "category": "ambiguous",
+    "source": "The model is light.",
+    "target_language": "Chinese",
+    "context": "It runs on a small device with little memory.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "这个模型很轻量。",
+    "notes": "计算资源需求低，不是颜色浅。"
+  },
+  {
+    "id": "ambiguous-13",
+    "category": "ambiguous",
+    "source": "The model is light.",
+    "target_language": "Chinese",
+    "context": "The wooden scale model weighs only a few grams.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "这个模型很轻。",
+    "notes": "实体模型重量轻，不是 AI 性能描述。"
+  },
+  {
+    "id": "ambiguous-14",
+    "category": "ambiguous",
+    "source": "That is a hard limit.",
+    "target_language": "Chinese",
+    "context": "Requests above the quota are always rejected.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "那是不可超出的限制。",
+    "notes": "hard 表示严格上限，不是难以理解。"
+  },
+  {
+    "id": "ambiguous-15",
+    "category": "ambiguous",
+    "source": "It works out of the box.",
+    "target_language": "Chinese",
+    "context": "No configuration is required after installation.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "它开箱即用。",
+    "notes": "软件语境中的惯用表达，不是从箱子里工作。"
+  },
+  {
+    "id": "ambiguous-16",
+    "category": "ambiguous",
+    "source": "The service took a hit.",
+    "target_language": "Chinese",
+    "context": "An outage reduced its availability.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "该服务受到冲击。",
+    "notes": "中断影响，不是遭到物理击打；不能凭空断言攻击。"
+  },
+  {
+    "id": "ambiguous-17",
+    "category": "ambiguous",
+    "source": "The branch is behind.",
+    "target_language": "Chinese",
+    "context": "The main branch has three newer commits.",
+    "glossary": [
+      [
+        "branch",
+        "分支"
+      ]
+    ],
+    "expected_terms": [
+      "branch"
+    ],
+    "protected": [],
+    "reference": "这个分支落后了。",
+    "notes": "版本控制语境，不是树枝在后面。"
+  },
+  {
+    "id": "ambiguous-18",
+    "category": "ambiguous",
+    "source": "The thread is blocked.",
+    "target_language": "Chinese",
+    "context": "It is waiting for another thread to release a mutex.",
+    "glossary": [
+      [
+        "thread",
+        "线程"
+      ]
+    ],
+    "expected_terms": [
+      "thread"
+    ],
+    "protected": [],
+    "reference": "线程被阻塞了。",
+    "notes": "并发执行语境，不是论坛帖子被封。"
+  },
+  {
+    "id": "ambiguous-19",
+    "category": "ambiguous",
+    "source": "The thread is closed.",
+    "target_language": "Chinese",
+    "context": "Moderators have disabled further replies.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "这个讨论串已关闭。",
+    "notes": "论坛语境，不是线程退出。"
+  },
+  {
+    "id": "ambiguous-20",
+    "category": "ambiguous",
+    "source": "They saw her duck.",
+    "target_language": "Chinese",
+    "context": "A ball flew toward her head, so she bent down.",
+    "glossary": [],
+    "expected_terms": [],
+    "protected": [],
+    "reference": "他们看见她低下了头。",
+    "notes": "上下文选择动词 duck；不在缺语境时假定此解释唯一。"
+  }
+]

@@ -114,5 +114,7 @@ pub async fn do_translate_stream_async(
         saw_finish_reason |= outcome.finish_seen;
         saw_done = outcome.done;
     }
-    finalize_stream_result(full_text, saw_done, saw_finish_reason)
+    let translated = finalize_stream_result(full_text, saw_done, saw_finish_reason)?;
+    super::protection::validate_protected(text, &translated)?;
+    Ok(translated)
 }

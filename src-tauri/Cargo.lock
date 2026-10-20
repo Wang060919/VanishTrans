@@ -5930,6 +5930,7 @@ dependencies = [
  "futures-util",
  "image 0.25.10",
  "log",
+ "regex",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

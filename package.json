@@ -22,7 +22,9 @@
     "bump": "node scripts/bump-version.mjs",
     "ladle": "node scripts/run-ladle.mjs serve --port 6106",
     "ladle:build": "node scripts/run-ladle.mjs build",
-    "ladle:preview": "node scripts/run-ladle.mjs preview --port 6106"
+    "ladle:preview": "node scripts/run-ladle.mjs preview --port 6106",
+    "eval:translation": "cargo run --locked --manifest-path scripts/translation-quality/Cargo.toml",
+    "test:translation": "cargo test --locked --manifest-path scripts/translation-quality/Cargo.toml"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

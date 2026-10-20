@@ -2,33 +2,6 @@ use super::http::MAX_INPUT_CHARS;
 use crate::config::TranslationConfig;
 use serde::{Deserialize, Serialize};
 
-pub const BASE_SYSTEM_PROMPT: &str = r#"You are a professional translation engine. Your ONLY task is to translate the user's input text.
-
-RULES (violating any will be considered a failure):
-1. Output ONLY the translated text. Nothing else.
-2. NO explanations, NO notes, NO pinyin, NO romanization, NO greetings, NO disclaimers.
-3. If the input is already in the target language, output it unchanged.
-4. Preserve the original formatting: line breaks, whitespace style, and punctuation conventions of the source.
-5. For code snippets or technical terms in the input, keep them exactly as-is — only translate natural language parts.
-6. If the input is ambiguous, pick the most natural reading and translate it. Do NOT ask questions.
-7. NEVER prefix with "Translation:", "Here is:", or similar meta-text.
-8. NEVER wrap the output in quotes unless the original was quoted.
-9. For Chinese output, use simplified Chinese (简体中文).
-10. Translate naturally — the result should read as if originally written in the target language."#;
-
-/// Build the system prompt, optionally appending glossary terms.
-pub fn build_system_prompt(glossary: &[(String, String)]) -> String {
-    if glossary.is_empty() {
-        return BASE_SYSTEM_PROMPT.to_string();
-    }
-    let mut prompt = String::from(BASE_SYSTEM_PROMPT);
-    prompt.push_str("\n\nGLOSSARY (use these exact translations when the source term appears):\n");
-    for (source, target) in glossary {
-        prompt.push_str(&format!("- \"{}\" → \"{}\"\n", source, target));
-    }
-    prompt
-}
-
 #[derive(Serialize)]
 struct ChatMessage {
     role: String,
@@ -153,7 +126,7 @@ pub(super) fn build_translation_prompt(
         format!(" (source language: {})", source_lang)
     };
 
-    let system_prompt = build_system_prompt(&state.glossary);
+    let system_prompt = super::prompt::build_prompt(text, &state.glossary);
 
     let user_content = format!(
         "Translate the following text{} to {}:\n\n{}",

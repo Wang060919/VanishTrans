@@ -43,7 +43,7 @@ impl TranslationConfig {
     /// Stable cache partition; credentials never enter the persisted fingerprint.
     pub fn context_hash(&self) -> String {
         let canonical = serde_json::json!({
-            "v": 2,
+            "v": 3,
             "baseUrl": self.base_url,
             "model": self.model,
             "glossary": self.glossary,
